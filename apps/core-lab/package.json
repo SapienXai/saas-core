@@ -1,0 +1,7 @@
+{
+  "name": "@sapienx/core-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "node server.mjs", "build": "node -e \"console.log('Core Lab static build ready')\"", "start": "node server.mjs" }
+}

@@ -1,0 +1,18 @@
+# Local Supabase defaults for SaaS Core validation.
+# Product repositories may merge this with their existing project config.
+project_id = "saas-core"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324

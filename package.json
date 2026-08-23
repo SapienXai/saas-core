@@ -1,0 +1,36 @@
+{
+  "name": "@sapienx/saas-core-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SapienX SaaS Core v1 workspace",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "clean": "pnpm -r --if-present clean",
+    "dev": "pnpm --filter @sapienx/core-lab dev",
+    "lab:dev": "pnpm --filter @sapienx/core-lab dev",
+    "lint": "eslint .",
+    "pack:all": "pnpm -r --if-present run pack",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "saas-core": "tsx packages/cli/src/index.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^22.15.21",
+    "eslint": "^9.35.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.42.0",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "zod": "^3.25.76"
+  }
+}

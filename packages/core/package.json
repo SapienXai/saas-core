@@ -1,0 +1,21 @@
+{
+  "name": "@sapienx/saas-core",
+  "version": "1.0.0",
+  "description": "Provider-neutral SaaS tenancy, permissions, entitlements, usage, billing, domains, audit and platform primitives",
+  "type": "module",
+  "bin": { "saas-core": "./dist/cli.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "pack": "pnpm build && pnpm pack --pack-destination ../../artifacts"
+  }
+}

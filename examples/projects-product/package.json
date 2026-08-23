@@ -1,0 +1,8 @@
+{
+  "name": "@sapienx/example-projects-product",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "tsc -p tsconfig.build.json" },
+  "dependencies": { "@sapienx/saas-core": "workspace:*", "@sapienx/saas-core-config": "workspace:*" }
+}
