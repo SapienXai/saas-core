@@ -5,9 +5,133 @@ import type { Subscription } from "./types.js"
 export type BillingEnvironment = "sandbox" | "live"
 export type BillingInterval = "month" | "year"
 
+export type PaddlePriceMapping = {
+  planKey: string
+  interval: BillingInterval
+  currency: string
+  environment: BillingEnvironment
+  providerPriceId: string
+  active?: boolean
+}
+
+export type PaddleSubscriptionSnapshot = {
+  providerSubscriptionId: string
+  providerCustomerId: string | null
+  environment: BillingEnvironment
+  status: Subscription["status"]
+  planKey: string
+  providerPriceId: string
+  interval: BillingInterval
+  currency: string
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  scheduledPlanKey: string | null
+  scheduledPlanAt: string | null
+  occurredAt: string
+}
+
+export type BillingWebhookRecord = {
+  provider: "paddle"
+  providerEventId: string
+  eventType: string
+  occurredAt: string
+  payload: Record<string, unknown>
+  status: "received" | "processing" | "processed" | "ignored" | "failed"
+  attempts: number
+  errorCode: string | null
+  errorMessage: string | null
+  processedAt: string | null
+}
+
+export type BillingWebhookStore = {
+  insert(record: BillingWebhookRecord): Promise<{ inserted: boolean; record: BillingWebhookRecord }>
+  markProcessing(eventId: string): Promise<void>
+  markProcessed(eventId: string): Promise<void>
+  markIgnored(eventId: string, reason: string): Promise<void>
+  markFailed(eventId: string, error: { code: string; message: string }): Promise<void>
+}
+
+export function resolvePaddlePrice(input: { planKey: string; interval: BillingInterval; currency: string; environment: BillingEnvironment; mappings: Iterable<PaddlePriceMapping> }): PaddlePriceMapping {
+  const match = [...input.mappings].find((mapping) => mapping.active !== false && mapping.planKey === input.planKey && mapping.interval === input.interval && mapping.currency.toUpperCase() === input.currency.toUpperCase() && mapping.environment === input.environment)
+  if (!match) throw new CoreError("BILLING_UNAVAILABLE", "No active provider price is registered for the requested Core plan.", { planKey: input.planKey, interval: input.interval, currency: input.currency, environment: input.environment })
+  return match
+}
+
+export function getPaymentGraceEndsAt(startedAt: string, days = 14): string {
+  const start = new Date(startedAt)
+  if (!Number.isFinite(start.getTime())) throw new CoreError("BILLING_UNAVAILABLE", "Payment failure timestamp is invalid.")
+  return new Date(start.getTime() + days * 86400000).toISOString()
+}
+
+export function isPaymentGraceExpired(graceEndsAt: string | null | undefined, now = new Date()): boolean {
+  if (!graceEndsAt) return false
+  const end = new Date(graceEndsAt)
+  return Number.isFinite(end.getTime()) && end.getTime() <= now.getTime()
+}
+
+export function applyPaddleSubscriptionSnapshot(subscription: Subscription, snapshot: PaddleSubscriptionSnapshot, now = new Date()): Subscription {
+  if (subscription.lastProviderEventAt && new Date(snapshot.occurredAt).getTime() <= new Date(subscription.lastProviderEventAt).getTime()) return subscription
+  const paymentFailureStartedAt = snapshot.status === "past_due" ? subscription.paymentFailureStartedAt ?? snapshot.occurredAt : null
+  const paymentGraceEndsAt = paymentFailureStartedAt ? subscription.paymentGraceEndsAt ?? getPaymentGraceEndsAt(paymentFailureStartedAt) : null
+  const graceExpired = snapshot.status === "past_due" && isPaymentGraceExpired(paymentGraceEndsAt, now)
+  return {
+    ...subscription,
+    planKey: graceExpired || snapshot.status === "paused" || snapshot.status === "canceled" ? "free" : snapshot.planKey,
+    status: snapshot.status,
+    source: "paddle",
+    provider: "paddle",
+    providerEnvironment: snapshot.environment,
+    providerCustomerId: snapshot.providerCustomerId,
+    providerSubscriptionId: snapshot.providerSubscriptionId,
+    currentPeriodStart: snapshot.currentPeriodStart,
+    currentPeriodEnd: snapshot.currentPeriodEnd,
+    scheduledPlanKey: snapshot.scheduledPlanKey,
+    scheduledPlanAt: snapshot.scheduledPlanAt,
+    billingInterval: snapshot.interval,
+    billingCurrency: snapshot.currency,
+    providerPriceId: snapshot.providerPriceId,
+    paymentFailureStartedAt,
+    paymentGraceEndsAt,
+    billingIssueCode: snapshot.status === "past_due" ? (graceExpired ? "grace_expired" : "past_due") : null,
+    lastProviderEventAt: snapshot.occurredAt,
+    lastProviderEventId: `paddle:${snapshot.providerSubscriptionId}:${snapshot.occurredAt}`,
+  }
+}
+
+export function subscriptionNeedsReconciliation(input: { local: Subscription; provider: PaddleSubscriptionSnapshot }): string[] {
+  const differences: string[] = []
+  if (input.local.providerSubscriptionId !== input.provider.providerSubscriptionId) differences.push("provider_subscription_id")
+  if (input.local.status !== input.provider.status) differences.push("status")
+  if (input.local.providerPriceId !== input.provider.providerPriceId) differences.push("provider_price_id")
+  if (input.local.billingInterval !== input.provider.interval) differences.push("interval")
+  if (input.local.billingCurrency?.toUpperCase() !== input.provider.currency.toUpperCase()) differences.push("currency")
+  if (input.local.scheduledPlanKey !== input.provider.scheduledPlanKey) differences.push("scheduled_plan")
+  if (input.local.scheduledPlanAt !== input.provider.scheduledPlanAt) differences.push("scheduled_effective_at")
+  return differences
+}
+
+export async function processDurableBillingWebhook(input: {
+  store: BillingWebhookStore
+  record: BillingWebhookRecord
+  apply: (record: BillingWebhookRecord) => Promise<void>
+}): Promise<"processed" | "duplicate" | "ignored" | "failed"> {
+  const inserted = await input.store.insert(input.record)
+  if (!inserted.inserted || inserted.record.status === "processed" || inserted.record.status === "ignored") return inserted.record.status === "processed" ? "duplicate" : "ignored"
+  await input.store.markProcessing(input.record.providerEventId)
+  try {
+    await input.apply(input.record)
+    await input.store.markProcessed(input.record.providerEventId)
+    return "processed"
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Billing webhook processing failed."
+    await input.store.markFailed(input.record.providerEventId, { code: error instanceof CoreError ? error.code : "BILLING_PROCESSING_FAILED", message })
+    return "failed"
+  }
+}
+
 export type BillingProvider = {
   readonly name: "paddle" | (string & {})
-  createCheckout(input: { customerId?: string | null; priceId: string; returnUrl: string }): Promise<{ checkoutUrl: string }>
+  createCheckout(input: { customerId?: string | null; priceId: string; returnUrl: string; idempotencyKey?: string }): Promise<{ checkoutUrl: string }>
   createPortalSession(input: { customerId: string; returnUrl: string }): Promise<{ portalUrl: string }>
   cancelAtPeriodEnd(subscriptionId: string): Promise<void>
 }
@@ -76,9 +200,8 @@ export class PaddleBillingProvider implements BillingProvider {
     return response.json() as Promise<T>
   }
 
-  async createCheckout(input: { customerId?: string | null; priceId: string; returnUrl: string }) {
-    // Paddle checkout is intentionally created by a server-side provider adapter.
-    const result = await this.request<{ data: { id: string } }>("/transactions", { method: "POST", body: JSON.stringify({ items: [{ price_id: input.priceId, quantity: 1 }], customer_id: input.customerId ?? undefined, checkout: { url: input.returnUrl } }) })
+  async createCheckout(input: { customerId?: string | null; priceId: string; returnUrl: string; idempotencyKey?: string }) {
+    const result = await this.request<{ data: { id: string } }>("/transactions", { method: "POST", headers: input.idempotencyKey ? { "Idempotency-Key": input.idempotencyKey } : {}, body: JSON.stringify({ items: [{ price_id: input.priceId, quantity: 1 }], customer_id: input.customerId ?? undefined, checkout: { url: input.returnUrl } }) })
     return { checkoutUrl: `${input.returnUrl}?transaction=${encodeURIComponent(result.data.id)}` }
   }
 
@@ -90,4 +213,18 @@ export class PaddleBillingProvider implements BillingProvider {
   async cancelAtPeriodEnd(subscriptionId: string) {
     await this.request(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: "PATCH", body: JSON.stringify({ scheduled_change: { action: "cancel", resume_at: null } }) })
   }
+}
+
+export async function createMappedCheckout(input: {
+  provider: BillingProvider
+  planKey: string
+  interval: BillingInterval
+  currency: string
+  environment: BillingEnvironment
+  mappings: Iterable<PaddlePriceMapping>
+  customerId?: string | null
+  returnUrl: string
+}) {
+  const mapping = resolvePaddlePrice(input)
+  return input.provider.createCheckout({ customerId: input.customerId ?? null, priceId: mapping.providerPriceId, returnUrl: input.returnUrl, idempotencyKey: `${input.planKey}:${input.interval}:${input.customerId ?? "new"}:${input.returnUrl}` })
 }

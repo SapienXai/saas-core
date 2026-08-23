@@ -11,3 +11,6 @@ export function getStatusLabel(status: string): { label: string; tone: StatusTon
   if (["failed", "error", "blocked"].includes(status)) return { label: status, tone: "danger" }
   return { label: status, tone: "neutral" }
 }
+
+export { AppShell, BillingStatus, EmptyState, ErrorState, LoadingState, PlanCard, StatusBadge, UsageMeter, WorkspaceSwitcher } from "./components.js"
+export type { AppShellProps, WorkspaceOption } from "./components.js"

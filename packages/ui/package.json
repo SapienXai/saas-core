@@ -1,1 +1,13 @@
-{"name":"@sapienx/saas-core-ui","version":"1.0.0","type":"module","main":"./dist/index.js","types":"./dist/index.d.ts","exports":{".":{"types":"./dist/index.d.ts","import":"./dist/index.js"}},"files":["dist"],"scripts":{"build":"tsc -p tsconfig.build.json","clean":"rm -rf dist","pack":"pnpm build && pnpm pack --pack-destination ../../artifacts"}}
+{
+  "name": "@sapienx/saas-core-ui",
+  "version": "1.0.0",
+  "description": "Brand-configurable React shell primitives for SaaS Core applications",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": { "build": "tsc -p tsconfig.build.json", "clean": "rm -rf dist", "pack": "pnpm build && pnpm pack --pack-destination ../../artifacts" },
+  "peerDependencies": { "react": ">=18" },
+  "devDependencies": { "@types/react": "^19.2.18", "react": "^19.2.8" }
+}
