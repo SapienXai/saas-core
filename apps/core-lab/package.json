@@ -3,5 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "node server.mjs", "build": "node -e \"console.log('Core Lab static build ready')\"", "start": "node server.mjs" }
+  "scripts": { "dev": "pnpm --filter @sapienx/saas-core build && node server.mjs", "build": "pnpm --filter @sapienx/saas-core build", "start": "node server.mjs" },
+  "dependencies": { "@sapienx/saas-core": "workspace:*" }
 }
