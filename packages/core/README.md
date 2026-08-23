@@ -5,5 +5,7 @@ platform services; a product owns its domain entities and can register its own
 feature keys, usage metrics, lifecycle stages, and scope adapters.
 
 The package has no database or UI dependency. Use `InMemorySaaSStore` for local
-scenarios/tests and implement the same service contracts with Supabase in a
-server-only application boundary.
+scenarios/tests. Production applications use the companion
+`@sapienx/saas-core-runtime` package, which owns the server-only Supabase
+runtime, authenticated repositories and RPC calls without coupling product
+domain tables to Core.

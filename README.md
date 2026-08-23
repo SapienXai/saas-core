@@ -33,14 +33,16 @@ Workspace → Product-owned Projects
 - Supabase migration ownership separated from product migrations, with RLS,
   server-derived identity predicates, database-owned plans, subscription state,
   usage periods, audit events and platform roles.
-- An in-memory reference store for deterministic Core Lab and unit tests.
+- A first-class `@sapienx/saas-core-runtime` package with Supabase browser/server/service-role clients, PKCE cookie handling and Core repositories.
+- Authenticated database RPCs for workspace, membership, invitation, entitlement, usage, domain, PWA and push mutations.
+- An in-memory reference store for deterministic Core Lab and unit tests; the Lab reports actual executed operations and results.
 - Paddle provider boundary; local subscription and entitlement state remains the
   runtime authorization source.
 - Hashed, expiring, one-use invitations with pending seat reservation.
 - Optional hostname, branding/PWA and notification provider boundaries.
 - Core Lab: a responsive internal playground and scenario runner.
 - CLI: `init`, `update`, `doctor`, `diff`, `info` and `test`.
-- CI jobs for lint, typecheck, unit tests, build and package packing.
+- CI jobs for lint, typecheck, unit, build, packed-install, local-Supabase RLS, browser auth smoke and Core Lab execution.
 
 ## Quick start
 
@@ -55,9 +57,30 @@ To scaffold a product project from the published package:
 ```bash
 npx @sapienx/saas-core init projects-app
 cd projects-app
+cp .env.example .env.local
 pnpm install
-saas-core doctor
+supabase start
+supabase db reset
+pnpm dev
 ```
+
+The generated project is a real Next.js App Router application. It includes
+Supabase SSR/PKCE auth routes, protected middleware, onboarding, the reusable
+Core UI shell, workspace/team/plan/settings/platform routes and the ordered
+Core migrations. Use local packed artifacts during repository development with
+`SAAS_CORE_TARBALL_DIR=/path/to/saas-core/artifacts`.
+
+```bash
+saas-core doctor
+saas-core diff
+saas-core test
+saas-core update --dry-run
+```
+
+`doctor` distinguishes missing credentials from a passing check and never
+prints secret values. `update` creates a recoverable checkpoint, updates only
+unmodified managed files and reports product-owned conflicts; database
+migrations remain in the normal Supabase migration workflow.
 
 The CLI never silently overwrites an existing file. It records managed file
 hashes in `.saas-core.json`; product-owned files are explicitly kept outside
@@ -68,15 +91,15 @@ the managed boundary.
 | Command | Purpose |
 | --- | --- |
 | `saas-core init [directory]` | Safe fresh or existing-project scaffolding |
-| `saas-core update` | Backup, update Core metadata and report migration handoff |
-| `saas-core doctor` | Runtime, config, schema, module and integrity checks |
-| `saas-core diff` | Detect drift in managed files only |
+| `saas-core update [--dry-run]` | Checkpoint and conflict-safe managed-file upgrade |
+| `saas-core doctor` | Environment, config, schema, credentials and drift checks |
+| `saas-core diff` | Classify managed/generated/package drift |
 | `saas-core info` | Version, schema, modules, providers and secret-free environment summary |
 | `saas-core test` | Installed-project integrity checks |
 
-`init` supports non-interactive usage by default, so it is safe in CI. It uses
-Sensible defaults: Supabase for auth/database, Paddle Sandbox for billing,
-Resend for email and Web Push as an optional provider.
+`init` supports `--yes`, `--non-interactive` and `--dry-run`, so it is usable in
+CI as well as interactively. Defaults are Supabase for auth/database, Paddle
+Sandbox for billing, Resend for email and optional Web Push/Vercel domains.
 
 ## Architecture and ownership
 
@@ -106,10 +129,11 @@ supabase/        core-owned SQL migrations and local seed catalog
 examples/        product integration example
 ```
 
-`packages/core` has no framework or database client dependency. A real product
-implements its server-only Supabase adapter against the same contracts. Browser
-IDs are selectors, never authorization evidence. RLS is defense in depth, not a
-replacement for application authorization.
+`packages/core` remains framework-neutral. The runtime package owns the
+server-only Supabase integration so a product supplies credentials and calls
+Core repositories rather than reimplementing auth/session plumbing. Browser
+IDs are selectors, never authorization evidence. RLS and SECURITY DEFINER RPCs
+are defense in depth and enforce the same role/tenant rules as the application.
 
 ## Tenancy, roles and invitations
 
@@ -120,9 +144,9 @@ Platform roles are separate: `platform_owner`, `platform_admin`,
 must not become implicit impersonation.
 
 Invitation rows contain normalized email and a SHA-256 token hash only. Tokens
-expire, cannot be replayed, reject the wrong email, and count against the plan
-seat limit while pending. Acceptance is intended to be one transactional
-server/database operation in a production adapter.
+expire, cannot be replayed, reject the wrong email, rotate on resend, enforce a
+cooldown and count against the plan seat limit while pending. Acceptance is a
+transactional database operation with seat locking and duplicate protection.
 
 ## Plans, entitlements, usage and billing
 
@@ -135,9 +159,9 @@ past_due after grace / paused / canceled → Free
 ```
 
 `null` means unlimited. Usage is period-scoped and the SQL migration provides a
-row-locking `private.consume_usage` function for atomic increments. Paddle is a
-provider adapter only: signed, idempotent and ordered events update
-`workspace_subscriptions`; product authorization reads local state.
+row-locking `consume_usage` RPC for atomic increments against the effective
+plan. Paddle is provider evidence: raw signed events enter a durable inbox,
+duplicate/old events are rejected, and product authorization reads local state.
 
 ## Database
 
@@ -147,6 +171,10 @@ Apply the core migration through the product's normal ordered Supabase stream:
 supabase db reset
 supabase migration up
 ```
+
+Fresh local projects should use `supabase start` followed by `supabase db reset`.
+The repository migration is the canonical security contract; generated apps
+receive the same bundled Core migration files from the CLI package.
 
 The core migration owns tables with no product meaning: `workspaces`,
 `workspace_members`, `plans`, `workspace_subscriptions`, invitations, usage,
@@ -162,9 +190,10 @@ pnpm lab:dev
 ```
 
 The Lab contains overview, access, commercial, Platform Control, services and
-security sections, deterministic fixture snapshots and scenario results. It is
-an internal verification surface, not a customer product and it does not seed
-fixtures into production.
+security sections. Its scenario endpoint executes the Core operations on a
+fresh deterministic in-memory fixture and returns status, duration, expected
+result, actual result, operation and error code. It is an internal verification
+surface, not a customer product and it does not seed fixtures into production.
 
 ## Configuration and providers
 
@@ -206,6 +235,17 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm pack:all
+```
+
+For the authenticated database suite, start a fresh local Supabase instance
+and opt in explicitly:
+
+```bash
+supabase start
+supabase db reset
+SAAS_CORE_DB_INTEGRATION=1 SUPABASE_URL=http://127.0.0.1:54321 \
+  SUPABASE_ANON_KEY=<local-anon-key> SUPABASE_SERVICE_ROLE_KEY=<local-service-key> \
+  pnpm test -- tests/database.integration.test.ts
 ```
 
 Live Paddle, Resend, Vercel, DNS, Web Push and cloud Supabase integration are
