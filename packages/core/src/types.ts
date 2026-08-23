@@ -98,6 +98,9 @@ export type Subscription = {
   paymentFailureStartedAt: string | null
   paymentGraceEndsAt: string | null
   billingIssueCode: string | null
+  billingInterval?: "month" | "year" | null
+  billingCurrency?: string | null
+  providerPriceId?: string | null
   lastProviderEventAt: string | null
   lastProviderEventId: string | null
 }

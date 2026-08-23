@@ -15,10 +15,10 @@ export function resolveEffectivePlanKey(input: {
   const now = input.now ?? new Date()
   const override = input.override
   if (override && !override.revokedAt && new Date(override.effectiveFrom) <= now && (!override.effectiveUntil || new Date(override.effectiveUntil) > now)) return override.planKey
-  if (isGraceExpired(input.subscription, now)) return "free"
   if (input.subscription.status === "paused" || input.subscription.status === "canceled") return "free"
   const scheduledAt = input.subscription.scheduledPlanAt ? new Date(input.subscription.scheduledPlanAt) : null
   if (input.subscription.scheduledPlanKey && scheduledAt && Number.isFinite(scheduledAt.getTime()) && scheduledAt <= now) return input.subscription.scheduledPlanKey
+  if (isGraceExpired(input.subscription, now)) return "free"
   return input.subscription.planKey
 }
 

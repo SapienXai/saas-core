@@ -7,5 +7,5 @@
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
   "files": ["dist"],
   "scripts": { "build": "tsc -p tsconfig.build.json", "clean": "rm -rf dist", "pack": "pnpm build && pnpm pack --pack-destination ../../artifacts" },
-  "dependencies": { "@sapienx/saas-core": "workspace:*" }
+  "dependencies": { "@sapienx/saas-core": "workspace:*", "@sapienx/saas-core-runtime": "workspace:*" }
 }

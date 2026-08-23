@@ -1,4 +1,15 @@
 import { CoreError } from "@sapienx/saas-core"
+export {
+  createBrowserSupabaseClient,
+  createNextServerSupabaseClient,
+  createServerSupabaseClient,
+  createServiceRoleSupabaseClient,
+  getCurrentUser,
+  getSupabaseRuntimeConfig,
+  requireUser as requireSupabaseUser,
+  safeRedirect,
+} from "@sapienx/saas-core-runtime"
+export type { CoreCookieStore, CoreSupabaseClient, SupabaseRuntimeConfig } from "@sapienx/saas-core-runtime"
 
 export type AuthSession = { userId: string; expiresAt: string; aal?: "aal1" | "aal2" }
 export type AuthAdapter = {
@@ -18,6 +29,37 @@ export type SupabaseAuthClient = {
     signInWithPassword(input: { email: string; password: string }): Promise<{ error: { message: string } | null }>
     signOut(): Promise<{ error: { message: string } | null }>
     resetPasswordForEmail(email: string, options: { redirectTo: string }): Promise<{ error: { message: string } | null }>
+  }
+}
+
+export type AuthActions = {
+  signUp(input: { email: string; password: string; redirectTo: string }): Promise<{ userId: string | null; confirmationRequired: boolean }>
+  signIn(input: { email: string; password: string }): Promise<void>
+  signOut(): Promise<void>
+  requestPasswordReset(input: { email: string; redirectTo: string }): Promise<void>
+  updatePassword(password: string): Promise<void>
+}
+
+export function createAuthActions(client: {
+  auth: {
+    signUp(input: { email: string; password: string; options: { emailRedirectTo: string } }): Promise<{ data?: { user?: { id: string } | null }; error: { message: string } | null }>
+    signInWithPassword(input: { email: string; password: string }): Promise<{ error: { message: string } | null }>
+    signOut(): Promise<{ error: { message: string } | null }>
+    resetPasswordForEmail(email: string, options: { redirectTo: string }): Promise<{ error: { message: string } | null }>
+    updateUser(input: { password: string }): Promise<{ error: { message: string } | null }>
+  }
+}): AuthActions {
+  const assert = (error: { message: string } | null, code = "CONFIGURATION_ERROR") => { if (error) throw new CoreError(code as "CONFIGURATION_ERROR", "Authentication request failed.") }
+  return {
+    async signUp(input) {
+      const result = await client.auth.signUp({ email: input.email, password: input.password, options: { emailRedirectTo: input.redirectTo } })
+      assert(result.error)
+      return { userId: result.data?.user?.id ?? null, confirmationRequired: !result.data?.user }
+    },
+    async signIn(input) { assert((await client.auth.signInWithPassword(input)).error, "UNAUTHENTICATED") },
+    async signOut() { assert((await client.auth.signOut()).error) },
+    async requestPasswordReset(input) { assert((await client.auth.resetPasswordForEmail(input.email, { redirectTo: input.redirectTo })).error) },
+    async updatePassword(password) { if (password.length < 8) throw new CoreError("CONFIGURATION_ERROR", "Password must contain at least 8 characters."); assert((await client.auth.updateUser({ password })).error) },
   }
 }
 

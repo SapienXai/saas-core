@@ -1,4 +1,5 @@
 import { CoreError } from "./errors.js"
+import { domainToASCII } from "node:url"
 
 export function normalizeEmail(value: string): string {
   const email = value.trim().toLowerCase()
@@ -31,6 +32,7 @@ export function normalizeHostname(value: string, options: {
   rootDomain?: string
   appDomain?: string
   allowLocalhost?: boolean
+  reservedHosts?: readonly string[]
 } = {}): string {
   const raw = value.trim()
   if (!raw || /[\s#?*]/.test(raw) || (!raw.includes("://") && raw.includes("/"))) {
@@ -45,7 +47,7 @@ export function normalizeHostname(value: string, options: {
   if (!(["http:", "https:"].includes(parsed.protocol)) || parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
     throw new CoreError("DOMAIN_ERROR", "Only a hostname is allowed.")
   }
-  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "")
+  const hostname = domainToASCII(parsed.hostname.toLowerCase().replace(/\.$/, "")).toLowerCase()
   if (!validHostname(hostname) || isIp(hostname)) throw new CoreError("DOMAIN_ERROR", "IP addresses are not valid customer domains.")
   if (!options.allowLocalhost && (hostname === "localhost" || hostname.endsWith(".localhost"))) {
     throw new CoreError("DOMAIN_ERROR", "Localhost cannot be connected as a customer domain.")
@@ -55,6 +57,8 @@ export function normalizeHostname(value: string, options: {
   if (root && (hostname === root || hostname === `www.${root}` || hostname.endsWith(`.${root}`) || hostname === app)) {
     throw new CoreError("DOMAIN_ERROR", "Platform-owned hostnames cannot be connected.")
   }
+  const reserved = new Set(["www", "app", "api", "admin", "platform", "mail", ...(options.reservedHosts ?? [])].map((entry) => entry.toLowerCase().replace(/\.$/, "")))
+  if (reserved.has(hostname) || [...reserved].some((entry) => hostname.endsWith(`.${entry}`))) throw new CoreError("DOMAIN_ERROR", "This hostname is reserved by the platform.")
   return hostname
 }
 
