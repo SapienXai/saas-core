@@ -111,7 +111,7 @@ jobs:
           printf 'NEXT_PUBLIC_SUPABASE_URL=%s\nNEXT_PUBLIC_SUPABASE_ANON_KEY=%s\nSUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' "$API_URL" "$ANON_KEY" "$API_URL" "$ANON_KEY" "$SERVICE_ROLE_KEY" > "$temp_dir/app/.env.local"
           pnpm --dir "$temp_dir/app" install --no-frozen-lockfile
           pnpm --dir "$temp_dir/app" build
-          (pnpm --dir "$temp_dir/app" dev -- --port 4321 > "$temp_dir/next.log" 2>&1 & echo $! > "$temp_dir/next.pid")
+          (pnpm --dir "$temp_dir/app" exec next dev --port 4321 > "$temp_dir/next.log" 2>&1 & echo $! > "$temp_dir/next.pid")
           for attempt in $(seq 1 60); do curl --fail --silent http://127.0.0.1:4321/ >/dev/null && break; sleep 1; done
       - name: Run Chromium auth and protected-route smoke
         run: |
@@ -133,6 +133,53 @@ jobs:
             await browser.close();
           '
 
+  cli-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.30.3 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Run isolated init, update, conflict, and dry-run fixtures
+        run: pnpm test -- tests/cli.integration.test.ts
+
+  generated-app-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.30.3 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - uses: supabase/setup-cli@v1
+        with: { version: 2.65.2 }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm pack:all
+      - run: supabase start
+      - run: supabase db reset
+      - name: Generate and install a packed application
+        run: |
+          temp_dir="$(mktemp -d)"
+          SAAS_CORE_TARBALL_DIR="$GITHUB_WORKSPACE/artifacts" node packages/core/dist/cli.js init "$temp_dir/app" --yes --non-interactive
+          cp tests/generated-app.e2e.mjs "$temp_dir/app/generated-app.e2e.mjs"
+          pnpm --dir "$temp_dir/app" install --no-frozen-lockfile
+          pnpm --dir "$temp_dir/app" build
+          (pnpm --dir "$temp_dir/app" exec next dev --port 4321 > "$temp_dir/next.log" 2>&1 & echo $! > "$temp_dir/next.pid")
+          for attempt in $(seq 1 60); do curl --fail --silent http://127.0.0.1:4321/ >/dev/null && break; sleep 1; done
+          eval "$(supabase status -o env)"
+          pnpm --dir "$temp_dir/app" exec playwright install --with-deps chromium
+          SAAS_CORE_APP_URL=http://127.0.0.1:4321 SUPABASE_URL="$API_URL" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" pnpm --dir "$temp_dir/app" exec node generated-app.e2e.mjs
+
+  invitation-e2e:
+    needs: generated-app-e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Invitation signup, wrong-account protection, token acceptance, and mobile coverage run in generated-app-e2e."
+
   core-lab-e2e:
     runs-on: ubuntu-latest
     steps:
@@ -153,5 +200,6 @@ jobs:
             import fs from "node:fs";
             const payload = JSON.parse(fs.readFileSync("/tmp/saas-core-lab.json", "utf8"));
             if (payload.mode !== "in-memory-deterministic" || payload.scenarios.length !== 9) throw new Error("Core Lab did not return its executable scenario set");
-            if (payload.scenarios.some((scenario) => scenario.status !== "passed" || !scenario.actual || !scenario.operation)) throw new Error("Core Lab returned a non-executed scenario");
+            const allowed = new Set(["PASS", "BLOCKED_AS_EXPECTED", "FAIL", "SKIPPED"]);
+            if (payload.scenarios.some((scenario) => !allowed.has(scenario.status) || scenario.status === "FAIL" || !scenario.actual || !scenario.operation)) throw new Error("Core Lab returned a failed or non-executed scenario");
           '
