@@ -2,7 +2,7 @@ import { defineSaaSCore } from "@sapienx/saas-core-config"
 import type { Workspace } from "@sapienx/saas-core"
 
 export const coreConfig = defineSaaSCore({
-  version: "1.1.0",
+  version: "1.1.1",
   product: { key: "projects", name: "Projects" },
   auth: { provider: "supabase", requireEmailConfirmation: true },
   workspace: { slugSource: "user_input", defaultTimezone: "UTC" },

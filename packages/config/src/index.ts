@@ -4,7 +4,7 @@ import type { FeatureDefinition, MetricDefinition } from "@sapienx/saas-core"
 const providerSchema = z.object({ name: z.string().min(1), enabled: z.boolean().default(true) })
 
 export const saasCoreConfigSchema = z.object({
-  version: z.literal("1.1.0"),
+  version: z.literal("1.1.1"),
   product: z.object({ key: z.string().regex(/^[a-z][a-z0-9-]+$/), name: z.string().min(1), url: z.string().url().optional() }),
   auth: z.object({ provider: z.literal("supabase"), requireEmailConfirmation: z.boolean().default(true) }),
   workspace: z.object({ slugSource: z.enum(["server", "user_input"]).default("user_input"), defaultTimezone: z.string().default("UTC") }),
@@ -30,5 +30,5 @@ export function validateSaaSCoreConfig(input: unknown): { success: true; data: S
 }
 
 export function defaultSaaSCoreConfig(product: { key: string; name: string }): SaaSCoreConfig {
-  return defineSaaSCore({ version: "1.1.0", product, auth: { provider: "supabase", requireEmailConfirmation: true }, workspace: { slugSource: "user_input", defaultTimezone: "UTC" }, permissions: { custom: {} }, billing: { enabled: true, provider: "paddle", environment: "sandbox" }, entitlements: { features: [], metrics: [] }, usage: { enabled: true }, notifications: { email: { name: "resend", enabled: true }, push: { name: "web-push", enabled: false } }, domains: { enabled: false }, pwa: { enabled: false }, platform: { enabled: true, supportReadOnly: true } })
+  return defineSaaSCore({ version: "1.1.1", product, auth: { provider: "supabase", requireEmailConfirmation: true }, workspace: { slugSource: "user_input", defaultTimezone: "UTC" }, permissions: { custom: {} }, billing: { enabled: true, provider: "paddle", environment: "sandbox" }, entitlements: { features: [], metrics: [] }, usage: { enabled: true }, notifications: { email: { name: "resend", enabled: true }, push: { name: "web-push", enabled: false } }, domains: { enabled: false }, pwa: { enabled: false }, platform: { enabled: true, supportReadOnly: true } })
 }
