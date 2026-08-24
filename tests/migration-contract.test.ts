@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest"
 const migration = readFileSync(join(process.cwd(), "supabase/migrations/20260824000000_saas_core_v1.sql"), "utf8")
 const hardening = readFileSync(join(process.cwd(), "supabase/migrations/20260824010000_production_hardening.sql"), "utf8")
 const finalHardening = readFileSync(join(process.cwd(), "supabase/migrations/20260824020000_final_p0_hardening.sql"), "utf8")
+const v111Operations = readFileSync(join(process.cwd(), "supabase/migrations/20260824040000_v111_platform_operations.sql"), "utf8")
 
 describe("Core migration contract", () => {
   it("owns only product-neutral tables and enables tenant defense in depth", () => {
@@ -41,5 +42,18 @@ describe("Core migration contract", () => {
     expect(finalHardening).toContain("create or replace function public.platform_workspace_360")
     const workspace360 = finalHardening.slice(finalHardening.indexOf("create or replace function public.platform_workspace_360"), finalHardening.indexOf("create or replace function public.platform_list_users"))
     expect(workspace360).not.toContain("language plpgsql stable")
+  })
+
+  it("defines the v1.1.1 capability matrix and audited operator mutations", () => {
+    expect(v111Operations).toContain("current_user_has_platform_capability")
+    expect(v111Operations).toContain("if actor_role is null then return false")
+    expect(v111Operations).toContain("platform_attention_filtered")
+    expect(v111Operations).toContain("platform_create_override")
+    expect(v111Operations).toContain("platform_revoke_override")
+    expect(v111Operations).toContain("platform_apply_domain_reconciliation")
+    expect(v111Operations).toContain("platform_apply_subscription_reconciliation")
+    expect(v111Operations).toContain("platform.override.created")
+    expect(v111Operations).toContain("platform.billing.reconciled")
+    expect(v111Operations).toContain("values ('1.3.1', '1.1.1')")
   })
 })

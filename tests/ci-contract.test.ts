@@ -26,4 +26,9 @@ describe("GitHub Actions acceptance contracts", () => {
     expect(workflow).not.toContain("invitation-e2e:")
     expect(workflow).not.toContain("Invitation signup, wrong-account protection")
   })
+
+  it("keeps the authoritative release verification job in CI", () => {
+    expect(workflow).toContain("  release-verify:")
+    expect(workflow).toContain("pnpm release:verify")
+  })
 })

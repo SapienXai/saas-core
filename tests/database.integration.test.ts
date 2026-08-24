@@ -350,6 +350,108 @@ describe.skipIf(!enabled).sequential("SaaS Core authenticated Supabase integrati
     expect(audit.data?.length ?? 0).toBeGreaterThan(0)
   })
 
+  it("enforces the canonical platform capability matrix", async () => {
+    const f = requireFixture()
+    const roles = ["platform_owner", "platform_admin", "billing_admin", "support", "auditor"] as const
+    const roleUsers = f.users.slice(0, roles.length)
+    await f.service.from("platform_members").upsert(roleUsers.map((user, index) => ({ user_id: user.id, role: roles[index], status: "active" })))
+    const clients = await Promise.all(roleUsers.map((user) => signedInUser(user)))
+    const owner = clients[0]!
+    const admin = clients[1]!
+    const billing = clients[2]!
+    const support = clients[3]!
+    const auditor = clients[4]!
+    expect((await owner.rpc("platform_list_users")).error).toBeNull()
+    expect((await admin.rpc("platform_list_domains")).error).toBeNull()
+    expect((await billing.rpc("platform_list_subscriptions")).error).toBeNull()
+    expect((await billing.rpc("platform_list_overrides")).error).toBeNull()
+    await rpcError(billing, "platform_list_workspaces", {})
+    await rpcError(billing, "platform_list_users", {})
+    await rpcError(billing, "platform_list_domains", {})
+    await rpcError(billing, "platform_list_audit", {})
+    expect((await support.rpc("platform_list_users")).error).toBeNull()
+    expect((await support.rpc("platform_list_domains")).error).toBeNull()
+    await rpcError(support, "platform_list_subscriptions", {})
+    await rpcError(support, "platform_create_override", { target_workspace: f.workspaces[0], target_plan_key: f.planKey, target_reason: "not allowed" })
+    expect((await auditor.rpc("platform_list_audit")).error).toBeNull()
+    expect((await auditor.rpc("platform_health_snapshot")).error).toBeNull()
+    await rpcError(auditor, "platform_list_users", {})
+    await rpcError(auditor, "platform_list_subscriptions", {})
+    await rpcError(auditor, "platform_create_override", { target_workspace: f.workspaces[0], target_plan_key: f.planKey, target_reason: "not allowed" })
+    const ordinary = await signedInUser(f.users[5]!)
+    await rpcError(ordinary, "platform_list_workspaces", {})
+    await f.service.from("platform_members").delete().in("user_id", roleUsers.map((user) => user.id))
+  })
+
+  it("audits platform mutations and enforces billing/domain operation boundaries", async () => {
+    const f = requireFixture()
+    await f.service.from("platform_members").upsert([
+      { user_id: f.users[0]!.id, role: "platform_owner", status: "active" },
+      { user_id: f.users[2]!.id, role: "billing_admin", status: "active" },
+      { user_id: f.users[3]!.id, role: "support", status: "active" },
+    ])
+    const owner = await signedInUser(f.users[0]!)
+    const billing = await signedInUser(f.users[2]!)
+    const support = await signedInUser(f.users[3]!)
+    const operationId = `db-override-${Date.now()}`
+    const created = await owner.rpc("platform_create_override", { target_workspace: f.workspaces[0], target_plan_key: f.planKey, target_reason: "Authenticated DB test", target_effective_until: new Date(Date.now() + 86400000).toISOString(), target_operation_id: operationId })
+    expect(created.error).toBeNull()
+    const override = (Array.isArray(created.data) ? created.data[0] : created.data) as { id: string }
+    expect((await billing.rpc("platform_list_overrides", { target_state: "active" })).error).toBeNull()
+    const revoked = await billing.rpc("platform_revoke_override", { target_override: override.id, target_reason: "DB test cleanup", target_operation_id: `${operationId}-revoke` })
+    expect(revoked.error).toBeNull()
+    await rpcError(support, "platform_revoke_override", { target_override: override.id, target_reason: "support is read-only" })
+    const audit = await f.service.from("audit_events").select("action,reason,metadata").in("action", ["platform.override.created", "platform.override.revoked"]).eq("entity_id", override.id).order("created_at", { ascending: true })
+    expect(audit.error).toBeNull()
+    const auditRows = (audit.data ?? []) as Array<{ action: string; metadata: Record<string, unknown> }>
+    expect(auditRows.map((row) => row.action)).toEqual(["platform.override.created", "platform.override.revoked"])
+    expect(auditRows[0]?.metadata).toMatchObject({ operationId })
+    const domainWorkspaceId = await createWorkspace(owner, "Platform Domain Boundary")
+    const domain = await f.service.from("workspace_domains").insert({ workspace_id: domainWorkspaceId, hostname: `platform-${Date.now()}.example.com` }).select("id").single()
+    expect(domain.error).toBeNull()
+    const state = await owner.rpc("platform_apply_domain_reconciliation", { target_domain: domain.data!.id, target_provider_domain_id: "mock-provider-id", target_status: "pending", target_verification_state: "pending", target_dns_configured: false, target_ssl_state: "pending", target_last_error: null, target_operation_id: `${operationId}-domain` })
+    expect(state.error).toBeNull()
+    await rpcError(support, "platform_apply_domain_reconciliation", { target_domain: domain.data!.id, target_status: "pending", target_verification_state: "pending", target_dns_configured: false, target_ssl_state: "pending", target_last_error: null })
+    await f.service.from("workspace_domains").delete().eq("id", domain.data!.id)
+    await f.service.from("platform_members").delete().in("user_id", [f.users[0]!.id, f.users[2]!.id, f.users[3]!.id])
+  })
+
+  it("scopes search and attention results to the operator role", async () => {
+    const f = requireFixture()
+    await f.service.from("platform_members").upsert([
+      { user_id: f.users[0]!.id, role: "platform_owner", status: "active" },
+      { user_id: f.users[2]!.id, role: "billing_admin", status: "active" },
+      { user_id: f.users[3]!.id, role: "support", status: "active" },
+    ])
+    const owner = await signedInUser(f.users[0]!)
+    const billing = await signedInUser(f.users[2]!)
+    const support = await signedInUser(f.users[3]!)
+    const domainWorkspaceId = await createWorkspace(owner, "Platform Attention Boundary")
+    const providerUpdate = await f.service.from("workspace_subscriptions").update({ provider: "paddle", provider_customer_id: "cus-role-matrix", provider_subscription_id: "sub-role-matrix", status: "past_due", payment_grace_ends_at: new Date(Date.now() + 86400000).toISOString() }).eq("workspace_id", f.workspaces[0])
+    expect(providerUpdate.error).toBeNull()
+    const domain = await f.service.from("workspace_domains").insert({ workspace_id: domainWorkspaceId, hostname: `attention-${Date.now()}.example.com`, status: "error", verification_state: "failed" }).select("id").single()
+    expect(domain.error).toBeNull()
+    const billingSearch = await billing.rpc("platform_search", { target_query: "cus-role-matrix", target_limit: 10 })
+    expect(billingSearch.error).toBeNull()
+    const billingSearchRows = (billingSearch.data ?? []) as Array<{ result_type: string }>
+    expect(billingSearchRows.every((row) => row.result_type === "billing")).toBe(true)
+    const billingAttention = await billing.rpc("platform_attention", { target_limit: 20 })
+    expect(billingAttention.error).toBeNull()
+    const billingAttentionRows = (billingAttention.data ?? []) as Array<{ issue_type: string }>
+    expect(billingAttentionRows.every((row) => ["payment", "billing_webhook", "override"].includes(row.issue_type))).toBe(true)
+    const supportAttention = await support.rpc("platform_attention", { target_limit: 20 })
+    expect(supportAttention.error).toBeNull()
+    const supportAttentionRows = (supportAttention.data ?? []) as Array<{ issue_type: string }>
+    expect(supportAttentionRows.some((row) => row.issue_type === "domain")).toBe(true)
+    const ownerSearch = await owner.rpc("platform_search", { target_query: "attention-", target_limit: 10 })
+    expect(ownerSearch.error).toBeNull()
+    const ownerSearchRows = (ownerSearch.data ?? []) as Array<{ result_type: string }>
+    expect(ownerSearchRows.some((row) => row.result_type === "domain")).toBe(true)
+    await f.service.from("workspace_domains").delete().eq("id", domain.data!.id)
+    await f.service.from("workspace_subscriptions").update({ provider: null, provider_customer_id: null, provider_subscription_id: null, status: "active", payment_grace_ends_at: null }).eq("workspace_id", f.workspaces[0])
+    await f.service.from("platform_members").delete().in("user_id", [f.users[0]!.id, f.users[2]!.id, f.users[3]!.id])
+  })
+
   it("keeps concurrent usage increments at the configured limit", async () => {
     const f = requireFixture()
     const ownerClient = await signedInUser(f.users[0]!)
