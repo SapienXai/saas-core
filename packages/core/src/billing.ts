@@ -147,6 +147,7 @@ export type BillingProvider = {
   createPortalSession(input: { customerId: string; returnUrl: string }): Promise<{ portalUrl: string }>
   cancelAtPeriodEnd(subscriptionId: string): Promise<void>
   resume?(subscriptionId: string): Promise<void>
+  getSubscription?(subscriptionId: string): Promise<Record<string, unknown>>
 }
 
 export type NormalizedBillingEvent = {
@@ -229,6 +230,11 @@ export class PaddleBillingProvider implements BillingProvider {
 
   async resume(subscriptionId: string) {
     await this.request(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: "PATCH", body: JSON.stringify({ scheduled_change: null }) })
+  }
+
+  async getSubscription(subscriptionId: string) {
+    const result = await this.request<{ data: Record<string, unknown> }>(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: "GET" })
+    return result.data
   }
 }
 

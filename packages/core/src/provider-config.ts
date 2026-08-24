@@ -28,7 +28,10 @@ export function inspectProviderConfiguration(environment: NodeJS.ProcessEnv = pr
     checks.push(missing.length ? { key: "email", label: "Resend", state: "not_configured", detail: "Configure server credentials", missing } : validFrom ? { key: "email", label: "Resend", state: "configured_unverified", detail: "Credentials present; delivery has not been tested" } : { key: "email", label: "Resend", state: "error", detail: "RESEND_FROM_EMAIL is not a valid email address" })
   }
   if (!modules.domains) checks.push({ key: "domains", label: "Vercel Domains", state: "disabled", detail: "Disabled by configuration" })
-  else checks.push(configured(environment.VERCEL_TOKEN) ? { key: "domains", label: "Vercel Domains", state: "configured_unverified", detail: "Credentials present; provider has not been queried" } : { key: "domains", label: "Vercel Domains", state: "not_configured", detail: "Configure VERCEL_TOKEN" })
+  else {
+    const missing = ["VERCEL_TOKEN", "VERCEL_PROJECT_ID"].filter((key) => !configured(environment[key]))
+    checks.push(missing.length ? { key: "domains", label: "Vercel Domains", state: "not_configured", detail: "Configure Vercel token and project id", missing } : { key: "domains", label: "Vercel Domains", state: "configured_unverified", detail: "Credentials present; provider has not been queried" })
+  }
   if (!modules.pwa) checks.push({ key: "pwa", label: "PWA", state: "disabled", detail: "Disabled by configuration" })
   else checks.push({ key: "pwa", label: "PWA", state: "operational", detail: "Workspace manifest and service-worker hooks included" })
   if (!modules.push) checks.push({ key: "push", label: "Web Push", state: "disabled", detail: "Disabled by configuration" })

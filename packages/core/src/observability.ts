@@ -1,6 +1,11 @@
 export type CoreEventMetadata = Record<string, string | number | boolean | null | undefined>
 export type CoreEvent = { name: string; metadata?: CoreEventMetadata; at: string }
 
+export function createOperationId(prefix = "op"): string {
+  const safePrefix = prefix.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, "") || "op"
+  return `${safePrefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+}
+
 const SECRET_KEY = /(password|token|secret|api.?key|authorization|cookie|invitation)/i
 
 export function redactCoreMetadata(metadata: CoreEventMetadata = {}): CoreEventMetadata {

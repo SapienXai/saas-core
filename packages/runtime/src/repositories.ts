@@ -269,11 +269,53 @@ export function createCoreRepositories(client: Client) {
       if (result.error) fail("platformAttention", result.error)
       return result.data ?? []
     },
+    async attentionFiltered(input: { limit?: number; severity?: string; issueType?: string } = {}) {
+      await actor(client)
+      const result = await client.rpc("platform_attention_filtered", { target_limit: input.limit ?? 100, target_severity: input.severity ?? null, target_issue_type: input.issueType ?? null })
+      if (result.error) fail("platformAttentionFiltered", result.error)
+      return result.data ?? []
+    },
     async listDomains(limit = 100) {
       await actor(client)
       const result = await client.rpc("platform_list_domains", { target_limit: limit })
       if (result.error) fail("platformListDomains", result.error)
       return result.data ?? []
+    },
+    async createOverride(input: { workspaceId: string; planKey: string; reason: string; effectiveFrom?: string; effectiveUntil?: string | null; operationId?: string }) {
+      await actor(client)
+      const result = await client.rpc("platform_create_override", { target_workspace: input.workspaceId, target_plan_key: input.planKey, target_reason: input.reason, target_effective_from: input.effectiveFrom ?? new Date().toISOString(), target_effective_until: input.effectiveUntil ?? null, target_operation_id: input.operationId ?? null })
+      if (result.error) fail("platformCreateOverride", result.error)
+      return one(result.data)
+    },
+    async revokeOverride(input: { overrideId: string; reason: string; operationId?: string }) {
+      await actor(client)
+      const result = await client.rpc("platform_revoke_override", { target_override: input.overrideId, target_reason: input.reason, target_operation_id: input.operationId ?? null })
+      if (result.error) fail("platformRevokeOverride", result.error)
+      return one(result.data)
+    },
+    async getDomain(domainId: string) {
+      await actor(client)
+      const result = await client.rpc("platform_get_domain", { target_domain: domainId })
+      if (result.error) fail("platformGetDomain", result.error)
+      return one(result.data)
+    },
+    async applyDomainReconciliation(input: { domainId: string; providerDomainId: string | null; status: string; verificationState: string; dnsConfigured: boolean; sslState: string; lastError: string | null; operationId?: string }) {
+      await actor(client)
+      const result = await client.rpc("platform_apply_domain_reconciliation", { target_domain: input.domainId, target_provider_domain_id: input.providerDomainId, target_status: input.status, target_verification_state: input.verificationState, target_dns_configured: input.dnsConfigured, target_ssl_state: input.sslState, target_last_error: input.lastError, target_operation_id: input.operationId ?? null })
+      if (result.error) fail("platformApplyDomainReconciliation", result.error)
+      return one(result.data)
+    },
+    async getBillingSubscription(workspaceId: string) {
+      await actor(client)
+      const result = await client.rpc("platform_get_subscription", { target_workspace: workspaceId })
+      if (result.error) fail("platformGetSubscription", result.error)
+      return one(result.data)
+    },
+    async applyBillingReconciliation(input: { workspaceId: string; planKey: string; status: string; providerCustomerId: string | null; providerSubscriptionId: string; providerPriceId: string; interval: string; currency: string; periodStart: string | null; periodEnd: string | null; scheduledPlanKey: string | null; scheduledPlanAt: string | null; occurredAt: string; operationId?: string }) {
+      await actor(client)
+      const result = await client.rpc("platform_apply_subscription_reconciliation", { target_workspace: input.workspaceId, target_plan_key: input.planKey, target_status: input.status, target_provider_customer_id: input.providerCustomerId, target_provider_subscription_id: input.providerSubscriptionId, target_provider_price_id: input.providerPriceId, target_billing_interval: input.interval, target_billing_currency: input.currency, target_period_start: input.periodStart, target_period_end: input.periodEnd, target_scheduled_plan_key: input.scheduledPlanKey, target_scheduled_plan_at: input.scheduledPlanAt, target_event_at: input.occurredAt, target_operation_id: input.operationId ?? null })
+      if (result.error) fail("platformApplyBillingReconciliation", result.error)
+      return one(result.data)
     },
   }
 

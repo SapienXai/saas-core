@@ -31,6 +31,38 @@ export const PLATFORM_PERMISSIONS = {
 
 export type PlatformPermission = keyof typeof PLATFORM_PERMISSIONS | (string & {})
 
+/**
+ * Platform capabilities are the canonical least-privilege vocabulary shared by
+ * operator UI, repositories, and the database RPC boundary.
+ */
+export const PLATFORM_CAPABILITIES = {
+  "platform.workspace.read": ["platform_owner", "platform_admin", "support", "auditor"],
+  "platform.user.read": ["platform_owner", "platform_admin", "support"],
+  "platform.billing.read": ["platform_owner", "platform_admin", "billing_admin"],
+  "platform.billing.manage": ["platform_owner", "platform_admin", "billing_admin"],
+  "platform.override.read": ["platform_owner", "platform_admin", "billing_admin"],
+  "platform.override.manage": ["platform_owner", "platform_admin", "billing_admin"],
+  "platform.domain.read": ["platform_owner", "platform_admin", "support", "auditor"],
+  "platform.domain.manage": ["platform_owner", "platform_admin"],
+  "platform.audit.read": ["platform_owner", "platform_admin", "support", "auditor"],
+  "platform.health.read": ["platform_owner", "platform_admin", "support", "auditor"],
+  "platform.support.read": ["platform_owner", "platform_admin", "support", "auditor"],
+} as const satisfies Record<string, readonly PlatformRole[]>
+
+export type PlatformCapability = keyof typeof PLATFORM_CAPABILITIES | (string & {})
+
+export function platformCapabilitiesForRole(role: PlatformRole | null | undefined): PlatformCapability[] {
+  if (!role) return []
+  return Object.entries(PLATFORM_CAPABILITIES)
+    .filter(([, roles]) => (roles as readonly PlatformRole[]).includes(role))
+    .map(([capability]) => capability as PlatformCapability)
+}
+
+export function canPlatformCapability(role: PlatformRole | null | undefined, capability: PlatformCapability): boolean {
+  if (!role) return false
+  return Boolean((PLATFORM_CAPABILITIES[capability as keyof typeof PLATFORM_CAPABILITIES] as readonly PlatformRole[] | undefined)?.includes(role))
+}
+
 export function canWorkspaceRole(role: WorkspaceRole | null | undefined, permission: WorkspacePermission, custom: Record<string, readonly WorkspaceRole[]> = {}) {
   if (!role) return false
   const allowed = custom[permission] ?? WORKSPACE_PERMISSIONS[permission as keyof typeof WORKSPACE_PERMISSIONS]
