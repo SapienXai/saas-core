@@ -1,7 +1,7 @@
 {
   "name": "@sapienx/saas-core-workspace",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "SapienX SaaS Core v1 workspace",
   "packageManager": "pnpm@10.30.3",
   "engines": {
@@ -16,7 +16,11 @@
     "lab:dev": "pnpm --filter @sapienx/core-lab dev",
     "lint": "eslint .",
     "pack:all": "pnpm -r --if-present run pack",
+    "release:check": "node scripts/release-check.mjs",
     "test": "vitest run",
+    "test:cli": "vitest run tests/cli.integration.test.ts tests/ci-contract.test.ts",
+    "test:db": "SAAS_CORE_DB_INTEGRATION=1 vitest run tests/database.integration.test.ts",
+    "test:acceptance": "node tests/generated-app.e2e.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "saas-core": "tsx packages/cli/src/index.ts"

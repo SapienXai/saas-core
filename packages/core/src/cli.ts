@@ -6,11 +6,11 @@ import { createInterface } from "node:readline/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { stdin as input, stdout as output } from "node:process"
-import { readPaddlePriceMappings } from "./billing.js"
+import { CORE_SCHEMA_VERSION, CORE_VERSION, configFromManifest, evaluateCompatibility, modulesForConfig, parseCliFlags, resolveCliConfig, type CliFlags, type ResolvedCliConfig } from "./cli-config.js"
+import { inspectProviderConfiguration } from "./provider-config.js"
 
-const VERSION = "1.0.0"
-const SCHEMA_VERSION = "1.2-p0"
-const MODULES = ["auth", "workspace", "permissions", "invitations", "entitlements", "usage", "billing", "audit", "domains", "notifications", "platform", "pwa"]
+const VERSION = CORE_VERSION
+const SCHEMA_VERSION = CORE_SCHEMA_VERSION
 const FRAMEWORK_GENERATED_FILES = new Set(["next-env.d.ts"])
 const cyan = (value: string) => `\u001b[36m${value}\u001b[0m`
 const green = (value: string) => `\u001b[32m${value}\u001b[0m`
@@ -30,10 +30,11 @@ type Manifest = {
   generatedFiles: Record<string, { ownership: "user-owned" | "mergeable" }>
   installedAt: string
   updatedAt: string
+  configuration?: Partial<ResolvedCliConfig>
   version?: string
   modules?: string[]
 }
-type ProjectPackage = { dependencies?: Record<string, string>; scripts?: Record<string, string> }
+type ProjectPackage = { dependencies?: Record<string, string>; devDependencies?: Record<string, string>; scripts?: Record<string, string> }
 
 const packageNameToTarball = (name: string) => `${name.replace(/^@/, "").replaceAll("/", "-")}-${VERSION}.tgz`
 function packageSpec(name: string): string {
@@ -53,7 +54,7 @@ function coreMigrationSql(filename = "20260824000000_saas_core_v1.sql"): string 
   return source ? readFileSync(source, "utf8") : `-- SaaS Core migration ${VERSION}\n-- Install the package migration from the published distribution before running supabase db reset.\n`
 }
 
-function generatedFiles(projectName: string): Map<string, string> {
+function generatedFiles(projectName: string, config = resolveCliConfig()): Map<string, string> {
   const key = projectKey(projectName)
   const coreDeps = {
     "@sapienx/saas-core": packageSpec("@sapienx/saas-core"),
@@ -65,7 +66,7 @@ function generatedFiles(projectName: string): Map<string, string> {
     "@sapienx/saas-core-ui": packageSpec("@sapienx/saas-core-ui"),
   }
   const localOverrides = process.env.SAAS_CORE_TARBALL_DIR ? { pnpm: { overrides: { ...coreDeps } } } : {}
-  return new Map([
+  const files = new Map([
     ["package.json", json({ name: key, private: true, version: "0.1.0", type: "module", scripts: { dev: "next dev", build: "next build", start: "next start", lint: "next lint", typecheck: "tsc --noEmit", test: "vitest run", "saas-core": "saas-core" }, dependencies: { next: "16.3.0", react: "^19.2.8", "react-dom": "^19.2.8", "@supabase/ssr": "^0.12.4", "@supabase/supabase-js": "^2.112.3", ...coreDeps }, devDependencies: { "@types/node": "^24.0.0", "@types/react": "^19.2.0", "@types/react-dom": "^19.2.0", typescript: "^5.9.0", vitest: "^3.2.0", "@playwright/test": "^1.62.0" }, ...localOverrides })],
     ["next.config.mjs", `/** @type {import('next').NextConfig} */\nexport default { reactStrictMode: true, poweredByHeader: false }\n`],
     ["tsconfig.json", json({ compilerOptions: { target: "ES2017", lib: ["dom", "dom.iterable", "esnext"], allowJs: false, skipLibCheck: true, strict: true, noEmit: true, incremental: true, esModuleInterop: true, module: "esnext", moduleResolution: "bundler", resolveJsonModule: true, isolatedModules: true, jsx: "react-jsx", plugins: [{ name: "next" }], paths: { "@/*": ["./src/*"] } }, include: ["next-env.d.ts", ".next/types/**/*.ts", ".next/dev/types/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "proxy.ts"], exclude: ["node_modules"] })],
@@ -130,14 +131,121 @@ function generatedFiles(projectName: string): Map<string, string> {
     ["supabase/migrations/20260824020000_final_p0_hardening.sql", coreMigrationSql("20260824020000_final_p0_hardening.sql")],
     ["src/product/README.md", "# Product-owned code\n\nAdd product tables with a workspace_id foreign key and enforce product-specific policies through a Core-derived workspace membership context.\n"],
   ])
+  const optionalDependencies = new Set([
+    ...(config.billing ? ["@sapienx/saas-core-billing"] : []),
+    ...(config.email ? ["@sapienx/saas-core-notifications"] : []),
+  ])
+  const packageJson = JSON.parse(files.get("package.json") ?? "{}") as { dependencies?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } }
+  for (const dependency of ["@sapienx/saas-core-billing", "@sapienx/saas-core-notifications"]) {
+    if (!optionalDependencies.has(dependency)) {
+      delete packageJson.dependencies?.[dependency]
+      delete packageJson.pnpm?.overrides?.[dependency]
+    }
+  }
+  files.set("package.json", json(packageJson))
+  files.set("core.config.ts", generatedCoreConfig(projectName, key, config))
+  files.set(".env.example", generatedEnvExample(projectName, config))
+  files.set("src/app/(auth)/signup/page.tsx", generatedSignupPage())
+  files.set("src/app/(auth)/forgot-password/page.tsx", generatedForgotPasswordPage())
+  files.set("src/app/(auth)/reset-password/page.tsx", generatedResetPasswordPage())
+  files.set("src/app/api/auth/resend-confirmation/route.ts", generatedResendConfirmationRoute())
+  files.set("src/app/api/auth/forgot-password/route.ts", generatedForgotPasswordRoute())
+  files.set("src/app/api/auth/reset-password/route.ts", generatedResetPasswordRoute())
+  files.set("src/app/api/invitations/route.ts", generatedInvitationRouteV11(config.email))
+  files.set("src/app/app/layout.tsx", generatedAppLayoutV11(projectName, config))
+  files.set("src/app/app/page.tsx", generatedAppHomeV11(config))
+  files.set("src/app/app/settings/page.tsx", generatedSettingsPageV11(config))
+  files.set("src/app/app/setup/page.tsx", generatedSetupPage(config))
+  files.set("src/app/platform/page.tsx", generatedPlatformIndexPageV11())
+  files.set("src/app/platform/billing/page.tsx", generatedPlatformBillingPage())
+  files.set("src/app/platform/overrides/page.tsx", generatedPlatformOverridesPage())
+  files.set("src/app/platform/domains/page.tsx", generatedPlatformDomainsPage())
+  files.set("src/app/platform/audit/page.tsx", generatedPlatformAuditPage())
+  if (!config.billing) for (const file of ["src/app/app/plan/page.tsx", "src/app/api/billing/checkout/route.ts", "src/app/api/billing/portal/route.ts", "src/app/api/billing/cancel/route.ts", "src/app/api/billing/resume/route.ts", "src/app/api/billing/webhook/route.ts", "src/app/api/billing/grace/route.ts"]) files.delete(file)
+  if (!config.platform) for (const file of ["src/app/platform/page.tsx", "src/app/platform/workspaces/page.tsx", "src/app/platform/workspaces/[id]/page.tsx", "src/app/platform/users/page.tsx", "src/app/platform/health/page.tsx", "src/app/platform/billing/page.tsx", "src/app/platform/overrides/page.tsx", "src/app/platform/domains/page.tsx", "src/app/platform/audit/page.tsx"]) files.delete(file)
+  if (!config.pwa) files.delete("public/sw.js")
+  files.set("supabase/migrations/20260824030000_v11_operations.sql", coreMigrationSql("20260824030000_v11_operations.sql"))
+  return files
+}
+
+function generatedCoreConfig(projectName: string, key: string, config: ResolvedCliConfig): string {
+  return `import { defineSaaSCore } from "@sapienx/saas-core-config"
+
+export default defineSaaSCore({
+  version: "${VERSION}",
+  product: { key: ${JSON.stringify(key)}, name: ${JSON.stringify(projectName)} },
+  auth: { provider: "supabase", requireEmailConfirmation: true },
+  workspace: { slugSource: "user_input", defaultTimezone: "UTC" },
+  permissions: { custom: {} },
+  billing: { enabled: ${config.billing}, provider: "paddle", environment: "sandbox" },
+  entitlements: { features: [], metrics: [] },
+  usage: { enabled: true },
+  notifications: { email: { name: "resend", enabled: ${config.email} }, push: { name: "web-push", enabled: ${config.push} } },
+  domains: { enabled: ${config.domains} },
+  pwa: { enabled: ${config.pwa} },
+  platform: { enabled: ${config.platform}, supportReadOnly: true },
+})
+`
+}
+
+function generatedEnvExample(projectName: string, config: ResolvedCliConfig): string {
+  const lines = [
+    "# SaaS Core generated environment. Copy to .env.local. Secret values stay server-side.",
+    "APP_URL=http://localhost:3000",
+    `SAAS_CORE_PRODUCT_NAME=${projectName}`,
+    "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY=",
+    "SUPABASE_URL=http://127.0.0.1:54321",
+    "SUPABASE_ANON_KEY=",
+    "SUPABASE_SERVICE_ROLE_KEY=",
+  ]
+  if (config.billing) lines.push("PADDLE_ENVIRONMENT=sandbox", "PADDLE_CURRENCY=USD", "PADDLE_API_KEY=", "PADDLE_WEBHOOK_SECRET=", "PADDLE_CRON_SECRET=", "PADDLE_PRICE_STARTER_MONTH=", "PADDLE_PRICE_STARTER_YEAR=", "PADDLE_PRICE_PRO_MONTH=", "PADDLE_PRICE_PRO_YEAR=", "PADDLE_PRICE_BUSINESS_MONTH=", "PADDLE_PRICE_BUSINESS_YEAR=")
+  if (config.email) lines.push("RESEND_API_KEY=", "RESEND_FROM_EMAIL=")
+  if (config.domains) lines.push("VERCEL_TOKEN=")
+  if (config.push) lines.push("VAPID_PUBLIC_KEY=", "VAPID_PRIVATE_KEY=", "VAPID_SUBJECT=mailto:ops@example.com")
+  lines.push("", "# Optional modules are selected in the generated .saas-core.json manifest.")
+  return lines.join("\n") + "\n"
 }
 
 function authPage(title: string, action: string, prompt: string, href: string, linkText: string): string {
   return `export default async function AuthPage({ searchParams }: { searchParams: Promise<Record<string,string|undefined>> }) { const params = await searchParams; const next = params.next ?? ""; return <main className="auth-page"><div className="auth-card"><div className="saas-brand"><span className="saas-brand-mark">S</span><strong>SaaS Core application</strong></div><div className="saas-eyebrow">Secure account</div><h1>${title}.</h1><p>Sessions are handled by Supabase SSR with PKCE and server-side cookie refresh.</p><form className="saas-form" action="${action}" method="post"><input type="hidden" name="next" value={next} /><label>Email<input name="email" type="email" autoComplete="email" required /></label><label>Password<input name="password" type="password" minLength={8} autoComplete="current-password" required /></label><button className="saas-button" type="submit">${title}</button></form><p><a href="/forgot-password">Forgot password?</a></p><p>${prompt} <a href="${href}">${linkText}</a></p></div></main> }\n`
 }
 
+function generatedSignupPage(): string {
+  return `export default async function SignupPage({ searchParams }: { searchParams: Promise<Record<string,string|undefined>> }) { const params = await searchParams; const next = params.next ?? ""; return <main className="auth-page"><div className="auth-card"><div className="saas-brand"><span className="saas-brand-mark">S</span><strong>SaaS Core application</strong></div><div className="saas-eyebrow">Secure account</div><h1>Create account.</h1><p>Use the invitation email or your own address. Email confirmation is enforced by the generated Core config.</p>{params.confirmation === "sent" && <div className="notice">Confirmation email sent. Open the local Mailpit message or your configured provider before signing in.</div>}{params.error && <div className="form-error">We could not create that account. Check the email and password, then try again.</div>}<form className="saas-form" action="/api/auth/signup" method="post"><input type="hidden" name="next" value={next} /><label>Email<input name="email" type="email" autoComplete="email" required /></label><label>Password<input name="password" type="password" minLength={8} autoComplete="new-password" required /></label><button className="saas-button" type="submit">Create account</button></form>{params.confirmation === "sent" && <form className="saas-form" action="/api/auth/resend-confirmation" method="post" style={{marginTop:12}}><label>Resend to<input name="email" type="email" autoComplete="email" required /></label><button className="saas-button secondary" type="submit">Resend confirmation</button></form>}<p>Already have an account? <a href={"/login?next=" + encodeURIComponent(next)}>Sign in</a></p></div></main> }\n`
+}
+
+function generatedForgotPasswordPage(): string {
+  return `export default async function ForgotPassword({ searchParams }: { searchParams: Promise<Record<string,string|undefined>> }) { const params = await searchParams; return <main className="auth-page"><div className="auth-card"><div className="saas-brand"><span className="saas-brand-mark">S</span><strong>Password recovery</strong></div><h1>Reset your password.</h1>{params.sent && <div className="notice">If the account exists, a recovery email has been sent. Check local Mailpit or your configured provider.</div>}{params.error && <div className="form-error">We could not send a recovery request.</div>}<p>Recovery links are same-origin and handled through Supabase PKCE sessions.</p><form className="saas-form" action="/api/auth/forgot-password" method="post"><label>Email<input name="email" type="email" autoComplete="email" required /></label><button className="saas-button" type="submit">Send recovery link</button></form><p><a href="/login">Back to sign in</a></p></div></main> }\n`
+}
+
+function generatedResetPasswordPage(): string {
+  return `export default async function ResetPassword({ searchParams }: { searchParams: Promise<Record<string,string|undefined>> }) { const params = await searchParams; return <main className="auth-page"><div className="auth-card"><div className="saas-brand"><span className="saas-brand-mark">S</span><strong>Password recovery</strong></div><h1>Choose a new password.</h1>{params.error && <div className="form-error">The recovery session is invalid or expired. Request a new link.</div>}<form className="saas-form" action="/api/auth/reset-password" method="post"><label>New password<input name="password" type="password" minLength={8} required autoComplete="new-password" /></label><button className="saas-button" type="submit">Update password</button></form></div></main> }\n`
+}
+
+function generatedResendConfirmationRoute(): string {
+  return `import { NextResponse } from "next/server"
+import { createServerClient } from "@/lib/supabase"
+export async function POST(request: Request) { const body = await request.formData(); const email = String(body.get("email") ?? "").trim(); const origin = process.env.APP_URL ?? new URL(request.url).origin; const client = await createServerClient(); const result = await client.auth.resend({ type: "signup", email, options: { emailRedirectTo: new URL("/auth/confirm?type=email", origin).toString() } }); const target = new URL("/signup", origin); target.searchParams.set(result.error ? "error" : "confirmation", result.error ? "resend_failed" : "sent"); return NextResponse.redirect(target, { status: 303 }) }
+`
+}
+
+function generatedForgotPasswordRoute(): string {
+  return `import { NextResponse } from "next/server"
+import { createServerClient } from "@/lib/supabase"
+export async function POST(request: Request) { const body = await request.formData(); const email = String(body.get("email") ?? "").trim(); const origin = process.env.APP_URL ?? new URL(request.url).origin; const client = await createServerClient(); const result = await client.auth.resetPasswordForEmail(email, { redirectTo: new URL("/auth/confirm?type=recovery", origin).toString() }); const target = new URL(result.error ? "/forgot-password?error=send_failed" : "/forgot-password?sent=1", origin); return NextResponse.redirect(target, { status: 303 }) }
+`
+}
+
+function generatedResetPasswordRoute(): string {
+  return `import { NextResponse } from "next/server"
+import { createServerClient } from "@/lib/supabase"
+export async function POST(request: Request) { const body = await request.formData(); const password = String(body.get("password") ?? ""); const origin = process.env.APP_URL ?? new URL(request.url).origin; const client = await createServerClient(); const result = await client.auth.updateUser({ password }); if (result.error) return NextResponse.redirect(new URL("/reset-password?error=update_failed", origin), { status: 303 }); return NextResponse.redirect(new URL("/app", origin), { status: 303 }) }
+`
+}
+
 function authRoute(method: "signInWithPassword", fallback: string): string {
-  return `import { NextResponse } from "next/server"\nimport { createServerClient } from "@/lib/supabase"\nimport { safeRedirect } from "@sapienx/saas-core-runtime"\nexport async function POST(request: Request) { const body = await request.formData(); const email = String(body.get("email") ?? "").trim(); const password = String(body.get("password") ?? ""); const next = safeRedirect(String(body.get("next") ?? ""), new URL(request.url).origin, "${fallback}"); const client = await createServerClient(); const result = await client.auth.${method}({ email, password }); if (result.error) return NextResponse.redirect(new URL("/login?error=invalid_credentials", request.url), { status: 303 }); return NextResponse.redirect(new URL(next, request.url), { status: 303 }); }\n`
+  return `import { NextResponse } from "next/server"\nimport { createServerClient } from "@/lib/supabase"\nimport { safeRedirect } from "@sapienx/saas-core-runtime"\nexport async function POST(request: Request) { const body = await request.formData(); const email = String(body.get("email") ?? "").trim(); const password = String(body.get("password") ?? ""); const origin = process.env.APP_URL ?? new URL(request.url).origin; const next = safeRedirect(String(body.get("next") ?? ""), origin, "${fallback}"); const client = await createServerClient(); const result = await client.auth.${method}({ email, password }); if (result.error) return NextResponse.redirect(new URL("/login?error=invalid_credentials", origin), { status: 303 }); return NextResponse.redirect(new URL(next, origin), { status: 303 }); }\n`
 }
 
 function generatedWorkspaceLibrary(): string {
@@ -161,8 +269,9 @@ export async function POST(request: Request) {
   const body = await request.formData()
   const cookieStore = await cookies()
   const client = createNextServerSupabaseClient(cookieStore as any)
-  try { await setCurrentWorkspace(client, cookieStore as any, String(body.get("workspaceId") ?? "")) } catch { return NextResponse.redirect(new URL("/app?error=workspace_switch_failed", request.url), { status: 303 }) }
-  return NextResponse.redirect(new URL(safeRedirect(String(body.get("next") ?? ""), new URL(request.url).origin, "/app"), request.url), { status: 303 })
+  const origin = process.env.APP_URL ?? new URL(request.url).origin
+  try { await setCurrentWorkspace(client, cookieStore as any, String(body.get("workspaceId") ?? "")) } catch { return NextResponse.redirect(new URL("/app?error=workspace_switch_failed", origin), { status: 303 }) }
+  return NextResponse.redirect(new URL(safeRedirect(String(body.get("next") ?? ""), origin, "/app"), origin), { status: 303 })
 }
 `
 }
@@ -173,7 +282,7 @@ import { NextResponse } from "next/server"
 import { createCoreRepositories, createNextServerSupabaseClient, setCurrentWorkspace } from "@sapienx/saas-core-runtime"
 export async function POST(request: Request) {
   const body = await request.formData(); const cookieStore = await cookies(); const client = createNextServerSupabaseClient(cookieStore as any)
-  try { const created: any = await createCoreRepositories(client).workspaces.createWorkspace({ name: String(body.get("name") ?? ""), slug: String(body.get("slug") ?? "") }); const workspace = Array.isArray(created) ? created[0] : created; if (workspace?.id) await setCurrentWorkspace(client, cookieStore as any, workspace.id); return NextResponse.redirect(new URL("/app", request.url), { status: 303 }) } catch { return NextResponse.redirect(new URL("/onboarding?error=create_failed", request.url), { status: 303 }) }
+  try { const created: any = await createCoreRepositories(client).workspaces.createWorkspace({ name: String(body.get("name") ?? ""), slug: String(body.get("slug") ?? "") }); const workspace = Array.isArray(created) ? created[0] : created; if (workspace?.id) await setCurrentWorkspace(client, cookieStore as any, workspace.id); const origin = process.env.APP_URL ?? new URL(request.url).origin; return NextResponse.redirect(new URL("/app", origin), { status: 303 }) } catch { const origin = process.env.APP_URL ?? new URL(request.url).origin; return NextResponse.redirect(new URL("/onboarding?error=create_failed", origin), { status: 303 }) }
 }
 `
 }
@@ -182,7 +291,7 @@ function generatedSignupRoute(): string {
   return `import { NextResponse } from "next/server"
 import { createServerClient } from "@/lib/supabase"
 import { safeRedirect } from "@sapienx/saas-core-runtime"
-export async function POST(request: Request) { const body = await request.formData(); const email = String(body.get("email") ?? "").trim(); const password = String(body.get("password") ?? ""); const next = safeRedirect(String(body.get("next") ?? ""), new URL(request.url).origin, "/app"); const client = await createServerClient(); const result = await client.auth.signUp({ email, password, options: { emailRedirectTo: new URL("/auth/confirm?type=email", request.url).toString() } }); if (result.error) return NextResponse.redirect(new URL("/signup?error=signup_failed", request.url), { status: 303 }); if (result.data.session) return NextResponse.redirect(new URL(next, request.url), { status: 303 }); const confirmation = new URL("/signup", request.url); confirmation.searchParams.set("confirmation", "sent"); confirmation.searchParams.set("next", next); return NextResponse.redirect(confirmation, { status: 303 }); }
+export async function POST(request: Request) { const body = await request.formData(); const email = String(body.get("email") ?? "").trim(); const password = String(body.get("password") ?? ""); const origin = process.env.APP_URL ?? new URL(request.url).origin; const next = safeRedirect(String(body.get("next") ?? ""), origin, "/app"); const client = await createServerClient(); const result = await client.auth.signUp({ email, password, options: { emailRedirectTo: new URL("/auth/confirm?type=email", origin).toString() } }); if (result.error) return NextResponse.redirect(new URL("/signup?error=signup_failed", origin), { status: 303 }); if (result.data.session) return NextResponse.redirect(new URL(next, origin), { status: 303 }); const confirmation = new URL("/signup", origin); confirmation.searchParams.set("confirmation", "sent"); confirmation.searchParams.set("next", next); return NextResponse.redirect(confirmation, { status: 303 }); }
 `
 }
 
@@ -208,7 +317,7 @@ function generatedInvitationAcceptRoute(): string {
   return `import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { createCoreRepositories, createNextServerSupabaseClient, setCurrentWorkspace } from "@sapienx/saas-core-runtime"
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; const body = await request.formData(); const token = String(body.get("token") ?? ""); const cookieStore = await cookies(); const client = createNextServerSupabaseClient(cookieStore as any); try { const member: any = await createCoreRepositories(client).invitations.accept({ invitationId: id, token }); const workspaceId = Array.isArray(member) ? member[0]?.workspace_id : member?.workspace_id; if (workspaceId) await setCurrentWorkspace(client, cookieStore as any, workspaceId); return NextResponse.redirect(new URL("/app?invited=1", request.url), { status: 303 }) } catch { return NextResponse.redirect(new URL("/invite/" + encodeURIComponent(id) + "?token=" + encodeURIComponent(token) + "&error=accept_failed", request.url), { status: 303 }) } }
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) { const { id } = await params; const body = await request.formData(); const token = String(body.get("token") ?? ""); const origin = process.env.APP_URL ?? new URL(request.url).origin; const cookieStore = await cookies(); const client = createNextServerSupabaseClient(cookieStore as any); try { const member: any = await createCoreRepositories(client).invitations.accept({ invitationId: id, token }); const workspaceId = Array.isArray(member) ? member[0]?.workspace_id : member?.workspace_id; if (workspaceId) await setCurrentWorkspace(client, cookieStore as any, workspaceId); return NextResponse.redirect(new URL("/app?invited=1", origin), { status: 303 }) } catch { return NextResponse.redirect(new URL("/invite/" + encodeURIComponent(id) + "?token=" + encodeURIComponent(token) + "&error=accept_failed", origin), { status: 303 }) } }
 `
 }
 
@@ -217,8 +326,17 @@ function generatedInvitationRoute(): string {
 import { createServiceRoleSupabaseClient, createCoreRepositories as createRepositories, createNextServerSupabaseClient } from "@sapienx/saas-core-runtime"
 import { buildInvitationEmail, ResendEmailProvider, sendWithRetry } from "@sapienx/saas-core-notifications"
 import { cookies } from "next/headers"
-export async function POST(request: Request) { const body = await request.formData(); const cookieStore = await cookies(); const client = createNextServerSupabaseClient(cookieStore as any); const repos = createRepositories(client); try { const context: any = await (await import("@/lib/workspace")).getWorkspaceContext(); const workspaceId = context.currentWorkspace?.id ?? ""; if (!workspaceId) throw new Error("NO_CURRENT_WORKSPACE"); const result: any = await repos.invitations.create({ workspaceId, email: String(body.get("email") ?? ""), role: String(body.get("role") ?? "member") }); const invitation = Array.isArray(result.invitation) ? result.invitation[0] : result.invitation; const origin = new URL(request.url).origin; const invitationUrl = origin + "/invite/" + encodeURIComponent(invitation.id) + "?token=" + encodeURIComponent(result.token); const workspace: any = await repos.workspaces.getWorkspace(workspaceId); let localLink = invitationUrl; if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) { try { const message = buildInvitationEmail({ productName: process.env.SAAS_CORE_PRODUCT_NAME ?? "SaaS Core", workspaceName: workspace?.name ?? "your workspace", role: String(body.get("role") ?? "member"), invitationUrl, to: String(body.get("email") ?? "") }); const sent = await sendWithRetry(new ResendEmailProvider({ apiKey: process.env.RESEND_API_KEY, from: process.env.RESEND_FROM_EMAIL }), message); if (process.env.SUPABASE_SERVICE_ROLE_KEY) await createRepositories(createServiceRoleSupabaseClient()).invitations.markDelivery({ invitationId: invitation.id, status: "sent", providerMessageId: sent.id }); localLink = "" } catch (error) { if (process.env.SUPABASE_SERVICE_ROLE_KEY) await createRepositories(createServiceRoleSupabaseClient()).invitations.markDelivery({ invitationId: invitation.id, status: "failed", error: error instanceof Error ? error.message : "Email delivery failed." }); return NextResponse.redirect(new URL("/app/team?error=invite_delivery_failed", request.url), { status: 303 }) } } const target = new URL("/app/team", request.url); target.searchParams.set("invited", "1"); if (localLink) target.searchParams.set("local_invitation_link", localLink); return NextResponse.redirect(target, { status: 303 }) } catch { return NextResponse.redirect(new URL("/app/team?error=invite_failed", request.url), { status: 303 }) }
+export async function POST(request: Request) { const body = await request.formData(); const cookieStore = await cookies(); const client = createNextServerSupabaseClient(cookieStore as any); const repos = createRepositories(client); try { const context: any = await (await import("@/lib/workspace")).getWorkspaceContext(); const workspaceId = context.currentWorkspace?.id ?? ""; if (!workspaceId) throw new Error("NO_CURRENT_WORKSPACE"); const result: any = await repos.invitations.create({ workspaceId, email: String(body.get("email") ?? ""), role: String(body.get("role") ?? "member") }); const invitation = Array.isArray(result.invitation) ? result.invitation[0] : result.invitation; const origin = process.env.APP_URL ?? new URL(request.url).origin; const invitationUrl = origin + "/invite/" + encodeURIComponent(invitation.id) + "?token=" + encodeURIComponent(result.token); const workspace: any = await repos.workspaces.getWorkspace(workspaceId); let localLink = invitationUrl; if (process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL) { try { const message = buildInvitationEmail({ productName: process.env.SAAS_CORE_PRODUCT_NAME ?? "SaaS Core", workspaceName: workspace?.name ?? "your workspace", role: String(body.get("role") ?? "member"), invitationUrl, to: String(body.get("email") ?? "") }); const sent = await sendWithRetry(new ResendEmailProvider({ apiKey: process.env.RESEND_API_KEY, from: process.env.RESEND_FROM_EMAIL }), message); if (process.env.SUPABASE_SERVICE_ROLE_KEY) await createRepositories(createServiceRoleSupabaseClient()).invitations.markDelivery({ invitationId: invitation.id, status: "sent", providerMessageId: sent.id }); localLink = "" } catch (error) { if (process.env.SUPABASE_SERVICE_ROLE_KEY) await createRepositories(createServiceRoleSupabaseClient()).invitations.markDelivery({ invitationId: invitation.id, status: "failed", error: error instanceof Error ? error.message : "Email delivery failed." }); return NextResponse.redirect(new URL("/app/team?error=invite_delivery_failed", origin), { status: 303 }) } } const target = new URL("/app/team", origin); target.searchParams.set("invited", "1"); if (localLink) target.searchParams.set("local_invitation_link", localLink); return NextResponse.redirect(target, { status: 303 }) } catch { return NextResponse.redirect(new URL("/app/team?error=invite_failed", process.env.APP_URL ?? request.url), { status: 303 }) }
 }
+`
+}
+
+function generatedInvitationRouteV11(emailEnabled: boolean): string {
+  if (emailEnabled) return generatedInvitationRoute()
+  return `import { NextResponse } from "next/server"
+import { coreRepositories } from "@/lib/core"
+import { cookies } from "next/headers"
+export async function POST(request: Request) { const body = await request.formData(); const cookieStore = await cookies(); const context: any = await (await import("@/lib/workspace")).getWorkspaceContext(); const workspaceId = context.currentWorkspace?.id ?? ""; const origin = process.env.APP_URL ?? new URL(request.url).origin; try { const result: any = await (await coreRepositories()).invitations.create({ workspaceId, email: String(body.get("email") ?? ""), role: String(body.get("role") ?? "member") }); const invitation = Array.isArray(result.invitation) ? result.invitation[0] : result.invitation; const invitationUrl = new URL("/invite/" + encodeURIComponent(invitation.id) + "?token=" + encodeURIComponent(result.token), origin).toString(); const target = new URL("/app/team", origin); target.searchParams.set("invited", "1"); target.searchParams.set("local_invitation_link", invitationUrl); return NextResponse.redirect(target, { status: 303 }) } catch { return NextResponse.redirect(new URL("/app/team?error=invite_failed", origin), { status: 303 }) } }
 `
 }
 
@@ -266,6 +384,57 @@ export default async function PlatformPage() { const repos = await coreRepositor
 `
 }
 
+function generatedPlatformIndexPageV11(): string {
+  return `import Link from "next/link"
+import { coreRepositories } from "@/lib/core"
+import { StatusBadge } from "@sapienx/saas-core-ui"
+export const dynamic = "force-dynamic"
+export default async function PlatformPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const query = await searchParams
+  const repos: any = await coreRepositories()
+  const member: any = await repos.platform.getCurrentMember()
+  if (!member || member.status !== "active") return <main className="saas-content"><div className="saas-state"><strong>Platform Control</strong><p>This account is not a platform operator. Customer workspace roles do not grant platform access.</p></div></main>
+  try {
+    const workspaces: any[] = await repos.platform.listWorkspaces()
+    const attention: any[] = await repos.platform.attention(12)
+    const search: any[] = query.q?.trim() ? await repos.platform.search(query.q.trim(), 20) : []
+    return <main className="saas-content"><div className="saas-eyebrow">Platform Control</div><h1>Operator overview.</h1><p>Signed in as <StatusBadge status={member.role} />. Support and auditor paths are read-only and never impersonate customers.</p><form className="saas-card saas-form" method="get"><label>Search workspaces, users, domains, or billing<input name="q" defaultValue={query.q ?? ""} placeholder="Search" /></label><button className="saas-button" type="submit">Search</button></form><div className="saas-grid three" style={{marginTop:16}}><Link className="saas-card" href="/platform/workspaces"><h3>Workspaces</h3><p>{workspaces.length} customer workspaces.</p></Link><Link className="saas-card" href="/platform/billing"><h3>Billing operations</h3><p>Subscriptions, grace and provider evidence.</p></Link><Link className="saas-card" href="/platform/health"><h3>Health</h3><p>Database, RLS and provider diagnostics.</p></Link></div>{query.q && <div className="saas-card" style={{marginTop:16}}><h2>Search results</h2>{search.length ? <div className="table-scroll"><table className="saas-table"><thead><tr><th>Type</th><th>Result</th><th>Detail</th></tr></thead><tbody>{search.map((item: any) => <tr key={item.result_type + item.id}><td>{item.result_type}</td><td><Link href={item.href}>{item.title}</Link></td><td>{item.subtitle}</td></tr>)}</tbody></table></div> : <p>No matching platform records.</p>}</div>}<div className="saas-card" style={{marginTop:16}}><h2>Needs attention <span className="saas-badge warning">{attention.length}</span></h2>{attention.length ? <div className="table-scroll"><table className="saas-table"><thead><tr><th>Severity</th><th>Workspace</th><th>Issue</th><th>Action</th></tr></thead><tbody>{attention.map((item: any) => <tr key={item.issue_key}><td>{item.severity}</td><td>{item.workspace_name}</td><td>{item.message}</td><td><Link href={item.deep_link}>Review</Link></td></tr>)}</tbody></table></div> : <p>No current attention items.</p>}</div></main>
+  } catch (error) {
+    return <main className="saas-content"><div className="saas-state error"><strong>Platform query failed</strong><p>{error instanceof Error ? error.message : "Unknown error"}</p></div></main>
+  }
+}
+`
+}
+
+function generatedPlatformBillingPage(): string {
+  return `import Link from "next/link"
+import { coreRepositories } from "@/lib/core"
+export const dynamic = "force-dynamic"
+export default async function PlatformBillingPage() { const rows: any[] = await (await coreRepositories()).platform.listSubscriptions(200) as any[]; return <main className="saas-content"><div className="saas-eyebrow">Platform Control</div><h1>Billing operations.</h1><p>Local Core state is the authorization source; provider data is synchronization evidence.</p><div className="saas-card"><div className="table-scroll"><table className="saas-table"><thead><tr><th>Workspace</th><th>Plan</th><th>Status</th><th>Interval</th><th>Grace</th><th>Issue</th></tr></thead><tbody>{rows.map((row: any) => <tr key={row.workspace_id}><td><Link href={"/platform/workspaces/" + row.workspace_id}>{row.workspace_name}</Link></td><td>{row.plan_key}</td><td>{row.status}</td><td>{row.billing_interval ?? "—"}</td><td>{row.payment_grace_ends_at ?? "—"}</td><td>{row.billing_issue_code ?? "—"}</td></tr>)}</tbody></table></div></div></main> }
+`
+}
+
+function generatedPlatformOverridesPage(): string {
+  return `import { coreRepositories } from "@/lib/core"
+export const dynamic = "force-dynamic"
+export default async function PlatformOverridesPage({ searchParams }: { searchParams: Promise<{ state?: string }> }) { const query = await searchParams; const state = query.state ?? "active"; const rows: any[] = await (await coreRepositories()).platform.listOverrides(state, 200) as any[]; return <main className="saas-content"><div className="saas-eyebrow">Platform Control</div><h1>Entitlement overrides.</h1><p>Read-only operational view. Mutations remain on explicit audited operator services.</p><form className="saas-card saas-form" method="get"><label>State<select name="state" defaultValue={state}><option value="active">Active</option><option value="expiring">Expiring</option><option value="expired">Expired</option><option value="revoked">Revoked</option><option value="all">All</option></select></label><button className="saas-button" type="submit">Filter</button></form><div className="saas-card" style={{marginTop:16}}><div className="table-scroll"><table className="saas-table"><thead><tr><th>Workspace</th><th>Plan</th><th>Reason</th><th>Effective</th><th>Until</th><th>Status</th></tr></thead><tbody>{rows.map((row: any) => <tr key={row.id}><td>{row.workspace_name}</td><td>{row.plan_key}</td><td>{row.reason}</td><td>{row.effective_from}</td><td>{row.effective_until ?? "No expiry"}</td><td>{row.revoked_at ? "revoked" : "active"}</td></tr>)}</tbody></table></div></div></main> }
+`
+}
+
+function generatedPlatformDomainsPage(): string {
+  return `import { coreRepositories } from "@/lib/core"
+export const dynamic = "force-dynamic"
+export default async function PlatformDomainsPage() { const rows: any[] = await (await coreRepositories()).platform.listDomains(200) as any[]; return <main className="saas-content"><div className="saas-eyebrow">Platform Control</div><h1>Custom domains.</h1><p>Provider errors and verification state are visible without provider calls during page rendering.</p><div className="saas-card"><div className="table-scroll"><table className="saas-table"><thead><tr><th>Hostname</th><th>Workspace</th><th>Status</th><th>Verification</th><th>SSL</th><th>Error</th></tr></thead><tbody>{rows.map((row: any) => <tr key={row.id}><td>{row.hostname}</td><td>{row.workspace_name}</td><td>{row.status}</td><td>{row.verification_state}</td><td>{row.ssl_state}</td><td>{row.provider_error ?? "—"}</td></tr>)}</tbody></table></div></div></main> }
+`
+}
+
+function generatedPlatformAuditPage(): string {
+  return `import { coreRepositories } from "@/lib/core"
+export const dynamic = "force-dynamic"
+export default async function PlatformAuditPage() { const rows: any[] = await (await coreRepositories()).platform.listAudit({ limit: 200 }) as any[]; return <main className="saas-content"><div className="saas-eyebrow">Platform Control</div><h1>Audit events.</h1><p>Operator inspection is read-only and support views do not impersonate customers.</p><div className="saas-card"><div className="table-scroll"><table className="saas-table"><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Entity</th><th>Reason</th></tr></thead><tbody>{rows.map((row: any) => <tr key={row.id}><td>{row.created_at}</td><td>{row.actor_user_id}</td><td>{row.action}</td><td>{row.entity_type} / {row.entity_id}</td><td>{row.reason ?? "—"}</td></tr>)}</tbody></table></div></div></main> }
+`
+}
+
 function generatedPlatformWorkspacesPage(): string {
   return `import Link from "next/link"
 import { coreRepositories } from "@/lib/core"
@@ -293,7 +462,7 @@ function generatedPlatformHealthPage(): string {
 import { createCoreRepositories } from "@sapienx/saas-core-runtime"
 import { createServerClient } from "@/lib/supabase"
 export const dynamic = "force-dynamic"
-export default async function PlatformHealthPage() { const client = await createServerClient(); const repos: any = createCoreRepositories(client); const db: any = await repos.platform.healthSnapshot(); const checks = await inspectRuntimeHealth({ client, expectedSchemaVersion: "1.2-p0", environment: process.env }); return <main className="saas-content"><div className="saas-eyebrow">Platform Health</div><h1>Signals, not assumptions.</h1><div className="saas-grid two">{checks.map((check: any) => <div className="saas-card" key={check.key}><span className="saas-card-kicker">{check.label}</span><h3>{check.status}</h3><p>{check.detail}</p></div>)}<div className="saas-card"><span className="saas-card-kicker">Database snapshot</span><h3>{db?.ok ? "operational" : "warning"}</h3><p>Schema {db?.migrationVersion ?? "unknown"}; failed webhooks in seven days: {db?.failedWebhooksLast7Days ?? "unknown"}</p></div></div></main> }
+export default async function PlatformHealthPage() { const client = await createServerClient(); const repos: any = createCoreRepositories(client); const db: any = await repos.platform.healthSnapshot(); const checks = await inspectRuntimeHealth({ client, expectedSchemaVersion: "${SCHEMA_VERSION}", environment: process.env }); return <main className="saas-content"><div className="saas-eyebrow">Platform Health</div><h1>Signals, not assumptions.</h1><div className="saas-grid two">{checks.map((check: any) => <div className="saas-card" key={check.key}><span className="saas-card-kicker">{check.label}</span><h3>{check.status}</h3><p>{check.detail}</p></div>)}<div className="saas-card"><span className="saas-card-kicker">Database snapshot</span><h3>{db?.ok ? "operational" : "warning"}</h3><p>Schema {db?.migrationVersion ?? "unknown"}; failed webhooks in seven days: {db?.failedWebhooksLast7Days ?? "unknown"}</p></div></div></main> }
 `
 }
 
@@ -307,12 +476,40 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 `
 }
 
+function generatedAppLayoutV11(projectName: string, config: ResolvedCliConfig): string {
+  const nav = [
+    "{label:\"Overview\",href:\"/app\",active:true}",
+    "{label:\"Team\",href:\"/app/team\"}",
+    ...(config.billing ? ["{label:\"Plan & usage\",href:\"/app/plan\"}"] : []),
+    "{label:\"Setup Center\",href:\"/app/setup\"}",
+    "{label:\"Settings\",href:\"/app/settings\"}",
+    ...(config.platform ? ["{label:\"Platform Control\",href:\"/platform\"}"] : []),
+  ].join(",")
+  return `import type { ReactNode } from "react"
+import { getCurrentUser } from "@sapienx/saas-core-runtime"
+import { AppShell } from "@sapienx/saas-core-ui"
+import { getWorkspaceContext } from "@/lib/workspace"
+export const dynamic = "force-dynamic"
+export default async function AppLayout({ children }: { children: ReactNode }) { let email: string | null = null; let context: any = { workspaces: [], currentWorkspace: null }; try { context = await getWorkspaceContext(); email = (await getCurrentUser(context.client))?.email ?? null } catch { /* setup center remains visible before database configuration */ } return <AppShell productName="${projectName}" userEmail={email} workspaces={context.workspaces.map((workspace: any) => ({ id: workspace.id, name: workspace.name, slug: workspace.slug }))} currentWorkspaceId={context.currentWorkspace?.id} nav={[${nav}]}>{children}</AppShell> }
+`
+}
+
 function generatedAppHome(): string {
   return `import Link from "next/link"
 import { EmptyState } from "@sapienx/saas-core-ui"
 import { getWorkspaceContext } from "@/lib/workspace"
 export const dynamic = "force-dynamic"
 export default async function AppHome() { let context: any; let error = ""; try { context = await getWorkspaceContext() } catch (cause) { error = cause instanceof Error ? cause.message : "Core is not configured yet."; context = { workspaces: [], currentWorkspace: null } } return <main className="saas-content"><div className="saas-eyebrow">Workspace overview</div><h1>Build your product here.</h1><p>The generated app owns product routes. Core owns the platform boundary below them.</p>{error ? <div className="saas-state error"><strong>Runtime setup required</strong><p>{error}</p><Link className="saas-button secondary" href="/onboarding">Continue setup</Link></div> : !context.currentWorkspace ? <EmptyState title="Create your first workspace" description="A workspace is the tenant boundary for your product." action={<Link className="saas-button" href="/onboarding">Create workspace</Link>} /> : <><div className="saas-card"><span className="saas-card-kicker">Current workspace</span><h2>{context.currentWorkspace.name}</h2><p>{context.currentWorkspace.slug} · all Core routes now use this validated selection.</p></div><div className="saas-grid three"><Link className="saas-card" href="/app/team"><h3>Team</h3><p>Invite people and manage role hierarchy.</p></Link><Link className="saas-card" href="/app/plan"><h3>Plan & usage</h3><p>Inspect effective entitlements and metering.</p></Link><Link className="saas-card" href="/app/settings"><h3>Workspace settings</h3><p>Branding, PWA and optional services.</p></Link></div></>}</main> }
+`
+}
+
+function generatedAppHomeV11(config: ResolvedCliConfig): string {
+  const planCard = config.billing ? "<Link className=\"saas-card\" href=\"/app/plan\"><h3>Plan & usage</h3><p>Inspect effective entitlements and metering.</p></Link>" : ""
+  return `import Link from "next/link"
+import { EmptyState } from "@sapienx/saas-core-ui"
+import { getWorkspaceContext } from "@/lib/workspace"
+export const dynamic = "force-dynamic"
+export default async function AppHome() { let context: any; let error = ""; try { context = await getWorkspaceContext() } catch (cause) { error = cause instanceof Error ? cause.message : "Core is not configured yet."; context = { workspaces: [], currentWorkspace: null } } return <main className="saas-content"><div className="saas-eyebrow">Workspace overview</div><h1>Build your product here.</h1><p>The generated app owns product routes. Core owns the platform boundary below them.</p>{error ? <div className="saas-state error"><strong>Runtime setup required</strong><p>{error}</p><Link className="saas-button secondary" href="/app/setup">Open Setup Center</Link></div> : !context.currentWorkspace ? <EmptyState title="Create your first workspace" description="A workspace is the tenant boundary for your product." action={<Link className="saas-button" href="/onboarding">Create workspace</Link>} /> : <><div className="saas-card"><span className="saas-card-kicker">Current workspace</span><h2>{context.currentWorkspace.name}</h2><p>{context.currentWorkspace.slug} · selection is validated and persisted server-side.</p></div><div className="saas-grid three"><Link className="saas-card" href="/app/team"><h3>Team</h3><p>Invite people and manage role hierarchy.</p></Link>${planCard}<Link className="saas-card" href="/app/settings"><h3>Workspace settings</h3><p>Branding, optional services and product boundary.</p></Link></div></>}</main> }
 `
 }
 
@@ -340,6 +537,31 @@ export default async function SettingsPage() { const context: any = await getWor
 `
 }
 
+function generatedSettingsPageV11(config: ResolvedCliConfig): string {
+  const services = [
+    "Email delivery: " + (config.email ? "enabled" : "disabled"),
+    "Billing: " + (config.billing ? "enabled" : "disabled"),
+    "Custom domains: " + (config.domains ? "enabled" : "disabled"),
+    "PWA: " + (config.pwa ? "enabled" : "disabled"),
+    "Web Push: " + (config.push ? "enabled" : "disabled"),
+  ]
+  return `import Link from "next/link"
+import { getWorkspaceContext } from "@/lib/workspace"
+export const dynamic = "force-dynamic"
+export default async function SettingsPage() { const context: any = await getWorkspaceContext(); return <main className="saas-content"><div className="saas-eyebrow">Workspace settings</div><h1>Configure the platform boundary.</h1><div className="saas-card"><h2>{context.currentWorkspace?.name ?? "No workspace selected"}</h2><p>Current selection is stored in a secure, membership-validated cookie. Product tables should reference workspace_id.</p><Link className="saas-button secondary" href="/app/setup">Open Setup Center</Link></div><div className="saas-grid two" style={{marginTop:16}}><div className="saas-card"><h2>Product-owned domain</h2><p>Add product tables with Core-derived workspace authorization. Core intentionally does not define a universal resources table.</p></div><div className="saas-card"><h2>Core modules</h2><ul>${services.map((service) => "<li>" + service + "</li>").join("")}</ul></div></div></main> }
+`
+}
+
+function generatedSetupPage(config: ResolvedCliConfig): string {
+  return `import { inspectProviderConfiguration } from "@sapienx/saas-core"
+import { inspectRuntimeHealth } from "@sapienx/saas-core-runtime"
+import { createServerClient } from "@/lib/supabase"
+export const dynamic = "force-dynamic"
+const modules = ${JSON.stringify({ billing: config.billing, email: config.email, domains: config.domains, pwa: config.pwa, push: config.push, platform: config.platform })}
+export default async function SetupPage() { let checks: any[] = []; let providerChecks: any[] = inspectProviderConfiguration(process.env, modules); try { checks = await inspectRuntimeHealth({ client: await createServerClient(), expectedSchemaVersion: "${SCHEMA_VERSION}", environment: process.env }) } catch (error) { checks = [{ key: "runtime", label: "Runtime", status: "error", detail: error instanceof Error ? error.message : "Runtime check failed." }] } return <main className="saas-content"><div className="saas-eyebrow">Setup Center</div><h1>Production readiness.</h1><p>These checks use the same health and provider diagnostics as the CLI. A configured provider is not reported as operational until its live boundary is verified.</p><div className="saas-grid two">{[...checks, ...providerChecks].map((check: any) => <div className="saas-card" key={check.key}><span className="saas-card-kicker">{check.label}</span><h3>{String(check.status).replaceAll("_", " ")}</h3><p>{check.detail}</p>{check.missing?.length ? <small>Missing: {check.missing.join(", ")}</small> : null}</div>)}</div><div className="saas-card" style={{marginTop:16}}><h2>Product boundary</h2><p>Core owns identity, tenants, team, plans and operations. Add product tables with workspace_id and product-specific policies under src/product.</p></div></main> }
+`
+}
+
 function readManifest(target: string): Manifest | null {
   const path = join(target, ".saas-core.json")
   if (!existsSync(path)) return null
@@ -355,16 +577,50 @@ function printHeader(command: string) {
   console.log(`\n${cyan("SaaS Core")} ${dim(`v${VERSION}`)}  ${dim(command)}\n${dim("Reusable multi-tenant SaaS foundation")}`)
 }
 function writeSafe(path: string, content: string, dryRun: boolean): "created" | "skipped" { if (existsSync(path)) return "skipped"; if (!dryRun) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content, "utf8") }; return "created" }
-function parseFlags(argv: string[]) { return { yes: argv.includes("--yes"), nonInteractive: argv.includes("--non-interactive"), dryRun: argv.includes("--dry-run") } }
+const parseFlags = parseCliFlags
 
-function printInitConfiguration(projectName: string) {
+function printInitConfiguration(projectName: string, config: ResolvedCliConfig) {
   console.log(`\n${cyan("Configuration")}`)
   console.log(`  Project            ${projectName}`)
   console.log(`  Database & Auth    Supabase`)
-  console.log(`  Billing            Paddle sandbox boundary`)
-  console.log(`  Email              Resend delivery boundary`)
-  console.log(`  Platform Control   Included`)
+  console.log(`  Billing            ${config.billing ? "Paddle sandbox boundary" : "Disabled"}`)
+  console.log(`  Email              ${config.email ? "Resend delivery boundary" : "Disabled"}`)
+  console.log(`  Domains            ${config.domains ? "Vercel boundary" : "Disabled"}`)
+  console.log(`  PWA                ${config.pwa ? "Enabled" : "Disabled"}`)
+  console.log(`  Web Push           ${config.push ? "Enabled" : "Disabled"}`)
+  console.log(`  Platform Control   ${config.platform ? "Included" : "Disabled"}`)
+  console.log(`  Core Lab           ${config.coreLab ? "Included" : "Disabled"}`)
   console.log(`  Product domain     Ready for product-owned tables`)
+}
+
+async function promptInitConfig(flags: CliFlags): Promise<ResolvedCliConfig | null> {
+  const interactive = Boolean(input.isTTY && !flags.yes && !flags.nonInteractive)
+  if (!interactive) return resolveCliConfig({ flags, interactive: false })
+  const rl = createInterface({ input, output })
+  let cancelled = false
+  rl.once("SIGINT", () => { cancelled = true; rl.close() })
+  const ask = async (label: string, defaultValue: boolean) => {
+    const answer = (await rl.question(`\n◇ ${label} [${defaultValue ? "Y/n" : "y/N"}] `)).trim().toLowerCase()
+    if (cancelled) return null
+    if (!answer) return defaultValue
+    return answer === "y" || answer === "yes"
+  }
+  try {
+    const billing = await ask("Enable Paddle billing?", true)
+    const email = await ask("Enable Resend email delivery?", true)
+    const domains = await ask("Enable custom domains?", false)
+    const pwa = await ask("Enable PWA hooks?", false)
+    const push = await ask("Enable Web Push?", false)
+    const platform = await ask("Enable Platform Control?", true)
+    const coreLab = await ask("Include Core Lab metadata?", true)
+    const installDependencies = await ask("Install dependencies now?", true)
+    rl.close()
+    if (cancelled || [billing, email, domains, pwa, push, platform, coreLab, installDependencies].some((value) => value === null)) return null
+    return resolveCliConfig({ flags, billing: Boolean(billing), email: Boolean(email), domains: Boolean(domains), pwa: Boolean(pwa), push: Boolean(push), platform: Boolean(platform), coreLab: Boolean(coreLab), installDependencies: Boolean(installDependencies) })
+  } catch {
+    rl.close()
+    return null
+  }
 }
 
 async function projectNameFor(targetArg: string | undefined, target: string, options: ReturnType<typeof parseFlags>): Promise<string | null> {
@@ -390,8 +646,10 @@ async function init(targetArg: string | undefined, options: ReturnType<typeof pa
   const target = resolve(targetArg ?? ".")
   const projectName = await projectNameFor(targetArg, target, options)
   if (!projectName) { console.log(yellow("Cancelled.")); process.exitCode = 130; return }
-  printInitConfiguration(projectName)
-  const files = generatedFiles(projectName)
+  const config = await promptInitConfig(options)
+  if (!config) { console.log(yellow("Cancelled.")); process.exitCode = 130; return }
+  printInitConfiguration(projectName, config)
+  const files = generatedFiles(projectName, config)
   const conflicts: string[] = []
   const created: string[] = []
   for (const [relative, content] of files) {
@@ -404,21 +662,39 @@ async function init(targetArg: string | undefined, options: ReturnType<typeof pa
   const prior = readManifest(target)
   const managedFiles: Record<string, ManagedFile> = { ...(prior ? Object.fromEntries(Object.entries(prior.managedFiles).filter(([file]) => !FRAMEWORK_GENERATED_FILES.has(file)).map(([file, value]) => [file, typeof value === "string" ? { hash: value, ownership: "managed" as const } : value])) : {}) }
   for (const relative of created.filter((file) => file !== ".saas-core.json" && file !== "src/product/README.md" && !FRAMEWORK_GENERATED_FILES.has(file))) { managedFiles[relative] = { hash: hash(files.get(relative) ?? ""), ownership: relative === "package.json" || relative === "core.config.ts" ? "mergeable" : "managed" } }
-  const manifest: Manifest = { projectName: prior?.projectName ?? projectName, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: MODULES, providers: { auth: "supabase", billing: "paddle", email: "resend", domains: "vercel", push: "web-push" }, managedFiles, generatedFiles: { "src/product/README.md": { ownership: "user-owned" }, "next-env.d.ts": { ownership: "mergeable" } }, installedAt: prior?.installedAt ?? now, updatedAt: now, version: VERSION, modules: MODULES }
+  const manifest: Manifest = { projectName: prior?.projectName ?? projectName, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: modulesForConfig(config), providers: { auth: "supabase", ...(config.billing ? { billing: "paddle" } : {}), ...(config.email ? { email: "resend" } : {}), ...(config.domains ? { domains: "vercel" } : {}), ...(config.push ? { push: "web-push" } : {}) }, configuration: config, managedFiles, generatedFiles: { "src/product/README.md": { ownership: "user-owned" }, "next-env.d.ts": { ownership: "mergeable" } }, installedAt: prior?.installedAt ?? now, updatedAt: now, version: VERSION, modules: modulesForConfig(config) }
   if (!options.dryRun) { mkdirSync(target, { recursive: true }); writeFileSync(join(target, ".saas-core.json"), json(manifest), "utf8") }
   console.log(`${green(options.dryRun ? "◇" : "✓")} ${options.dryRun ? "Preparing generated application" : "Generated application"} ${dim(`(${created.length} files)`)}`)
   if (conflicts.length) { console.log(`\n${yellow("Existing files preserved")}`); for (const file of conflicts) console.log(`  ${yellow("conflict")} ${file}`) }
   console.log(`\n${green(options.dryRun ? "Dry run complete" : "✓ SaaS Core ready")}  ${dim(target)}`)
-  if (!options.dryRun) console.log(`\nNext:\n  cd ${targetArg && targetArg !== "." ? targetArg : "."}\n  cp .env.example .env.local\n  pnpm install\n  pnpm dev`)
+  if (!options.dryRun && config.installDependencies) {
+    try { execFileSync("pnpm", ["install"], { cwd: target, stdio: "inherit" }) } catch { console.log(yellow("Dependency installation failed; run pnpm install manually.")) }
+  }
+  if (!options.dryRun) console.log(`\nNext:\n  cd ${targetArg && targetArg !== "." ? targetArg : "."}\n  cp .env.example .env.local\n  ${config.installDependencies ? "pnpm dev" : "pnpm install && pnpm dev"}`)
 }
 
-type DoctorStatus = "PASS" | "NOT CONFIGURED" | "CONFIGURED_UNVERIFIED" | "WARN" | "FAIL" | "UNKNOWN"
+type DoctorStatus = "PASS" | "NOT CONFIGURED" | "CONFIGURED_UNVERIFIED" | "DISABLED" | "WARN" | "FAIL" | "UNKNOWN"
 function check(label: string, status: DoctorStatus, detail: string) { const symbol = status === "PASS" ? green("✓") : status === "FAIL" ? red("✗") : yellow("!"); console.log(`${symbol} ${label.padEnd(30)} ${status.padEnd(21)} ${dim(detail)}`); return status === "PASS" }
 function commandVersion(command: string, args: string[] = ["--version"]): string | null { try { return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim().split("\n")[0] ?? null } catch { return null } }
+function projectEnvironment(target: string): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = { ...process.env }
+  for (const file of [".env.local", ".env"]) {
+    const path = join(target, file)
+    if (!existsSync(path)) continue
+    for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/)
+      if (!match) continue
+      const key = match[1]
+      if (!key || environment[key] !== undefined) continue
+      environment[key] = (match[2] ?? "").replace(/^(["'])(.*)\1$/, "$2")
+    }
+  }
+  return environment
+}
 
-async function probeSupabase() {
-  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+async function probeSupabase(environment: NodeJS.ProcessEnv = process.env) {
+  const url = environment.SUPABASE_URL ?? environment.NEXT_PUBLIC_SUPABASE_URL
+  const key = environment.SUPABASE_SERVICE_ROLE_KEY ?? environment.SUPABASE_ANON_KEY ?? environment.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !key) return { connectivity: ["NOT CONFIGURED" as const, "credentials required for a live check"], schema: ["NOT CONFIGURED" as const, "credentials required for a live check"], core: ["NOT CONFIGURED" as const, "service-role key required for protected health RPC"] }
   const headers = { apikey: key, Authorization: `Bearer ${key}` }
   try {
@@ -426,7 +702,7 @@ async function probeSupabase() {
     if (!schemaResponse.ok) return { connectivity: ["FAIL" as const, `REST endpoint returned ${schemaResponse.status}`], schema: ["FAIL" as const, "schema version query failed"], core: ["WARN" as const, "health RPC was not attempted"] }
     const schemaRows = await schemaResponse.json() as unknown
     const schemaReady = Array.isArray(schemaRows) && schemaRows.some((row) => row && typeof row === "object" && (row as { version?: unknown }).version === SCHEMA_VERSION)
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return { connectivity: ["PASS" as const, "Supabase REST endpoint reachable"], schema: [schemaReady ? "PASS" as const : "WARN" as const, schemaReady ? SCHEMA_VERSION : "schema version not visible to anon key"], core: ["NOT CONFIGURED" as const, "service-role key required for protected health RPC"] }
+    if (!environment.SUPABASE_SERVICE_ROLE_KEY) return { connectivity: ["PASS" as const, "Supabase REST endpoint reachable"], schema: [schemaReady ? "PASS" as const : "WARN" as const, schemaReady ? SCHEMA_VERSION : "schema version not visible to anon key"], core: ["NOT CONFIGURED" as const, "service-role key required for protected health RPC"] }
     const healthResponse = await fetch(`${url.replace(/\/$/, "")}/rest/v1/rpc/core_health_check`, { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: "{}", signal: AbortSignal.timeout(5000) })
     const health = await healthResponse.json().catch(() => null) as { ok?: boolean; missingTables?: string[] } | null
     return { connectivity: ["PASS" as const, "Supabase REST endpoint reachable"], schema: [schemaReady ? "PASS" as const : "FAIL" as const, schemaReady ? SCHEMA_VERSION : "required schema version missing"], core: [healthResponse.ok && health?.ok === true ? "PASS" as const : "FAIL" as const, healthResponse.ok && health?.ok === true ? "tables, functions and RLS health check passed" : `core health check failed${health?.missingTables?.length ? `: ${health.missingTables.join(", ")}` : ""}`] }
@@ -436,41 +712,39 @@ async function probeSupabase() {
 }
 
 async function doctor(target: string) {
-  const manifest = readManifest(target); let passed = 0; let total = 0
-  const add = (label: string, status: DoctorStatus, detail: string) => { total++; if (check(label, status, detail)) passed++ }
+  const manifest = readManifest(target); const environment = projectEnvironment(target); let passed = 0; let warnings = 0; let failed = 0
+  const add = (label: string, status: DoctorStatus, detail: string) => { if (check(label, status, detail)) passed++; else if (status === "FAIL") failed++; else warnings++ }
   add("Core manifest", manifest ? "PASS" : "FAIL", manifest ? `${manifest.coreVersion} / ${manifest.schemaVersion}` : "missing .saas-core.json")
   add("Node runtime", Number(process.versions.node.split(".")[0]) >= 20 ? "PASS" : "FAIL", process.versions.node)
   add("pnpm", commandVersion("pnpm") ? "PASS" : "FAIL", commandVersion("pnpm") ?? "not installed")
   let packageJson: ProjectPackage | null = null
   try { packageJson = JSON.parse(readFileSync(join(target, "package.json"), "utf8")) as ProjectPackage } catch { /* report below */ }
   add("Next.js compatibility", packageJson?.dependencies?.next ? "PASS" : "FAIL", packageJson?.dependencies?.next ?? "package dependency missing")
+  const packageVersions = Object.fromEntries(Object.entries({ ...(packageJson?.dependencies ?? {}), ...(packageJson?.devDependencies ?? {}) }).filter(([name]) => name.startsWith("@sapienx/saas-core")))
+  const compatibility = evaluateCompatibility({ packageVersions, ...(manifest?.schemaVersion ? { schemaVersion: manifest.schemaVersion } : {}), ...(manifest?.coreVersion ? { manifestVersion: manifest.coreVersion } : {}) })
+  add("Core compatibility", compatibility.status === "incompatible" ? "FAIL" : compatibility.status === "warning" ? "WARN" : "PASS", compatibility.detail)
   add("Core config", existsSync(join(target, "core.config.ts")) ? "PASS" : "FAIL", "core.config.ts")
   add("Schema migration", existsSync(join(target, "supabase/migrations")) ? "PASS" : "FAIL", "migration directory")
   const envKeys = ["SUPABASE_URL", "SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"]
-  const configured = envKeys.filter((key) => Boolean(process.env[key] ?? process.env[`NEXT_PUBLIC_${key}`]))
+  const configured = envKeys.filter((key) => Boolean(environment[key] ?? environment[`NEXT_PUBLIC_${key}`]))
   add("Auth environment", configured.length === envKeys.length ? "PASS" : "NOT CONFIGURED", `${configured.length}/${envKeys.length} configured; secrets hidden`)
-  const probe = await probeSupabase()
+  const probe = await probeSupabase(environment)
   add("Supabase connectivity", (probe.connectivity[0] ?? "UNKNOWN") as "PASS" | "NOT CONFIGURED" | "WARN" | "FAIL" | "UNKNOWN", probe.connectivity[1] ?? "unknown")
   add("Core schema version", (probe.schema[0] ?? "UNKNOWN") as "PASS" | "NOT CONFIGURED" | "WARN" | "FAIL" | "UNKNOWN", probe.schema[1] ?? "unknown")
   add("Core tables/functions", (probe.core[0] ?? "UNKNOWN") as "PASS" | "NOT CONFIGURED" | "WARN" | "FAIL" | "UNKNOWN", probe.core[1] ?? "unknown")
-  const paddleConfigured = Boolean(process.env.PADDLE_API_KEY && process.env.PADDLE_WEBHOOK_SECRET)
-  add("Paddle", paddleConfigured ? "CONFIGURED_UNVERIFIED" : "NOT CONFIGURED", paddleConfigured ? "credentials present; live provider call not performed" : "server credentials")
-  if (paddleConfigured) {
-    const mappingCount = readPaddlePriceMappings().length
-    add("Paddle price mappings", mappingCount === 6 ? "PASS" : "WARN", `${mappingCount}/6 paid plan interval mappings configured`)
-  } else add("Paddle price mappings", "NOT CONFIGURED", "configure provider price mappings after Paddle setup")
-  add("Resend", process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL ? "CONFIGURED_UNVERIFIED" : "NOT CONFIGURED", process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL ? "credentials present; delivery not verified" : "server credentials")
-  add("Vercel domains", process.env.VERCEL_TOKEN ? "CONFIGURED_UNVERIFIED" : "NOT CONFIGURED", process.env.VERCEL_TOKEN ? "credentials present; provider not queried" : "optional provider credentials")
-  add("Web Push", process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY ? "CONFIGURED_UNVERIFIED" : "NOT CONFIGURED", process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY ? "VAPID configured; delivery not verified" : "optional VAPID credentials")
-  add("Cron secret", process.env.PADDLE_CRON_SECRET ? "PASS" : "NOT CONFIGURED", process.env.PADDLE_CRON_SECRET ? "internal lifecycle route protected" : "internal lifecycle route")
+  const configuration = manifest ? configFromManifest(manifest) : resolveCliConfig()
+  for (const provider of inspectProviderConfiguration(environment, configuration)) {
+    const status: DoctorStatus = provider.state === "operational" ? "PASS" : provider.state === "configured_unverified" ? "CONFIGURED_UNVERIFIED" : provider.state === "disabled" ? "DISABLED" : provider.state === "not_configured" ? "NOT CONFIGURED" : provider.state === "warning" ? "WARN" : provider.state === "error" ? "FAIL" : "UNKNOWN"
+    add(provider.label, status, provider.missing?.length ? `${provider.detail}; missing ${provider.missing.join(", ")}` : provider.detail)
+  }
+  add("Cron secret", configuration.billing ? (environment.PADDLE_CRON_SECRET ? "PASS" : "NOT CONFIGURED") : "DISABLED", configuration.billing ? (environment.PADDLE_CRON_SECRET ? "internal lifecycle route protected" : "internal lifecycle route") : "billing disabled")
   if (manifest) {
     const drift = Object.entries(manifest.managedFiles).filter(([file, value]) => !existsSync(join(target, file)) || hash(readFileSync(join(target, file), "utf8")) !== managedHash(value))
     add("Managed-file drift", drift.length === 0 ? "PASS" : "WARN", drift.length ? `${drift.length} files changed` : "baseline clean")
   } else add("Managed-file drift", "FAIL", "manifest unavailable")
   const buildReady = Boolean(packageJson?.scripts?.build && packageJson?.scripts?.dev)
   add("Build readiness", buildReady ? "PASS" : "FAIL", buildReady ? "dev/build scripts present" : "missing dev or build script")
-  const failed = total - passed
-  console.log(`\n${passed} passed  ${failed} requiring attention`); if (failed > 0) process.exitCode = 1
+  console.log(`\n${passed} passed  ${warnings} warnings  ${failed} failed`); if (failed > 0) process.exitCode = 1
 }
 
 function diff(target: string) {
@@ -479,16 +753,20 @@ function diff(target: string) {
   for (const [file, value] of Object.entries(manifest.managedFiles)) { if (!existsSync(join(target, file))) changes.push(`managed file deleted: ${file}`); else if (hash(readFileSync(join(target, file), "utf8")) !== managedHash(value)) changes.push(`managed file modified: ${file}`) }
   for (const file of Object.keys(manifest.generatedFiles)) if (!existsSync(join(target, file))) changes.push(`generated user-owned file deleted: ${file}`)
   let packageJson: ProjectPackage | null = null; try { packageJson = JSON.parse(readFileSync(join(target, "package.json"), "utf8")) as ProjectPackage } catch { /* reported as drift */ }
-  if (packageJson?.dependencies && packageJson.dependencies["@sapienx/saas-core"] && !packageJson.dependencies["@sapienx/saas-core"].includes(VERSION)) changes.push(`package version mismatch: @sapienx/saas-core ${packageJson.dependencies["@sapienx/saas-core"]}`)
+  for (const [name, spec] of Object.entries({ ...(packageJson?.dependencies ?? {}), ...(packageJson?.devDependencies ?? {}) })) if (name.startsWith("@sapienx/saas-core") && !spec.includes(VERSION)) changes.push(`package version mismatch: ${name} ${spec}`)
+  if (manifest.schemaVersion !== SCHEMA_VERSION) changes.push(`schema drift: manifest ${manifest.schemaVersion}, expected ${SCHEMA_VERSION}`)
+  if (manifest.coreVersion !== VERSION) changes.push(`core version drift: manifest ${manifest.coreVersion}, expected ${VERSION}`)
+  if (!manifest.configuration) changes.push("config drift: v1.1 module configuration missing")
   if (!changes.length) console.log(`${green("✓ No Core drift")}\nManaged files checked: ${Object.keys(manifest.managedFiles).length}`)
   else { console.log(`${yellow("Core drift detected")}`); for (const change of changes) console.log(`  ${yellow(change)}`); process.exitCode = 2 }
 }
 
-function info(target: string) { const manifest = readManifest(target); console.log(json({ coreVersion: manifest?.coreVersion ?? null, schemaVersion: manifest?.schemaVersion ?? null, installedModules: manifest?.installedModules ?? [], providers: manifest?.providers ?? {}, environment: { node: process.versions.node, nodeEnv: process.env.NODE_ENV ?? "development", supabaseConfigured: Boolean(process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL) } })) }
+function info(target: string) { const manifest = readManifest(target); const environment = projectEnvironment(target); console.log(json({ coreVersion: manifest?.coreVersion ?? null, schemaVersion: manifest?.schemaVersion ?? null, installedModules: manifest?.installedModules ?? [], providers: manifest?.providers ?? {}, configuration: manifest?.configuration ?? null, environment: { node: process.versions.node, nodeEnv: environment.NODE_ENV ?? "development", supabaseConfigured: Boolean(environment.SUPABASE_URL ?? environment.NEXT_PUBLIC_SUPABASE_URL), envFile: existsSync(join(target, ".env.local")) ? ".env.local" : existsSync(join(target, ".env")) ? ".env" : null } })) }
 
 function update(target: string, options: ReturnType<typeof parseFlags>) {
   const manifest = readManifest(target); if (!manifest) { console.log(red("No installed SaaS Core project found.")); process.exitCode = 1; return }
-  const source = generatedFiles(manifest.projectName ?? readFileSync(join(target, "package.json"), "utf8").match(/"name"\s*:\s*"([^"]+)/)?.[1] ?? "saas-product")
+  const configuration = resolveCliConfig({ ...configFromManifest(manifest), flags: options })
+  const source = generatedFiles(manifest.projectName ?? readFileSync(join(target, "package.json"), "utf8").match(/"name"\s*:\s*"([^"]+)/)?.[1] ?? "saas-product", configuration)
   const backup = join(target, ".saas-core-backup", new Date().toISOString().replace(/[:.]/g, "-")); const conflicts: string[] = []; const changes: string[] = []
   for (const [relative, content] of source) {
     const absolute = join(target, relative)
@@ -509,7 +787,7 @@ function update(target: string, options: ReturnType<typeof parseFlags>) {
       else if (hash(current) !== hash(content)) { changes.push(`update ${relative}`); if (!options.dryRun) { mkdirSync(dirname(join(backup, relative)), { recursive: true }); cpSync(absolute, join(backup, relative)); writeFileSync(absolute, content, "utf8") } }
     }
   }
-  const now = new Date().toISOString(); const next: Manifest = { ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: MODULES, updatedAt: now, version: VERSION, modules: MODULES }
+  const now = new Date().toISOString(); const next: Manifest = { ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: modulesForConfig(configuration), configuration, updatedAt: now, version: VERSION, modules: modulesForConfig(configuration) }
   if (!options.dryRun) for (const [relative] of source) if (relative !== ".saas-core.json" && existsSync(join(target, relative)) && !conflicts.includes(relative) && !FRAMEWORK_GENERATED_FILES.has(relative)) next.managedFiles[relative] = { hash: hash(readFileSync(join(target, relative), "utf8")), ownership: relative === "package.json" || relative === "core.config.ts" ? "mergeable" : "managed" }
   if (!options.dryRun) writeFileSync(join(target, ".saas-core.json"), json(next), "utf8")
   console.log(`${green(options.dryRun ? "Dry-run update" : "Core updated")} ${changes.length} change(s)`); if (conflicts.length) { console.log(yellow("Conflicts preserved:")); conflicts.forEach((file) => console.log(`  ${file}`)) }; if (!options.dryRun) console.log(dim(`backup: ${backup}`)); if (options.dryRun) changes.forEach((change) => console.log(`  ${change}`))
@@ -521,6 +799,9 @@ function test(target: string) {
   checks.push(["Managed files", Boolean(manifest && Object.entries(manifest.managedFiles).every(([file, value]) => existsSync(join(target, file)) && hash(readFileSync(join(target, file), "utf8")) === managedHash(value))), "hash baseline"])
   checks.push(["Product boundary", existsSync(join(target, "src/product")), "src/product"])
   checks.push(["Next app routes", existsSync(join(target, "src/app")) && existsSync(join(target, "proxy.ts")), "App Router + proxy"])
+  checks.push(["v1.1 manifest", manifest?.coreVersion === VERSION && manifest?.schemaVersion === SCHEMA_VERSION, `${VERSION} / ${SCHEMA_VERSION}`])
+  checks.push(["Setup Center", existsSync(join(target, "src/app/app/setup/page.tsx")), "/app/setup"])
+  checks.push(["Platform operations", existsSync(join(target, "src/app/platform/health/page.tsx")) && existsSync(join(target, "src/app/platform/audit/page.tsx")), "health + audit routes"])
   checks.push(["Core migration", existsSync(join(target, "supabase/migrations")), "Supabase migration"])
   for (const [label, pass, detail] of checks) console.log(`${pass ? green("✓") : red("✗")} ${label.padEnd(25)} ${dim(detail)}`)
   const passed = checks.filter(([, pass]) => pass).length; console.log(`\n${passed} passed  ${checks.length - passed} failed`); if (passed !== checks.length) process.exitCode = 1

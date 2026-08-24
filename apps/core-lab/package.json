@@ -1,8 +1,14 @@
 {
   "name": "@sapienx/core-lab",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "pnpm --filter @sapienx/saas-core build && node server.mjs", "build": "pnpm --filter @sapienx/saas-core build", "start": "node server.mjs" },
-  "dependencies": { "@sapienx/saas-core": "workspace:*" }
+  "scripts": {
+    "dev": "pnpm --filter @sapienx/saas-core build && node server.mjs",
+    "build": "pnpm --filter @sapienx/saas-core build",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@sapienx/saas-core": "workspace:*"
+  }
 }
