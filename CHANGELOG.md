@@ -2,6 +2,10 @@
 
 ## 1.0.0
 
+- Final acceptance patch: generated-app CI now provisions local Supabase
+  credentials before install/build/start, the packed browser journey covers
+  workspace switching and invitation/security regressions, and CLI init output
+  is compact and explicit about its generated platform configuration.
 - Added the first-class Supabase runtime with browser, SSR, service-role and
   authenticated Core repository boundaries.
 - Hardened workspace, membership, invitation, entitlement and usage mutations

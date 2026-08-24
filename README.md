@@ -276,9 +276,10 @@ SAAS_CORE_DB_INTEGRATION=1 SUPABASE_URL=http://127.0.0.1:54321 \
 The authenticated suite contains 20 sequential database checks covering RLS,
 RPC-only writes, owner safety, invitation replay and seat races, effective
 entitlements, usage concurrency and platform roles. CI also runs the packed
-generated-app browser journey, with invitation acceptance and mobile overflow
-included in that job. `invitation-e2e` is a named CI gate backed by the combined
-generated-app browser job.
+generated-app browser journey, with protected routes, safe redirects, workspace
+switching, invitation acceptance/replay protection and mobile overflow included
+in that job. The browser job writes local Supabase credentials before installing,
+building or starting the generated app.
 
 Live Paddle, Resend, Vercel, DNS, Web Push and cloud Supabase integration are
 configuration-gated and must be verified in the target environment before
