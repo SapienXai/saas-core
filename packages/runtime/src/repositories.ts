@@ -239,6 +239,42 @@ export function createCoreRepositories(client: Client) {
       if (result.error) fail("platformHealthSnapshot", result.error)
       return one(result.data)
     },
+    async search(query: string, limit = 25) {
+      await actor(client)
+      const result = await client.rpc("platform_search", { target_query: query, target_limit: limit })
+      if (result.error) fail("platformSearch", result.error)
+      return result.data ?? []
+    },
+    async listOverrides(state = "active", limit = 100) {
+      await actor(client)
+      const result = await client.rpc("platform_list_overrides", { target_state: state, target_limit: limit })
+      if (result.error) fail("platformListOverrides", result.error)
+      return result.data ?? []
+    },
+    async listSubscriptions(limit = 100) {
+      await actor(client)
+      const result = await client.rpc("platform_list_subscriptions", { target_limit: limit })
+      if (result.error) fail("platformListSubscriptions", result.error)
+      return result.data ?? []
+    },
+    async listAudit(input: { workspaceId?: string; actorId?: string; action?: string; entityType?: string; limit?: number; offset?: number } = {}) {
+      await actor(client)
+      const result = await client.rpc("platform_list_audit", { target_workspace: input.workspaceId ?? null, target_actor: input.actorId ?? null, target_action: input.action ?? null, target_entity_type: input.entityType ?? null, target_limit: input.limit ?? 100, target_offset: input.offset ?? 0 })
+      if (result.error) fail("platformListAudit", result.error)
+      return result.data ?? []
+    },
+    async attention(limit = 100) {
+      await actor(client)
+      const result = await client.rpc("platform_attention", { target_limit: limit })
+      if (result.error) fail("platformAttention", result.error)
+      return result.data ?? []
+    },
+    async listDomains(limit = 100) {
+      await actor(client)
+      const result = await client.rpc("platform_list_domains", { target_limit: limit })
+      if (result.error) fail("platformListDomains", result.error)
+      return result.data ?? []
+    },
   }
 
   const domains = {
