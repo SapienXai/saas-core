@@ -104,15 +104,16 @@ jobs:
       - run: supabase db reset
       - name: Generate and start the acceptance app
         run: |
+          set -euo pipefail
+          eval "$(supabase status -o env)"
           temp_dir="$(mktemp -d)"
           echo "SAAS_CORE_ACCEPTANCE_DIR=$temp_dir" >> "$GITHUB_ENV"
           SAAS_CORE_TARBALL_DIR="$GITHUB_WORKSPACE/artifacts" node packages/core/dist/cli.js init "$temp_dir/app" --yes --non-interactive
-          eval "$(supabase status -o env)"
-          printf 'NEXT_PUBLIC_SUPABASE_URL=%s\nNEXT_PUBLIC_SUPABASE_ANON_KEY=%s\nSUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' "$API_URL" "$ANON_KEY" "$API_URL" "$ANON_KEY" "$SERVICE_ROLE_KEY" > "$temp_dir/app/.env.local"
+          printf 'APP_URL=%s\nSAAS_CORE_PRODUCT_NAME=CI Auth Acceptance\nNEXT_PUBLIC_SUPABASE_URL=%s\nNEXT_PUBLIC_SUPABASE_ANON_KEY=%s\nSUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' 'http://127.0.0.1:4321' "$API_URL" "$ANON_KEY" "$API_URL" "$ANON_KEY" "$SERVICE_ROLE_KEY" > "$temp_dir/app/.env.local"
           pnpm --dir "$temp_dir/app" install --no-frozen-lockfile
           pnpm --dir "$temp_dir/app" build
           (pnpm --dir "$temp_dir/app" exec next dev --port 4321 > "$temp_dir/next.log" 2>&1 & echo $! > "$temp_dir/next.pid")
-          for attempt in $(seq 1 60); do curl --fail --silent http://127.0.0.1:4321/ >/dev/null && break; sleep 1; done
+          for attempt in $(seq 1 60); do if curl --fail --silent http://127.0.0.1:4321/ >/dev/null; then break; fi; if [ "$attempt" = 60 ]; then cat "$temp_dir/next.log"; exit 1; fi; sleep 1; done
       - name: Run Chromium auth and protected-route smoke
         run: |
           pnpm --dir "$SAAS_CORE_ACCEPTANCE_DIR/app" exec playwright install --with-deps chromium
@@ -162,23 +163,19 @@ jobs:
       - run: supabase db reset
       - name: Generate and install a packed application
         run: |
+          set -euo pipefail
+          eval "$(supabase status -o env)"
           temp_dir="$(mktemp -d)"
+          echo "SAAS_CORE_ACCEPTANCE_DIR=$temp_dir" >> "$GITHUB_ENV"
           SAAS_CORE_TARBALL_DIR="$GITHUB_WORKSPACE/artifacts" node packages/core/dist/cli.js init "$temp_dir/app" --yes --non-interactive
           cp tests/generated-app.e2e.mjs "$temp_dir/app/generated-app.e2e.mjs"
+          printf 'APP_URL=%s\nSAAS_CORE_PRODUCT_NAME=CI Generated Acceptance\nNEXT_PUBLIC_SUPABASE_URL=%s\nNEXT_PUBLIC_SUPABASE_ANON_KEY=%s\nSUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' 'http://127.0.0.1:4321' "$API_URL" "$ANON_KEY" "$API_URL" "$ANON_KEY" "$SERVICE_ROLE_KEY" > "$temp_dir/app/.env.local"
           pnpm --dir "$temp_dir/app" install --no-frozen-lockfile
           pnpm --dir "$temp_dir/app" build
           (pnpm --dir "$temp_dir/app" exec next dev --port 4321 > "$temp_dir/next.log" 2>&1 & echo $! > "$temp_dir/next.pid")
-          for attempt in $(seq 1 60); do curl --fail --silent http://127.0.0.1:4321/ >/dev/null && break; sleep 1; done
-          eval "$(supabase status -o env)"
+          for attempt in $(seq 1 60); do if curl --fail --silent http://127.0.0.1:4321/ >/dev/null; then break; fi; if [ "$attempt" = 60 ]; then cat "$temp_dir/next.log"; exit 1; fi; sleep 1; done
           pnpm --dir "$temp_dir/app" exec playwright install --with-deps chromium
           SAAS_CORE_APP_URL=http://127.0.0.1:4321 SUPABASE_URL="$API_URL" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" pnpm --dir "$temp_dir/app" exec node generated-app.e2e.mjs
-
-  invitation-e2e:
-    needs: generated-app-e2e
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: echo "Invitation signup, wrong-account protection, token acceptance, and mobile coverage run in generated-app-e2e."
 
   core-lab-e2e:
     runs-on: ubuntu-latest
