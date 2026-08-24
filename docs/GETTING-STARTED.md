@@ -21,5 +21,8 @@ pnpm dev
 ```
 
 The generated project includes the Next.js App Router, SSR auth routes,
-protected proxy, onboarding, workspace/team/plan/settings/platform pages and
-Core-owned migrations.
+protected proxy, onboarding, workspace/team/plan/settings pages, Setup Center,
+Platform Control operations pages and Core-owned migrations. The Team flow
+uses Resend when configured and otherwise exposes a clearly labeled local
+invitation link. The Plan page submits Core plan keys; provider price IDs stay
+server-side.

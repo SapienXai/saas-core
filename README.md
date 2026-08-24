@@ -2,7 +2,7 @@
 
 One reusable foundation for every SapienX SaaS product.
 
-SaaS Core v1.0.0 is a provider-aware but product-neutral platform layer for
+SaaS Core v1.1.0 is a provider-aware but product-neutral platform layer for
 authentication, workspaces, memberships, permissions, invitations, plans,
 entitlements, usage, billing state, domains, notifications, audit and Platform
 Control. It owns the customer boundary up to `Workspace`; the product owns its
@@ -55,9 +55,8 @@ pnpm lab:dev
 To scaffold a product project from the published package:
 
 ```bash
-npx @sapienx/saas-core init projects-app
-cd projects-app
-cp .env.example .env.local
+npx @sapienx/saas-core init my-saas
+cd my-saas
 pnpm install
 supabase start
 supabase db reset
@@ -72,8 +71,9 @@ repository. The generated app exposes `/signup`, `/login`, `/forgot-password`,
 
 The generated project is a real Next.js App Router application. It includes
 Supabase SSR/PKCE auth routes, protected middleware, onboarding, the reusable
-Core UI shell, workspace/team/plan/settings/platform routes and the ordered
-Core migrations. Use local packed artifacts during repository development with
+Core UI shell, Setup Center (`/app/setup`), workspace/team/plan/settings and
+Platform Control operations routes, plus the ordered Core migrations. Use local
+packed artifacts during repository development with
 `SAAS_CORE_TARBALL_DIR=/path/to/saas-core/artifacts`.
 
 ```bash
@@ -106,8 +106,18 @@ the managed boundary.
 | `saas-core test` | Installed-project integrity checks |
 
 `init` supports `--yes`, `--non-interactive` and `--dry-run`, so it is usable in
-CI as well as interactively. Defaults are Supabase for auth/database, Paddle
-Sandbox for billing, Resend for email and optional Web Push/Vercel domains.
+CI as well as interactively. The wizard lets a product choose billing, email,
+domains, PWA, Web Push, Platform Control, Core Lab and dependency installation.
+Use `--without-billing`, `--without-email`, `--without-platform`,
+`--with-domains`, `--with-pwa` and `--with-push` for explicit CI profiles.
+
+`doctor` loads `.env.local` when present, checks real Supabase reachability,
+schema and RPC health, and separates `NOT CONFIGURED` and
+`CONFIGURED_UNVERIFIED` from live `PASS`. `diff` reports managed-file,
+package, schema and manifest drift. `pnpm release:check` runs deterministic
+lint, typecheck, unit, build, pack and CLI gates; local-Supabase, browser and
+live-provider checks remain separate because they require their own runtime or
+credentials.
 
 ## Architecture and ownership
 

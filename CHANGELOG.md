@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.1.0
+
+- Added a configuration-driven CLI module wizard with safe non-interactive
+  defaults, optional billing/email/domain/PWA/push/platform modules and
+  ownership-aware v1.1 manifests.
+- Added the generated Setup Center, provider diagnostics, real `.env.local`
+  loading in `doctor`, expanded drift classification and deterministic
+  `release:check` gates.
+- Added bounded Platform Control search, subscriptions, overrides, domains,
+  audit and needs-attention RPCs plus reusable generated operator surfaces.
+- Added observability redaction helpers and preserved provider boundaries:
+  Paddle, Resend, Vercel and Web Push remain configured-but-unverified without
+  live credentials.
+- Strengthened packed generated-app Chromium acceptance for workspace
+  switching, invitation acceptance/replay protection, recovery, safe redirects
+  and mobile overflow. Auth lookup retries only address local Admin API
+  eventual consistency.
+
 ## 1.0.0
 
 - Final acceptance patch: generated-app CI now provisions local Supabase
