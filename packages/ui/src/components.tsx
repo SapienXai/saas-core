@@ -8,12 +8,13 @@ function getStatusLabel(status: string): { tone: StatusTone } {
 type StatusTone = "neutral" | "success" | "warning" | "danger" | "info"
 
 export type WorkspaceOption = { id: string; name: string; slug: string }
-export type AppShellProps = { productName: string; userEmail?: string | null; nav?: Array<{ label: string; href: string; active?: boolean }>; children: ReactNode }
+export type AppShellProps = { productName: string; userEmail?: string | null; nav?: Array<{ label: string; href: string; active?: boolean }>; workspaces?: WorkspaceOption[]; currentWorkspaceId?: string; children: ReactNode }
 
-export function AppShell({ productName, userEmail, nav = [], children }: AppShellProps) {
+export function AppShell({ productName, userEmail, nav = [], workspaces = [], currentWorkspaceId, children }: AppShellProps) {
   return <div className="saas-shell">
     <aside className="saas-sidebar" aria-label="Application navigation">
       <a className="saas-brand" href="/app"><span className="saas-brand-mark">S</span><span><strong>{productName}</strong><small>Workspace platform</small></span></a>
+      {workspaces.length > 0 && <WorkspaceSwitcher workspaces={workspaces} {...(currentWorkspaceId ? { currentId: currentWorkspaceId } : {})} />}
       <nav className="saas-nav">{nav.map((item) => <a className={item.active ? "active" : ""} href={item.href} key={item.href}>{item.label}</a>)}</nav>
       <div className="saas-sidebar-footer"><span>{userEmail ?? "Signed in"}</span><a href="/api/auth/signout">Sign out</a></div>
     </aside>
@@ -22,7 +23,7 @@ export function AppShell({ productName, userEmail, nav = [], children }: AppShel
 }
 
 export function WorkspaceSwitcher({ workspaces, currentId, name = "Workspace" }: { workspaces: WorkspaceOption[]; currentId?: string; name?: string }) {
-  return <label className="saas-switcher"><span>{name}</span><select defaultValue={currentId ?? workspaces[0]?.id ?? ""} aria-label="Workspace"><option value="" disabled>Select workspace</option>{workspaces.map((workspace) => <option value={workspace.id} key={workspace.id}>{workspace.name}</option>)}</select></label>
+  return <form className="saas-switcher" action="/api/workspaces/select" method="post"><label><span>{name}</span><select name="workspaceId" defaultValue={currentId ?? workspaces[0]?.id ?? ""} aria-label="Workspace">{workspaces.map((workspace) => <option value={workspace.id} key={workspace.id}>{workspace.name}</option>)}</select></label><button className="saas-button secondary" type="submit">Switch workspace</button></form>
 }
 
 export function StatusBadge({ status }: { status: string }) {
@@ -30,8 +31,9 @@ export function StatusBadge({ status }: { status: string }) {
   return <span className={`saas-badge ${tone}`}>{status.replaceAll("_", " ")}</span>
 }
 
-export function PlanCard({ name, price, features, current = false }: { name: string; price: string; features: string[]; current?: boolean }) {
-  return <article className={`saas-plan-card ${current ? "current" : ""}`}><div className="saas-card-kicker">{current ? "Current plan" : "Available plan"}</div><h3>{name}</h3><strong className="saas-plan-price">{price}</strong><ul>{features.map((feature) => <li key={feature}>{feature}</li>)}</ul><button type="button" disabled={current}>{current ? "Selected" : "Choose plan"}</button></article>
+export function PlanCard({ name, planKey = name.toLowerCase(), price, features, current = false, action, interval = "month" }: { name: string; planKey?: string; price: string; features: string[]; current?: boolean; action?: string; interval?: "month" | "year" }) {
+  const control = current ? <button type="button" disabled>Selected</button> : action ? <form action={action} method="post"><input type="hidden" name="planKey" value={planKey} /><input type="hidden" name="interval" value={interval} /><button type="submit">Choose plan</button></form> : <button type="button" disabled title="Billing action is not configured">Billing unavailable</button>
+  return <article className={`saas-plan-card ${current ? "current" : ""}`}><div className="saas-card-kicker">{current ? "Current plan" : "Available plan"}</div><h3>{name}</h3><strong className="saas-plan-price">{price}</strong><ul>{features.map((feature) => <li key={feature}>{feature}</li>)}</ul>{control}</article>
 }
 
 export function UsageMeter({ label, used, limit }: { label: string; used: number; limit: number | null }) {
