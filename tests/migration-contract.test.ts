@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest"
 
 const migration = readFileSync(join(process.cwd(), "supabase/migrations/20260824000000_saas_core_v1.sql"), "utf8")
 const hardening = readFileSync(join(process.cwd(), "supabase/migrations/20260824010000_production_hardening.sql"), "utf8")
+const finalHardening = readFileSync(join(process.cwd(), "supabase/migrations/20260824020000_final_p0_hardening.sql"), "utf8")
 
 describe("Core migration contract", () => {
   it("owns only product-neutral tables and enables tenant defense in depth", () => {
@@ -31,5 +32,14 @@ describe("Core migration contract", () => {
     expect(hardening).toContain("private.effective_plan_limit")
     expect(hardening).toContain("for update")
     expect(hardening).not.toMatch(/create policy[^;]+workspace_members[^;]+for all/i)
+  })
+
+  it("serializes seat decisions and keeps platform audit functions volatile", () => {
+    expect(finalHardening).toContain("pg_advisory_xact_lock")
+    expect(finalHardening).toContain("mark_invitation_delivery")
+    expect(finalHardening).toContain("expire_payment_grace")
+    expect(finalHardening).toContain("create or replace function public.platform_workspace_360")
+    const workspace360 = finalHardening.slice(finalHardening.indexOf("create or replace function public.platform_workspace_360"), finalHardening.indexOf("create or replace function public.platform_list_users"))
+    expect(workspace360).not.toContain("language plpgsql stable")
   })
 })
