@@ -347,19 +347,50 @@ function readManifest(target: string): Manifest | null {
 }
 
 function managedHash(value: ManagedFile | string): string { return typeof value === "string" ? value : value.hash }
-function printHeader(command: string) { console.log(`\n${cyan("SaaS Core")} ${dim(`v${VERSION}`)}  ${dim(command)}\n${dim("Reusable multi-tenant SaaS foundation")}`) }
+function printHeader(command: string) {
+  if (command === "init") {
+    console.log(`\n${cyan("SaaS Core")} ${dim(`v${VERSION}`)}\n\n${dim("Create a production SaaS foundation")}`)
+    return
+  }
+  console.log(`\n${cyan("SaaS Core")} ${dim(`v${VERSION}`)}  ${dim(command)}\n${dim("Reusable multi-tenant SaaS foundation")}`)
+}
 function writeSafe(path: string, content: string, dryRun: boolean): "created" | "skipped" { if (existsSync(path)) return "skipped"; if (!dryRun) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content, "utf8") }; return "created" }
 function parseFlags(argv: string[]) { return { yes: argv.includes("--yes"), nonInteractive: argv.includes("--non-interactive"), dryRun: argv.includes("--dry-run") } }
 
-async function projectNameFor(targetArg: string | undefined, target: string, options: ReturnType<typeof parseFlags>) {
+function printInitConfiguration(projectName: string) {
+  console.log(`\n${cyan("Configuration")}`)
+  console.log(`  Project            ${projectName}`)
+  console.log(`  Database & Auth    Supabase`)
+  console.log(`  Billing            Paddle sandbox boundary`)
+  console.log(`  Email              Resend delivery boundary`)
+  console.log(`  Platform Control   Included`)
+  console.log(`  Product domain     Ready for product-owned tables`)
+}
+
+async function projectNameFor(targetArg: string | undefined, target: string, options: ReturnType<typeof parseFlags>): Promise<string | null> {
   if (targetArg && targetArg !== ".") return target.split(/[\\/]/).filter(Boolean).pop() ?? "saas-product"
-  if (!options.yes && !options.nonInteractive && input.isTTY) { const rl = createInterface({ input, output }); const answer = (await rl.question("Project name [saas-product]: ")).trim(); rl.close(); return answer || "saas-product" }
+  if (!options.yes && !options.nonInteractive && input.isTTY) {
+    const rl = createInterface({ input, output })
+    let cancelled = false
+    rl.once("SIGINT", () => { cancelled = true; rl.close() })
+    try {
+      const answer = (await rl.question("\n◇ Project name [saas-product]: ")).trim()
+      rl.close()
+      if (cancelled) return null
+      return answer || "saas-product"
+    } catch {
+      rl.close()
+      return null
+    }
+  }
   return "saas-product"
 }
 
 async function init(targetArg: string | undefined, options: ReturnType<typeof parseFlags>) {
   const target = resolve(targetArg ?? ".")
   const projectName = await projectNameFor(targetArg, target, options)
+  if (!projectName) { console.log(yellow("Cancelled.")); process.exitCode = 130; return }
+  printInitConfiguration(projectName)
   const files = generatedFiles(projectName)
   const conflicts: string[] = []
   const created: string[] = []
@@ -375,9 +406,9 @@ async function init(targetArg: string | undefined, options: ReturnType<typeof pa
   for (const relative of created.filter((file) => file !== ".saas-core.json" && file !== "src/product/README.md" && !FRAMEWORK_GENERATED_FILES.has(file))) { managedFiles[relative] = { hash: hash(files.get(relative) ?? ""), ownership: relative === "package.json" || relative === "core.config.ts" ? "mergeable" : "managed" } }
   const manifest: Manifest = { projectName: prior?.projectName ?? projectName, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: MODULES, providers: { auth: "supabase", billing: "paddle", email: "resend", domains: "vercel", push: "web-push" }, managedFiles, generatedFiles: { "src/product/README.md": { ownership: "user-owned" }, "next-env.d.ts": { ownership: "mergeable" } }, installedAt: prior?.installedAt ?? now, updatedAt: now, version: VERSION, modules: MODULES }
   if (!options.dryRun) { mkdirSync(target, { recursive: true }); writeFileSync(join(target, ".saas-core.json"), json(manifest), "utf8") }
-  for (const file of created) console.log(`${green(options.dryRun ? "·" : "✓")} ${file}`)
+  console.log(`${green(options.dryRun ? "◇" : "✓")} ${options.dryRun ? "Preparing generated application" : "Generated application"} ${dim(`(${created.length} files)`)}`)
   if (conflicts.length) { console.log(`\n${yellow("Existing files preserved")}`); for (const file of conflicts) console.log(`  ${yellow("conflict")} ${file}`) }
-  console.log(`\n${green(options.dryRun ? "Dry run complete" : "Project ready")}  ${dim(target)}`)
+  console.log(`\n${green(options.dryRun ? "Dry run complete" : "✓ SaaS Core ready")}  ${dim(target)}`)
   if (!options.dryRun) console.log(`\nNext:\n  cd ${targetArg && targetArg !== "." ? targetArg : "."}\n  cp .env.example .env.local\n  pnpm install\n  pnpm dev`)
 }
 
