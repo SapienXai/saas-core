@@ -1,5 +1,5 @@
-export const CORE_VERSION = "1.1.0"
-export const CORE_SCHEMA_VERSION = "1.3.0"
+export const CORE_VERSION = "1.1.1"
+export const CORE_SCHEMA_VERSION = "1.3.1"
 
 export type OptionalModule = "billing" | "email" | "domains" | "pwa" | "push" | "platform" | "coreLab"
 
