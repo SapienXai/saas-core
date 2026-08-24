@@ -1,6 +1,6 @@
 import type { CoreSupabaseClient } from "./supabase.js"
 
-export type HealthState = "operational" | "warning" | "error" | "not_configured" | "unknown"
+export type HealthState = "operational" | "configured_unverified" | "warning" | "error" | "not_configured" | "unknown"
 export type HealthCheck = { key: string; label: string; status: HealthState; detail: string; durationMs: number }
 
 async function check(key: string, label: string, fn: () => Promise<string>): Promise<HealthCheck> {
@@ -29,14 +29,15 @@ export async function inspectSupabaseHealth(client: CoreSupabaseClient, expected
 export async function inspectRuntimeHealth(input: {
   client?: CoreSupabaseClient | null
   environment: Record<string, string | undefined>
+  expectedSchemaVersion?: string
 }): Promise<HealthCheck[]> {
   const checks: HealthCheck[] = []
   const required: Array<[string, string]> = [["SUPABASE_URL", "Supabase URL"], ["SUPABASE_ANON_KEY", "Supabase anon key"], ["SUPABASE_SERVICE_ROLE_KEY", "Supabase service role key"]]
   for (const [key, label] of required) {
     const configured = Boolean(input.environment[key] ?? input.environment[`NEXT_PUBLIC_${key}`])
-    checks.push({ key: key.toLowerCase(), label, status: configured ? "operational" : "not_configured", detail: configured ? "configured (secret value hidden)" : "not configured", durationMs: 0 })
+    checks.push({ key: key.toLowerCase(), label, status: configured ? "configured_unverified" : "not_configured", detail: configured ? "configured; live provider verification is separate" : "not configured", durationMs: 0 })
   }
-  if (input.client) checks.push(...await inspectSupabaseHealth(input.client))
+  if (input.client) checks.push(...await inspectSupabaseHealth(input.client, input.expectedSchemaVersion ?? "1"))
   else checks.push({ key: "supabase-connectivity", label: "Supabase connectivity", status: "not_configured", detail: "credentials are required for a live check", durationMs: 0 })
   return checks
 }

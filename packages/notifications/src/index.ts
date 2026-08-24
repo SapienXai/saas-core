@@ -4,6 +4,25 @@ export type PushMessage = { title: string; body: string; url?: string; scope: No
 export type NotificationProvider<T> = { send(message: T): Promise<{ id: string }> }
 export type NotificationError = { provider: string; status: number | null; code: string; message: string; retryable: boolean }
 
+function escapeHtml(value: string): string {
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;")
+}
+
+export function buildInvitationEmail(input: { productName: string; workspaceName: string; role: string; invitationUrl: string; to: string }): EmailMessage {
+  const productName = escapeHtml(input.productName)
+  const workspaceName = escapeHtml(input.workspaceName)
+  const role = escapeHtml(input.role)
+  const invitationUrl = escapeHtml(input.invitationUrl)
+  return {
+    to: input.to,
+    subject: `You are invited to join ${input.workspaceName}`,
+    html: `<main style="font-family:Arial,sans-serif;max-width:560px;margin:40px auto;color:#101827"><p style="color:#315cf6;font-weight:700">${productName}</p><h1>Join ${workspaceName}</h1><p>You have been invited as a ${role}. The invitation is bound to ${escapeHtml(input.to)}.</p><p><a href="${invitationUrl}" style="display:inline-block;background:#315cf6;color:white;padding:12px 18px;border-radius:8px;text-decoration:none">Review invitation</a></p><p style="color:#637087;font-size:13px">This link expires according to the workspace invitation policy.</p></main>`,
+    text: `Join ${input.workspaceName} on ${input.productName}\n\nYou have been invited as a ${input.role}. Review the invitation: ${input.invitationUrl}`,
+    scope: { workspaceId: "invitation" },
+    idempotencyKey: `invitation:${input.invitationUrl}`,
+  }
+}
+
 export class ProviderNotificationError extends Error {
   readonly details: NotificationError
   constructor(details: NotificationError) { super(details.message); this.name = "ProviderNotificationError"; this.details = details }

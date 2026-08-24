@@ -14,6 +14,18 @@ export type PaddlePriceMapping = {
   active?: boolean
 }
 
+export function readPaddlePriceMappings(env: NodeJS.ProcessEnv = process.env): PaddlePriceMapping[] {
+  const environment = (env.PADDLE_ENVIRONMENT === "live" ? "live" : "sandbox") as BillingEnvironment
+  const currency = (env.PADDLE_CURRENCY ?? "USD").toUpperCase()
+  const plans = ["starter", "pro", "business"]
+  const intervals: BillingInterval[] = ["month", "year"]
+  return plans.flatMap((planKey) => intervals.flatMap((interval) => {
+    const envKey = `PADDLE_PRICE_${planKey.toUpperCase()}_${interval.toUpperCase()}`
+    const providerPriceId = env[envKey]?.trim()
+    return providerPriceId ? [{ planKey, interval, currency, environment, providerPriceId }] : []
+  }))
+}
+
 export type PaddleSubscriptionSnapshot = {
   providerSubscriptionId: string
   providerCustomerId: string | null
@@ -134,6 +146,7 @@ export type BillingProvider = {
   createCheckout(input: { customerId?: string | null; priceId: string; returnUrl: string; idempotencyKey?: string }): Promise<{ checkoutUrl: string }>
   createPortalSession(input: { customerId: string; returnUrl: string }): Promise<{ portalUrl: string }>
   cancelAtPeriodEnd(subscriptionId: string): Promise<void>
+  resume?(subscriptionId: string): Promise<void>
 }
 
 export type NormalizedBillingEvent = {
@@ -212,6 +225,10 @@ export class PaddleBillingProvider implements BillingProvider {
 
   async cancelAtPeriodEnd(subscriptionId: string) {
     await this.request(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: "PATCH", body: JSON.stringify({ scheduled_change: { action: "cancel", resume_at: null } }) })
+  }
+
+  async resume(subscriptionId: string) {
+    await this.request(`/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: "PATCH", body: JSON.stringify({ scheduled_change: null }) })
   }
 }
 

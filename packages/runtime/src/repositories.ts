@@ -79,6 +79,12 @@ export function createCoreRepositories(client: Client) {
   }
 
   const invitations = {
+    async list(workspaceId: string) {
+      await actor(client)
+      const result = await client.from("workspace_invitations").select("id, workspace_id, normalized_email, role, status, expires_at, email_delivery_status, provider_message_id, delivery_error, created_at, last_sent_at, resend_count").eq("workspace_id", workspaceId).order("created_at", { ascending: false })
+      if (result.error) fail("listInvitations", result.error)
+      return result.data ?? []
+    },
     async create(input: { workspaceId: string; email: string; role: string; expiresAt?: string }) {
       await actor(client)
       const token = createInvitationToken()
@@ -103,6 +109,16 @@ export function createCoreRepositories(client: Client) {
       await actor(client)
       const result = await client.rpc("accept_workspace_invitation", { target_invitation: input.invitationId, target_token_hash: hashInvitationToken(input.token) })
       if (result.error) fail("acceptInvitation", result.error)
+      return one(result.data)
+    },
+    async preview(input: { invitationId: string; token: string }) {
+      const result = await client.from("workspace_invitations").select("id, workspace_id, normalized_email, role, status, expires_at, revoked_at, workspaces(name, slug, status)").eq("id", input.invitationId).eq("token_hash", hashInvitationToken(input.token)).maybeSingle()
+      if (result.error) fail("previewInvitation", result.error)
+      return result.data
+    },
+    async markDelivery(input: { invitationId: string; status: "sent" | "failed"; providerMessageId?: string | null; error?: string | null }) {
+      const result = await client.rpc("mark_invitation_delivery", { target_invitation: input.invitationId, target_status: input.status, target_provider_message_id: input.providerMessageId ?? null, target_error: input.error ?? null })
+      if (result.error) fail("markInvitationDelivery", result.error)
       return one(result.data)
     },
   }
@@ -141,6 +157,26 @@ export function createCoreRepositories(client: Client) {
     async listPlans() {
       const result = await client.from("plans").select("*").eq("active", true).order("sort_order", { ascending: true })
       if (result.error) fail("listPlans", result.error)
+      return result.data ?? []
+    },
+    async findSubscriptionByProviderId(providerSubscriptionId: string) {
+      const result = await client.from("workspace_subscriptions").select("*").eq("provider_subscription_id", providerSubscriptionId).maybeSingle()
+      if (result.error) fail("findSubscriptionByProviderId", result.error)
+      return result.data
+    },
+    async applySubscriptionPatch(workspaceId: string, patch: Record<string, unknown>) {
+      const result = await client.from("workspace_subscriptions").update({ ...patch, updated_at: new Date().toISOString() }).eq("workspace_id", workspaceId).select("*").maybeSingle()
+      if (result.error) fail("applySubscriptionPatch", result.error)
+      return result.data
+    },
+    async expirePaymentGrace(now = new Date().toISOString()) {
+      const result = await client.rpc("expire_payment_grace", { target_at: now })
+      if (result.error) fail("expirePaymentGrace", result.error)
+      return result.data
+    },
+    async listWebhookFailures(limit = 50) {
+      const result = await client.from("billing_webhook_events").select("*").eq("status", "failed").order("created_at", { ascending: false }).limit(limit)
+      if (result.error) fail("listWebhookFailures", result.error)
       return result.data ?? []
     },
     async insertWebhook(record: { provider: "paddle"; providerEventId: string; eventType: string; occurredAt: string; payload: Record<string, unknown>; status: string; attempts: number; errorCode: string | null; errorMessage: string | null; processedAt: string | null }) {
@@ -183,6 +219,24 @@ export function createCoreRepositories(client: Client) {
       await actor(client)
       const result = await client.rpc("platform_support_view", { target_workspace: workspaceId })
       if (result.error) fail("platformSupportView", result.error)
+      return one(result.data)
+    },
+    async workspace360(workspaceId: string) {
+      await actor(client)
+      const result = await client.rpc("platform_workspace_360", { target_workspace: workspaceId })
+      if (result.error) fail("platformWorkspace360", result.error)
+      return one(result.data)
+    },
+    async listUsers() {
+      await actor(client)
+      const result = await client.rpc("platform_list_users")
+      if (result.error) fail("platformListUsers", result.error)
+      return result.data ?? []
+    },
+    async healthSnapshot() {
+      await actor(client)
+      const result = await client.rpc("platform_health_snapshot")
+      if (result.error) fail("platformHealthSnapshot", result.error)
       return one(result.data)
     },
   }
