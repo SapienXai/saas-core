@@ -2,12 +2,12 @@ import { defineSaaSCore } from "@sapienx/saas-core-config"
 import type { Workspace } from "@sapienx/saas-core"
 
 export const coreConfig = defineSaaSCore({
-  version: "1.0.0",
+  version: "1.1.0",
   product: { key: "projects", name: "Projects" },
   auth: { provider: "supabase", requireEmailConfirmation: true },
   workspace: { slugSource: "user_input", defaultTimezone: "UTC" },
   permissions: { custom: { "projects:manage": ["owner", "admin", "manager"] } },
-  billing: { provider: "paddle", environment: "sandbox" },
+  billing: { enabled: true, provider: "paddle", environment: "sandbox" },
   entitlements: { features: ["projects:manage"], metrics: ["projects"] },
   usage: { enabled: true },
   notifications: { email: { name: "resend", enabled: false }, push: { name: "web-push", enabled: false } },
