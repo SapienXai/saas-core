@@ -200,3 +200,17 @@ jobs:
             const allowed = new Set(["PASS", "BLOCKED_AS_EXPECTED", "FAIL", "SKIPPED"]);
             if (payload.scenarios.some((scenario) => !allowed.has(scenario.status) || scenario.status === "FAIL" || !scenario.actual || !scenario.operation)) throw new Error("Core Lab returned a failed or non-executed scenario");
           '
+
+  release-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10.30.3 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - uses: supabase/setup-cli@v1
+        with: { version: 2.65.2 }
+      - run: pnpm install --frozen-lockfile
+      - name: Run authoritative isolated release verification
+        run: pnpm release:verify
