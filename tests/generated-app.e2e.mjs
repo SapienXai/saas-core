@@ -15,6 +15,16 @@ const password = "BrowserAcceptance-123!"
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
 
+async function findUserByEmail(email) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const users = (await service.auth.admin.listUsers({ page: 1, perPage: 100 })).data.users
+    const user = users.find((candidate) => candidate.email === email)
+    if (user) return user
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 250))
+  }
+  return null
+}
+
 try {
   await page.goto(`${baseUrl}/signup`)
   await page.getByLabel("Email").fill(ownerEmail)
@@ -23,13 +33,16 @@ try {
   await page.waitForURL(/\/app|\/signup\?confirmation=/)
   if (page.url().includes("confirmation=")) throw new Error("Local Supabase required an email confirmation but no local confirmation handler was configured.")
 
+  await page.goto(`${baseUrl}/app/setup`)
+  if (!(await page.getByRole("heading", { name: "Production readiness." }).isVisible())) throw new Error("Setup Center did not render for an authenticated user.")
+
   await page.goto(`${baseUrl}/onboarding`)
   await page.getByLabel("Workspace name").fill("Browser Customer Workspace")
   await page.getByLabel("Workspace slug").fill(`browser-customer-${suffix}`)
   await page.getByRole("button", { name: "Create workspace" }).click()
   await page.waitForURL(/\/app$/)
 
-  const owner = (await service.auth.admin.listUsers({ page: 1, perPage: 100 })).data.users.find((user) => user.email === ownerEmail)
+  const owner = await findUserByEmail(ownerEmail)
   if (!owner) throw new Error("Browser owner was not created in local Supabase.")
   const firstWorkspaces = await service.from("workspaces").select("id,name").eq("created_by", owner.id).order("created_at")
   if (firstWorkspaces.error || !firstWorkspaces.data?.[0]) throw new Error("Browser workspace was not persisted.")
@@ -42,7 +55,7 @@ try {
   await page.getByLabel("Workspace slug").fill(`browser-secondary-${suffix}`)
   await page.getByRole("button", { name: "Create workspace" }).click()
   await page.waitForURL(/\/app$/)
-  if (!(await page.getByText("Browser Secondary Workspace").isVisible())) throw new Error("Second workspace was not selected after creation.")
+  if (!(await page.getByRole("heading", { name: "Browser Secondary Workspace" }).isVisible())) throw new Error("Second workspace was not selected after creation.")
 
   const allWorkspaces = await service.from("workspaces").select("id,name").eq("created_by", owner.id).order("created_at")
   if (allWorkspaces.error || allWorkspaces.data?.length !== 2) throw new Error("Expected exactly two owner workspaces.")
@@ -51,7 +64,7 @@ try {
   await page.waitForURL(/\/app$/)
   for (const route of ["/app/team", "/app/plan", "/app/settings"]) {
     await page.goto(`${baseUrl}${route}`)
-    if (!(await page.getByText("Browser Customer Workspace").first().isVisible())) throw new Error(`Current workspace did not persist on ${route}.`)
+    if (!(await page.locator("main").getByText(/Browser Customer Workspace/).isVisible())) throw new Error(`Current workspace did not persist on ${route}.`)
   }
 
   await page.goto(`${baseUrl}/app/team`)
@@ -84,12 +97,18 @@ try {
   await page.waitForURL(/\/invite\/.*token=/)
   await page.getByRole("button", { name: "Accept invitation" }).click()
   await page.waitForURL(/\/app\?invited=1/)
-  if (!(await page.getByText("Browser Customer Workspace").isVisible())) throw new Error("Invitation acceptance did not select the invited workspace.")
+  if (!(await page.getByRole("heading", { name: "Browser Customer Workspace" }).isVisible())) throw new Error("Invitation acceptance did not select the invited workspace.")
 
   await page.goto(invitationLink)
   if (!(await page.getByRole("heading", { name: "Invitation unavailable." }).isVisible())) throw new Error("Invitation replay was not rejected.")
 
   await page.goto(`${baseUrl}/api/auth/signout`)
+  await page.goto(`${baseUrl}/forgot-password`)
+  await page.getByLabel("Email").fill(inviteeEmail)
+  await page.getByRole("button", { name: "Send recovery link" }).click()
+  await page.waitForURL(/\/forgot-password\?sent=1/)
+  if (!(await page.getByText(/recovery email has been sent/i).isVisible())) throw new Error("Password recovery request did not complete.")
+
   await page.goto(`${baseUrl}/login?next=${encodeURIComponent("https://evil.example")}`)
   await page.getByLabel("Email").fill(inviteeEmail)
   await page.getByLabel("Password").fill("Wrong-password-123!")
