@@ -7,11 +7,18 @@ roles, not workspace roles.
 
 Generated projects expose `/platform`, `/platform/workspaces`,
 `/platform/users`, `/platform/billing`, `/platform/overrides`,
-`/platform/domains`, `/platform/health` and `/platform/audit`. Search and
-needs-attention data are bounded server-side RPCs. Support and auditor paths
-are read-only; billing administrators are restricted to billing operations.
+`/platform/domains`, `/platform/attention`, `/platform/health` and
+`/platform/audit`. Billing detail is available at
+`/platform/billing/[workspaceId]`. Search, attention and audit data are bounded
+server-side RPCs with role-aware filters. Support and auditor paths are
+read-only; billing administrators are restricted to billing and entitlement
+operations.
 
 Support inspection is read-only by default and is audit logged. Manual
 entitlement overrides require actor, reason, effective interval and revoke
-state. Operational adapters should expose safe errors and structured metadata,
-not provider secrets or customer PII.
+state. Create/revoke, billing reconcile and domain reconcile routes generate
+operation IDs and write audit events. Domain reconciliation is not offered
+until both Vercel token and project ID are configured; billing reconciliation
+does not report success without provider evidence. Operational adapters should
+expose safe errors and structured metadata, not provider secrets or customer
+PII.

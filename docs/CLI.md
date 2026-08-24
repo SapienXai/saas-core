@@ -25,7 +25,14 @@ ordered Supabase operation.
 credentials as `NOT CONFIGURED`, not `PASS`. `diff` classifies managed-file,
 user-owned-file and package-version drift. `info` is safe for support
 diagnostics and includes the selected module configuration plus the env file
-source used for diagnostics. `test` validates the v1.1 manifest, Setup Center,
-Platform routes, managed files and Core migration. `doctor` performs live
-Supabase checks only when credentials are available; provider credentials are
-reported as configured-but-unverified until a provider call is made.
+source used for diagnostics. `test` validates the v1.1.1 manifest, Setup
+Center, Platform routes, managed files and Core migration. `doctor` performs
+live Supabase checks only when credentials are available; provider credentials
+are reported as configured-but-unverified until a provider call is made.
+
+`pnpm release:check` is the fast deterministic gate. `pnpm release:verify` is
+the authoritative local release gate: it resets the repository's local
+Supabase database, runs authenticated integration tests, executes Core Lab,
+installs packed packages into a temporary generated app, runs CLI diagnostics
+and build, and drives the Chromium acceptance journey. It does not stop or
+modify another Supabase project.

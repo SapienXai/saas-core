@@ -5,7 +5,8 @@ entitlement precedence, grace expiry, invitation hashing/replay, seats, usage
 limits, configuration validation and domain creation. The Core Lab executes
 real operations against deterministic in-memory services and reports their
 actual result. The opt-in database suite creates authenticated local users and
-checks tenant isolation, RPC-only membership writes and concurrent usage.
+checks tenant isolation, canonical platform role capabilities, audited
+operator mutations, invitation/seat races and concurrent usage (23 checks).
 
 ```bash
 pnpm lint
@@ -30,9 +31,11 @@ The suite is skipped unless `SAAS_CORE_DB_INTEGRATION=1` is set; the default
 unit run therefore does not claim a database integration result.
 
 The generated-app acceptance path is exercised with packed artifacts by the CI
-`pack` job. The browser job uses a fresh local Supabase instance to verify the
-signup page, protected-route redirect, safe `next` value and invalid-login
-response in Chromium.
+`pack` job. The browser journey uses a fresh local Supabase instance to verify
+signup, session/protected routes, two-workspace switching, invitation
+wrong-account/replay protection, recovery request, safe redirects and mobile
+overflow in Chromium. `pnpm release:verify` runs the complete local matrix,
+including the generated app's production build and browser journey.
 
 Provider credentials are not required for local tests. Use signed fixtures and
 mock adapters for Paddle, Resend, Web Push and DNS/Vercel.

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.1
+
+- Added a canonical least-privilege platform capability model shared by the
+  TypeScript permissions API and authenticated Supabase operator RPCs.
+- Hardened platform search, Workspace 360, subscriptions, domains, audit,
+  attention and health boundaries so billing administrators cannot access user
+  directories, unrelated domains or general operator data.
+- Added audited override create/revoke, provider-backed domain reconciliation
+  and provider-evidence billing reconciliation boundaries with operation IDs.
+- Added role-matrix, mutation-audit, search-scope and attention-scope local
+  Supabase coverage, expanding the authenticated suite to 23 checks.
+- Added `pnpm release:verify` for fresh migration reset, packed generated-app
+  installation, doctor/diff/test, build and Chromium acceptance verification.
+- Updated generated Platform Control navigation, attention, billing detail,
+  Workspace 360 tables, Vercel configuration and Next development origins.
+
 ## 1.1.0
 
 - Added a configuration-driven CLI module wizard with safe non-interactive

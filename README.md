@@ -2,7 +2,7 @@
 
 One reusable foundation for every SapienX SaaS product.
 
-SaaS Core v1.1.0 is a provider-aware but product-neutral platform layer for
+SaaS Core v1.1.1 is a provider-aware but product-neutral platform layer for
 authentication, workspaces, memberships, permissions, invitations, plans,
 entitlements, usage, billing state, domains, notifications, audit and Platform
 Control. It owns the customer boundary up to `Workspace`; the product owns its
@@ -115,9 +115,10 @@ Use `--without-billing`, `--without-email`, `--without-platform`,
 schema and RPC health, and separates `NOT CONFIGURED` and
 `CONFIGURED_UNVERIFIED` from live `PASS`. `diff` reports managed-file,
 package, schema and manifest drift. `pnpm release:check` runs deterministic
-lint, typecheck, unit, build, pack and CLI gates; local-Supabase, browser and
-live-provider checks remain separate because they require their own runtime or
-credentials.
+lint, typecheck, unit, build, pack and CLI gates. `pnpm release:verify` adds a
+fresh local-Supabase reset, authenticated RLS tests, executable Core Lab
+scenarios, packed generated-app installation, doctor/diff/test, production
+build and the real Chromium acceptance journey.
 
 ## Architecture and ownership
 
@@ -158,8 +159,10 @@ are defense in depth and enforce the same role/tenant rules as the application.
 The server resolves `auth.uid()` and then checks `workspace_members`. Default
 workspace roles are `owner`, `admin`, `manager`, `member`, and `viewer`.
 Platform roles are separate: `platform_owner`, `platform_admin`,
-`billing_admin`, `support`, and `auditor`. Support inspection is read-only and
-must not become implicit impersonation.
+`billing_admin`, `support`, and `auditor`. The canonical capability model is
+least privilege: billing administrators see billing and override operations
+only; support can inspect but cannot mutate; auditors are read-only. Support
+inspection is audit logged and must not become implicit impersonation.
 
 Invitation rows contain normalized email and a SHA-256 token hash only. Tokens
 expire, cannot be replayed, reject the wrong email, rotate on resend, enforce a
@@ -174,6 +177,12 @@ The current workspace is stored in a secure, server-owned cookie and resolved
 against active memberships on every server request. The WorkspaceSwitcher
 therefore applies consistently to `/app`, team, plan, settings and product
 routes; an arbitrary or suspended workspace ID is rejected server-side.
+
+Platform Control exposes role-aware `/platform/attention`, billing detail and
+provider reconciliation boundaries, audited override create/revoke actions,
+domain reconciliation only when Vercel is configured, paginated redacted audit
+events and a bounded Workspace 360 view. A provider key alone is never shown
+as a successful live operation.
 
 ## Plans, entitlements, usage and billing
 
@@ -213,6 +222,9 @@ The core migration owns tables with no product meaning: `workspaces`,
 webhook inbox, audit, platform members, domains, PWA and push subscriptions.
 Product migrations should use later timestamps and add `workspace_id` to their
 own entities. Do not add a universal `resources` table to Core.
+
+The v1.1.1 migration records schema `1.3.1` and adds the canonical platform
+capability RPC boundary without changing earlier migration files.
 
 ## Core Lab
 
