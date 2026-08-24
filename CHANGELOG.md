@@ -15,6 +15,11 @@
   that return actual operations, outcomes, timings and error codes.
 - Added CI jobs for local Supabase integration, generated packed-app build,
   Chromium auth smoke and Core Lab execution.
+- Final P0 hardening adds secure persistent workspace switching, generated
+  invitation acceptance and delivery, advisory-lock seat serialization, 20
+  authenticated database checks, generated billing lifecycle routes, real
+  Platform Control health surfaces, fresh Supabase project files and tested
+  v0.9-to-current CLI update fixtures.
 
 Provider credentials and cloud-service verification remain environment-specific;
 deterministic mock/provider-boundary tests do not represent live Paddle,

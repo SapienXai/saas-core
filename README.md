@@ -64,6 +64,12 @@ supabase db reset
 pnpm dev
 ```
 
+The generated project includes `supabase/config.toml` and an explicit empty
+`supabase/seed.sql`, so the local database is independent of the Core
+repository. The generated app exposes `/signup`, `/login`, `/forgot-password`,
+`/reset-password`, `/app`, `/app/team`, `/app/plan`, `/app/settings` and
+`/platform` without product-specific implementation work.
+
 The generated project is a real Next.js App Router application. It includes
 Supabase SSR/PKCE auth routes, protected middleware, onboarding, the reusable
 Core UI shell, workspace/team/plan/settings/platform routes and the ordered
@@ -79,8 +85,10 @@ saas-core update --dry-run
 
 `doctor` distinguishes missing credentials from a passing check and never
 prints secret values. `update` creates a recoverable checkpoint, updates only
-unmodified managed files and reports product-owned conflicts; database
-migrations remain in the normal Supabase migration workflow.
+unmodified managed files and reports product-owned conflicts; the v1 fixture
+path upgrades the manifest, managed package versions and missing Core
+migrations while preserving modified product files. Database migrations remain
+in the normal Supabase migration workflow.
 
 The CLI never silently overwrites an existing file. It records managed file
 hashes in `.saas-core.json`; product-owned files are explicitly kept outside
@@ -147,6 +155,15 @@ Invitation rows contain normalized email and a SHA-256 token hash only. Tokens
 expire, cannot be replayed, reject the wrong email, rotate on resend, enforce a
 cooldown and count against the plan seat limit while pending. Acceptance is a
 transactional database operation with seat locking and duplicate protection.
+The generated Team flow sends through Resend when configured; otherwise it
+shows a clearly labeled development-only local link. `/invite/[id]` preserves
+the invitation through login or signup, validates the current account email,
+accepts once, and selects the invited workspace.
+
+The current workspace is stored in a secure, server-owned cookie and resolved
+against active memberships on every server request. The WorkspaceSwitcher
+therefore applies consistently to `/app`, team, plan, settings and product
+routes; an arbitrary or suspended workspace ID is rejected server-side.
 
 ## Plans, entitlements, usage and billing
 
@@ -162,6 +179,11 @@ past_due after grace / paused / canceled → Free
 row-locking `consume_usage` RPC for atomic increments against the effective
 plan. Paddle is provider evidence: raw signed events enter a durable inbox,
 duplicate/old events are rejected, and product authorization reads local state.
+Generated billing routes include `/api/billing/checkout`, `portal`, `cancel`,
+`resume`, `webhook` and `grace`. The browser submits a Core plan key and
+interval; the server resolves `PADDLE_PRICE_<PLAN>_<MONTH|YEAR>` mappings.
+Doctor reports configured-but-unverified providers instead of treating a key
+as a successful live integration.
 
 ## Database
 
@@ -194,6 +216,9 @@ security sections. Its scenario endpoint executes the Core operations on a
 fresh deterministic in-memory fixture and returns status, duration, expected
 result, actual result, operation and error code. It is an internal verification
 surface, not a customer product and it does not seed fixtures into production.
+The canonical statuses are `PASS`, `BLOCKED_AS_EXPECTED`, `FAIL` and `SKIPPED`;
+the in-memory mode is explicitly separate from the authenticated local-
+Supabase/RLS suite.
 
 ## Configuration and providers
 
@@ -247,6 +272,13 @@ SAAS_CORE_DB_INTEGRATION=1 SUPABASE_URL=http://127.0.0.1:54321 \
   SUPABASE_ANON_KEY=<local-anon-key> SUPABASE_SERVICE_ROLE_KEY=<local-service-key> \
   pnpm test -- tests/database.integration.test.ts
 ```
+
+The authenticated suite contains 20 sequential database checks covering RLS,
+RPC-only writes, owner safety, invitation replay and seat races, effective
+entitlements, usage concurrency and platform roles. CI also runs the packed
+generated-app browser journey, with invitation acceptance and mobile overflow
+included in that job. `invitation-e2e` is a named CI gate backed by the combined
+generated-app browser job.
 
 Live Paddle, Resend, Vercel, DNS, Web Push and cloud Supabase integration are
 configuration-gated and must be verified in the target environment before
