@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "sideEffects": ["*.css", "dist/*.css"],
+  "sideEffects": ["*.css", "dist/*.css", "dist/styles/*.css"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -27,13 +27,85 @@
     "./views": {
       "types": "./dist/views.d.ts",
       "import": "./dist/views.js"
+    },
+    "./tailwind-preset": {
+      "types": "./dist/tailwind.preset.d.ts",
+      "import": "./dist/tailwind.preset.js"
+    },
+    "./button": {
+      "types": "./dist/primitives/button.d.ts",
+      "import": "./dist/primitives/button.js"
+    },
+    "./dialog": {
+      "types": "./dist/primitives/dialog.d.ts",
+      "import": "./dist/primitives/dialog.js"
+    },
+    "./sheet": {
+      "types": "./dist/primitives/sheet.d.ts",
+      "import": "./dist/primitives/sheet.js"
+    },
+    "./drawer": {
+      "types": "./dist/primitives/drawer.d.ts",
+      "import": "./dist/primitives/drawer.js"
+    },
+    "./dropdown-menu": {
+      "types": "./dist/primitives/dropdown-menu.d.ts",
+      "import": "./dist/primitives/dropdown-menu.js"
+    },
+    "./select": {
+      "types": "./dist/primitives/select.d.ts",
+      "import": "./dist/primitives/select.js"
+    },
+    "./popover": {
+      "types": "./dist/primitives/popover.d.ts",
+      "import": "./dist/primitives/popover.js"
+    },
+    "./tooltip": {
+      "types": "./dist/primitives/tooltip.d.ts",
+      "import": "./dist/primitives/tooltip.js"
+    },
+    "./tabs": {
+      "types": "./dist/primitives/tabs.d.ts",
+      "import": "./dist/primitives/tabs.js"
+    },
+    "./accordion": {
+      "types": "./dist/primitives/accordion.d.ts",
+      "import": "./dist/primitives/accordion.js"
+    },
+    "./command": {
+      "types": "./dist/primitives/command.d.ts",
+      "import": "./dist/primitives/command.js"
+    },
+    "./input-otp": {
+      "types": "./dist/primitives/input-otp.d.ts",
+      "import": "./dist/primitives/input-otp.js"
+    },
+    "./calendar": {
+      "types": "./dist/primitives/calendar.d.ts",
+      "import": "./dist/primitives/calendar.js"
+    },
+    "./carousel": {
+      "types": "./dist/primitives/carousel.d.ts",
+      "import": "./dist/primitives/carousel.js"
+    },
+    "./resizable": {
+      "types": "./dist/primitives/resizable.d.ts",
+      "import": "./dist/primitives/resizable.js"
+    },
+    "./feedback": {
+      "types": "./dist/feedback.d.ts",
+      "import": "./dist/feedback.js"
+    },
+    "./navigation": {
+      "types": "./dist/shell.d.ts",
+      "import": "./dist/shell.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && cp src/styles.css dist/styles.css",
+    "build": "tsc -p tsconfig.build.json && cp src/styles.css dist/styles.css && mkdir -p dist/styles && cp src/styles/*.css dist/styles/",
     "clean": "rm -rf dist",
     "pack": "pnpm build && pnpm pack --pack-destination ../../artifacts"
   },
@@ -41,13 +113,50 @@
     "react": ">=18"
   },
   "dependencies": {
+    "@radix-ui/react-accordion": "^1.2.11",
+    "@radix-ui/react-alert-dialog": "^1.1.14",
+    "@radix-ui/react-aspect-ratio": "^1.1.7",
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-checkbox": "^1.3.2",
+    "@radix-ui/react-collapsible": "^1.1.11",
+    "@radix-ui/react-context-menu": "^2.2.15",
+    "@radix-ui/react-dialog": "^1.1.14",
+    "@radix-ui/react-dropdown-menu": "^2.1.15",
+    "@radix-ui/react-hover-card": "^1.1.14",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-menubar": "^1.1.15",
+    "@radix-ui/react-navigation-menu": "^1.2.13",
+    "@radix-ui/react-popover": "^1.1.14",
+    "@radix-ui/react-progress": "^1.1.7",
+    "@radix-ui/react-radio-group": "^1.3.7",
+    "@radix-ui/react-scroll-area": "^1.2.9",
+    "@radix-ui/react-select": "^2.2.5",
+    "@radix-ui/react-separator": "^1.1.7",
+    "@radix-ui/react-slider": "^1.3.5",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.2.5",
+    "@radix-ui/react-tabs": "^1.1.12",
+    "@radix-ui/react-toast": "^1.2.14",
+    "@radix-ui/react-toggle": "^1.1.9",
+    "@radix-ui/react-toggle-group": "^1.1.10",
+    "@radix-ui/react-tooltip": "^1.2.7",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^2.6.0"
+    "cmdk": "1.0.4",
+    "embla-carousel-react": "8.5.1",
+    "input-otp": "1.4.1",
+    "class-variance-authority": "^0.7.1",
+    "lucide-react": "^0.454.0",
+    "react-day-picker": "9.8.0",
+    "react-resizable-panels": "^2.1.9",
+    "sonner": "^1.7.4",
+    "tailwind-merge": "^2.6.0",
+    "vaul": "1.1.2"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.2",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^3.4.17"
   }
 }

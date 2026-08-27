@@ -1,19 +1,16 @@
 import type { ReactNode } from "react"
-import { MobileNavigation } from "./shell-client.js"
-import { WorkspaceSwitcher, type WorkspaceOption } from "./views.js"
-import { ThemeToggle } from "./theme.js"
-import { cn } from "./utils.js"
+import { AppShellClient } from "./shell-client.js"
+import type { WorkspaceOption } from "./views.js"
 
-export type NavItem = { label: string; href: string; icon?: string; badge?: string; active?: boolean }
+export type NavIconName = "layout-dashboard" | "users" | "credit-card" | "shield-check" | "settings" | "activity" | "globe" | "bell" | "folder" | "chart" | "help" | "plus" | "circle"
+export type NavItem = { label: string; href: string; icon?: NavIconName | string; badge?: string; active?: boolean; disabled?: boolean }
 export type NavigationGroup = { label: string; items: NavItem[] }
 export type AppShellProps = { productName: string; userEmail?: string | null; nav?: NavItem[]; navigationGroups?: NavigationGroup[]; workspaces?: WorkspaceOption[]; currentWorkspaceId?: string; brand?: { name?: string; logo?: string; icon?: string }; children: ReactNode }
 
-function Brand({ productName, brand, compact = false }: { productName: string; brand?: AppShellProps["brand"]; compact?: boolean }) { const name = brand?.name ?? productName; return <a className={cn("sc-brand", compact && "sc-brand-compact")} href="/app" aria-label={`${name} home`}>{brand?.logo ? <img src={brand.logo} alt="" className="sc-brand-logo" /> : <span className="sc-brand-mark" aria-hidden="true">{brand?.icon ?? name.slice(0, 1).toUpperCase()}</span>}<span className="sc-brand-copy"><strong>{name}</strong><small>Workspace platform</small></span></a> }
-function Navigation({ items, groups }: { items: NavItem[]; groups?: NavigationGroup[] }) { const renderItem = (item: NavItem) => <a className={cn("sc-nav-item", item.active && "sc-nav-item-active")} href={item.href} key={item.href} aria-current={item.active ? "page" : undefined}><span className="sc-nav-icon" aria-hidden="true">{item.icon ?? "•"}</span><span>{item.label}</span>{item.badge && <span className="sc-nav-badge">{item.badge}</span>}</a>; return <nav className="sc-nav" aria-label="Application navigation">{groups?.length ? groups.map((group) => <div className="sc-nav-group" key={group.label}><span className="sc-nav-group-label">{group.label}</span>{group.items.map(renderItem)}</div>) : items.map(renderItem)}</nav> }
-
-export function AppShell({ productName, userEmail, nav = [], navigationGroups, workspaces = [], currentWorkspaceId, brand, children }: AppShellProps) {
-  const items = nav.length ? nav : [{ label: "Overview", href: "/app", active: true }, { label: "Team", href: "/app/team" }, { label: "Plan & Usage", href: "/app/plan" }, { label: "Setup", href: "/app/setup" }, { label: "Settings", href: "/app/settings" }]
-  return <div className="sc-shell"><aside className="sc-sidebar" aria-label="Application navigation"><Brand productName={productName} brand={brand} />{workspaces.length > 0 && <WorkspaceSwitcher workspaces={workspaces} {...(currentWorkspaceId ? { currentId: currentWorkspaceId } : {})} /> }<Navigation items={items} {...(navigationGroups ? { groups: navigationGroups } : {})} /><div className="sc-sidebar-footer"><div className="sc-account"><span className="sc-avatar" aria-hidden="true">{(userEmail ?? "U").slice(0, 1).toUpperCase()}</span><span className="sc-account-copy"><strong>{userEmail ?? "Signed in"}</strong><small>Account</small></span></div><a className="sc-signout" href="/api/auth/signout">Sign out</a></div></aside><div className="sc-main"><header className="sc-mobile-header"><Brand productName={productName} brand={brand} compact /><div className="sc-mobile-actions"><ThemeToggle />{navigationGroups ? <MobileNavigation productName={productName} items={items} groups={navigationGroups} /> : <MobileNavigation productName={productName} items={items} />}</div></header><main className="sc-main-content">{children}</main></div></div>
+export function AppShell(props: AppShellProps) {
+  return <AppShellClient {...props} />
 }
 
-export function AuthShell({ productName, eyebrow = "Secure workspace", children, footer }: { productName: string; eyebrow?: string; children: ReactNode; footer?: ReactNode }) { return <main className="sc-auth-page"><div className="sc-auth-glow" aria-hidden="true" /><section className="sc-auth-card"><Brand productName={productName} /><div className="sc-eyebrow">{eyebrow}</div>{children}{footer && <div className="sc-auth-footer">{footer}</div>}</section></main> }
+export function AuthShell({ productName, brand, children }: { productName: string; brand?: AppShellProps["brand"]; children: ReactNode }) {
+  return <main className="sc-auth-page"><div className="sc-auth-glow" aria-hidden="true" /><section className="sc-auth-card"><a className="sc-brand" href="/"><span className="sc-brand-mark">{brand?.icon ?? productName.slice(0, 1).toUpperCase()}</span><span className="sc-brand-copy"><strong>{brand?.name ?? productName}</strong><small>Secure workspace platform</small></span></a>{children}</section></main>
+}

@@ -4,6 +4,9 @@ SaaS Core 1.2.0 uses ReserveVia as a reference for interaction quality,
 responsive composition and accessibility. It does not import ReserveVia
 identity, business terminology, data contracts or product routes.
 
+For implementation-level API, behavior, accessibility, visual and status
+evidence, see the authoritative [UI fidelity scorecard](UI-FIDELITY.md).
+
 The source inventory was reviewed in ReserveVia's `components/ui/` and
 composed component directories. The shared package is provider- and
 database-blind; its defaults receive typed view models and actions from the
@@ -13,7 +16,7 @@ consuming product.
 
 | ReserveVia source | Decision | SaaS Core 1.2 boundary and rationale |
 | --- | --- | --- |
-| `accordion.tsx` | REIMPLEMENT / GENERALIZE | Native `details`/`summary` semantics provide a dependency-free disclosure primitive. |
+| `accordion.tsx` | MIGRATE / GENERALIZE | Radix Accordion provides real disclosure state, keyboard navigation, focus and content relationships. |
 | `alert-dialog.tsx` | REIMPLEMENT / GENERALIZE | Shares the generic dialog surface; destructive confirmation semantics remain product-composed. |
 | `alert.tsx` | MIGRATE | `Alert` and semantic tone tokens are generic and useful for setup, auth and product workflows. |
 | `aspect-ratio.tsx` | REIMPLEMENT / GENERALIZE | Layout utility is exported without media or product assumptions. |
@@ -21,45 +24,45 @@ consuming product.
 | `badge.tsx` | MIGRATE | `Badge` and Core status tones cover operational, entitlement and product labels. |
 | `breadcrumb.tsx` | REIMPLEMENT / GENERALIZE | Navigation hierarchy is product-owned data rendered by a neutral semantic nav. |
 | `button.tsx` | MIGRATE | Variants, loading state, focus state and touch-sized controls are package-owned. |
-| `calendar.tsx` | REIMPLEMENT / GENERALIZE | Date input is exposed without ReserveVia booking rules or locale assumptions. |
+| `calendar.tsx` | MIGRATE / GENERALIZE | `react-day-picker` provides the real month/day interaction without ReserveVia booking rules or locale assumptions. |
 | `card.tsx` | MIGRATE | Card slots are the base for default views and custom product compositions. |
-| `carousel.tsx` | REIMPLEMENT / GENERALIZE | A neutral region contract is exported; product teams choose media/gesture behavior. |
+| `carousel.tsx` | MIGRATE / GENERALIZE | Embla provides real controls, keyboard handling and slide state; product teams choose media and autoplay policy. |
 | `chart.tsx` | REIMPLEMENT / GENERALIZE | A styled chart container avoids shipping a charting vendor or product metrics model. |
-| `checkbox.tsx` | MIGRATE | Native input preserves form and server-action compatibility. |
-| `collapsible.tsx` | REIMPLEMENT / GENERALIZE | Native disclosure behavior keeps the server-rendered primitive small and accessible. |
-| `command.tsx` | REIMPLEMENT / GENERALIZE | Search region is exported; filtering and async data remain product-owned. |
+| `checkbox.tsx` | MIGRATE | Radix Checkbox preserves form compatibility while providing controlled and indeterminate-ready state. |
+| `collapsible.tsx` | MIGRATE / GENERALIZE | Radix Collapsible provides controlled disclosure state and keyboard semantics. |
+| `command.tsx` | MIGRATE / GENERALIZE | cmdk provides the keyboard-searchable command surface; filtering data remains product-owned. |
 | `confirmation-dialog.tsx` | USE EXISTING EQUIVALENT | Compose `AlertDialog` with typed product copy and server action. |
-| `context-menu.tsx` | REIMPLEMENT / GENERALIZE | Neutral wrapper is available without tying Core to a menu state machine. |
-| `dialog.tsx` | MIGRATE | Generic modal surface and title/description slots are available from the package. |
-| `drawer.tsx` | USE EXISTING EQUIVALENT | Mobile shell uses the dedicated Core client island; `Drawer` aliases the neutral dialog surface. |
-| `dropdown-menu.tsx` | REIMPLEMENT / GENERALIZE | Details-based menu works in SSR and can be replaced by a product interaction layer. |
+| `context-menu.tsx` | MIGRATE / GENERALIZE | Radix ContextMenu provides real right-click and keyboard menu behavior. |
+| `dialog.tsx` | MIGRATE | Radix Dialog provides a portal, focus trap, Escape dismissal and restore-focus contract. |
+| `drawer.tsx` | MIGRATE | Vaul provides a real drawer primitive; mobile shell uses the dedicated Core client island. |
+| `dropdown-menu.tsx` | MIGRATE / GENERALIZE | Radix DropdownMenu provides real roving focus, submenu and item state behavior. |
 | `form.tsx` | MIGRATE | Form slots and native form controls preserve server-action compatibility. |
-| `hover-card.tsx` | REIMPLEMENT / GENERALIZE | Disclosure wrapper is optional and does not gate essential information behind hover. |
+| `hover-card.tsx` | MIGRATE / GENERALIZE | Radix HoverCard provides delayed hover/focus behavior; essential information remains visible. |
 | `input.tsx` | MIGRATE | Focus, error and token styling are package-owned. |
-| `input-otp.tsx` | REIMPLEMENT / GENERALIZE | Numeric one-time-code input remains provider-neutral. |
+| `input-otp.tsx` | MIGRATE / GENERALIZE | `input-otp` provides segmented entry, caret and paste-aware keyboard behavior without provider-specific verification semantics. |
 | `label.tsx` | MIGRATE | Labeling is foundational for auth and product forms. |
 | `menubar.tsx` | REIMPLEMENT / GENERALIZE | Neutral role wrapper leaves product menu content and behavior extensible. |
 | `navigation-menu.tsx` | REIMPLEMENT / GENERALIZE | Product-owned navigation can use the exported semantic nav boundary. |
 | `pagination.tsx` | REIMPLEMENT / GENERALIZE | Pagination slots are generic; data fetching and URL state remain product-owned. |
-| `popover.tsx` | REIMPLEMENT / GENERALIZE | Disclosure-based popover is dependency-free and safe for non-essential contextual UI. |
+| `popover.tsx` | MIGRATE / GENERALIZE | Radix Popover provides anchor, portal, outside-click and Escape behavior. |
 | `progress.tsx` | MIGRATE | Accessible progress semantics support usage, readiness and product workflows. |
-| `radio-group.tsx` | REIMPLEMENT / GENERALIZE | Native radio inputs preserve keyboard and form behavior. |
-| `resizable.tsx` | REIMPLEMENT / GENERALIZE | Structural panel/handle slots are available without a layout persistence policy. |
+| `radio-group.tsx` | MIGRATE / GENERALIZE | Radix RadioGroup provides arrow-key navigation and radio state semantics. |
+| `resizable.tsx` | MIGRATE / GENERALIZE | `react-resizable-panels` provides real draggable handles; persistence remains product-owned. |
 | `scroll-area.tsx` | REIMPLEMENT / GENERALIZE | Overflow wrapper keeps narrow tables and product lists usable. |
-| `select.tsx` | MIGRATE | Native select is reliable in generated SSR forms and mobile browsers. |
+| `select.tsx` | MIGRATE | Radix Select provides real keyboard/listbox behavior and portals; `NativeSelect` remains explicit for progressive-enhancement form-only cases. |
 | `separator.tsx` | MIGRATE | Semantic visual separation is used by shell and composed views. |
 | `sheet.tsx` | USE EXISTING EQUIVALENT | The mobile navigation drawer is the Core-specific sheet use case and remains isolated in `shell-client.tsx`. |
 | `sidebar.tsx` | MIGRATE | `AppShell` owns the generic desktop sidebar; products provide navigation data. |
 | `skeleton.tsx` | MIGRATE | Loading geometry is reusable and respects reduced motion. |
-| `slider.tsx` | REIMPLEMENT / GENERALIZE | Native range input avoids a product-specific interaction dependency. |
+| `slider.tsx` | MIGRATE / GENERALIZE | Radix Slider provides real pointer and arrow-key adjustment with labelled value semantics. |
 | `sonner.tsx` | REIMPLEMENT / GENERALIZE | `Toast`/`Toaster` provide a neutral live-region surface; products choose notification orchestration. |
-| `switch.tsx` | REIMPLEMENT / GENERALIZE | Native checkbox with switch semantics works with server and client forms. |
+| `switch.tsx` | MIGRATE / GENERALIZE | Radix Switch provides controlled state and switch semantics for client forms. |
 | `table.tsx` | MIGRATE | Responsive overflow and semantic table slots are part of the default foundation. |
-| `tabs.tsx` | REIMPLEMENT / GENERALIZE | Tab roles and slots are exported; state and URL persistence remain composable. |
+| `tabs.tsx` | MIGRATE / GENERALIZE | Radix Tabs provides roving focus and tab/list/panel relationships; URL persistence remains composable. |
 | `textarea.tsx` | MIGRATE | Shared field styling and focus behavior are reusable. |
-| `toast.tsx` / `toaster.tsx` | REIMPLEMENT / GENERALIZE | Live-region primitives are provider-free and tree-shakeable. |
+| `toast.tsx` / `toaster.tsx` | MIGRATE / GENERALIZE | Radix Toast and Sonner provide real queued live-region feedback with theme sync. |
 | `toggle.tsx` / `toggle-group.tsx` | REIMPLEMENT / GENERALIZE | Pressed-state semantics are exposed without a global store. |
-| `tooltip.tsx` | REIMPLEMENT / GENERALIZE | The baseline uses native title plus an optional semantic content slot; essential content is never tooltip-only. |
+| `tooltip.tsx` | MIGRATE / GENERALIZE | Radix Tooltip provides delayed portal content for hover/focus; essential content is never tooltip-only. |
 | `orb-loader.tsx` / `page-loading.tsx` | USE EXISTING EQUIVALENT | `LoadingState`, `Skeleton` and the button spinner provide calmer, reduced-motion-safe loading feedback. |
 | `pagination-controls.tsx` | USE EXISTING EQUIVALENT | Product pagination composes the neutral pagination slots with its own query contract. |
 

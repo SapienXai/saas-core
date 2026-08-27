@@ -27,6 +27,12 @@ ordered Supabase operation.
 `--logo` and `--icon`; with no flags it presents a concise interactive prompt.
 It never rewrites `core.config.ts`, backend routes or platform logic.
 
+The generated app includes Tailwind with the published Core preset and imports
+the package semantic CSS before `src/styles/product.css`. The product-owned
+`/app/ui-lab` route is a disposable browser-proof surface for real Radix,
+Vaul, cmdk, Sonner and other interactive primitives; it can be replaced or
+removed without changing the Core runtime boundary.
+
 Generated `package.json` files use portable `^<Core version>` specifications
 for every Core package. `SAAS_CORE_TARBALL_DIR` is a Core development harness
 input only; the harness uses its packed-artifact directory for isolated

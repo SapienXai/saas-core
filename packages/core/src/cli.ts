@@ -30,6 +30,7 @@ const PRODUCT_OWNED_FILES = new Set([
   "src/app/app/team/page.tsx",
   "src/app/app/plan/page.tsx",
   "src/app/app/settings/page.tsx",
+  "src/app/app/ui-lab/page.tsx",
 ])
 const isProductOwnedFile = (file: string) => PRODUCT_OWNED_FILES.has(file) || file.startsWith("src/product/") || file.startsWith("src/app/(product)/")
 const cyan = (value: string) => `\u001b[36m${value}\u001b[0m`
@@ -107,12 +108,12 @@ function generatedProductNavigation(): string {
 
 // Product-owned navigation. Add product routes here without changing Core.
 export const productNavigation: NavItem[] = [
-  { label: "Overview", href: "/app", active: true, icon: "⌂" },
-  { label: "Team", href: "/app/team", icon: "◎" },
-  { label: "Plan & Usage", href: "/app/plan", icon: "◈" },
-  { label: "Setup", href: "/app/setup", icon: "◇" },
-  { label: "Settings", href: "/app/settings", icon: "⚙" },
-  { label: "Platform Control", href: "/platform", icon: "✦" },
+  { label: "Overview", href: "/app", active: true, icon: "layout-dashboard" },
+  { label: "Team", href: "/app/team", icon: "users" },
+  { label: "Plan & Usage", href: "/app/plan", icon: "credit-card" },
+  { label: "Setup", href: "/app/setup", icon: "shield-check" },
+  { label: "Settings", href: "/app/settings", icon: "settings" },
+  { label: "Platform Control", href: "/platform", icon: "activity" },
 ]
 `
 }
@@ -120,13 +121,32 @@ export const productNavigation: NavItem[] = [
 function generatedProductCss(): string {
   return `/* Product-owned presentation overrides. Loaded after @sapienx/saas-core-ui/styles.css. */
 /* Keep overrides scoped to your product to make the Core update boundary obvious. */
+/* Tailwind utilities and semantic Core tokens are available to product routes. */
 /* Example: .sc-brand-copy strong { letter-spacing: -.04em; } */
+`
+}
+
+function generatedTailwindConfig(): string {
+  return `import type { Config } from "tailwindcss"
+import saasCorePreset from "@sapienx/saas-core-ui/tailwind-preset"
+
+const config: Config = {
+  presets: [saasCorePreset],
+  content: ["./src/**/*.{ts,tsx}", "./node_modules/@sapienx/saas-core-ui/dist/**/*.{js,d.ts}"],
+}
+export default config
+`
+}
+
+function generatedPostcssConfig(): string {
+  return `export default { plugins: { tailwindcss: {}, autoprefixer: {} } }
 `
 }
 
 function generatedRootLayout(projectName: string): string {
   return `import type { ReactNode } from "react"
 import type { Metadata } from "next"
+import "../styles/tailwind.css"
 import "@sapienx/saas-core-ui/styles.css"
 import "../styles/product.css"
 import { ThemeProvider } from "@sapienx/saas-core-ui"
@@ -144,6 +164,9 @@ function productPresentationContent(content: string): string {
     .replace(/\bauth-card\b/g, "sc-auth-card")
     .replace(/\bform-error\b/g, "sc-form-error")
     .replace(/\bnotice\b/g, "sc-notice")
+    .replace(/className="sc-button secondary"/g, "className=\"sc-button sc-button-secondary\"")
+    .replace(/className="sc-state error"/g, "className=\"sc-state sc-state-error\"")
+    .replace(/className="sc-badge warning"/g, "className=\"sc-badge sc-badge-warning\"")
     .replace(/className="sc-card"/g, "className=\"sc-card sc-card-raw\"")
 }
 
@@ -160,8 +183,10 @@ function generatedFiles(product: GeneratedProductIdentity, config = resolveCliCo
     ...(config.domains ? { "@sapienx/saas-core-domains": packageSpec("@sapienx/saas-core-domains") } : {}),
   }
   const files = new Map([
-    ["package.json", json({ name: key, private: true, version: "0.1.0", type: "module", scripts: { dev: "next dev", build: "next build", start: "next start", lint: "next lint", typecheck: "tsc --noEmit", test: "vitest run", "saas-core": "saas-core" }, dependencies: { next: "16.3.0", react: "^19.2.8", "react-dom": "^19.2.8", "@supabase/ssr": "^0.12.4", "@supabase/supabase-js": "^2.112.3", ...coreDeps }, devDependencies: { "@types/node": "^24.0.0", "@types/react": "^19.2.0", "@types/react-dom": "^19.2.0", typescript: "^5.9.0", vitest: "^3.2.0", "@playwright/test": "^1.62.0" } })],
+    ["package.json", json({ name: key, private: true, version: "0.1.0", type: "module", scripts: { dev: "next dev", build: "next build", start: "next start", lint: "next lint", typecheck: "tsc --noEmit", test: "vitest run", "saas-core": "saas-core" }, dependencies: { next: "16.3.0", react: "^19.2.8", "react-dom": "^19.2.8", "@supabase/ssr": "^0.12.4", "@supabase/supabase-js": "^2.112.3", ...coreDeps }, devDependencies: { "@types/node": "^24.0.0", "@types/react": "^19.2.0", "@types/react-dom": "^19.2.0", typescript: "^5.9.0", vitest: "^3.2.0", "@playwright/test": "^1.62.0", tailwindcss: "^3.4.17", postcss: "^8.4.49", autoprefixer: "^10.4.20" } })],
     ["next.config.mjs", `/** @type {import('next').NextConfig} */\nexport default { reactStrictMode: true, poweredByHeader: false, allowedDevOrigins: ["127.0.0.1", "localhost"] }\n`],
+    ["tailwind.config.ts", generatedTailwindConfig()],
+    ["postcss.config.mjs", generatedPostcssConfig()],
     ["tsconfig.json", json({ compilerOptions: { target: "ES2017", lib: ["dom", "dom.iterable", "esnext"], allowJs: false, skipLibCheck: true, strict: true, noEmit: true, incremental: true, esModuleInterop: true, module: "esnext", moduleResolution: "bundler", resolveJsonModule: true, isolatedModules: true, jsx: "react-jsx", plugins: [{ name: "next" }], paths: { "@/*": ["./src/*"] } }, include: ["next-env.d.ts", ".next/types/**/*.ts", ".next/dev/types/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "proxy.ts"], exclude: ["node_modules"] })],
     ["next-env.d.ts", "/// <reference types=\"next\" />\n/// <reference types=\"next/image-types/global\" />\n\n// NOTE: This file should not be edited\n"],
     ["core.config.ts", `import { defineSaaSCore } from "@sapienx/saas-core-config"\n\nexport default defineSaaSCore({\n  version: "${VERSION}",\n  product: { key: ${JSON.stringify(key)}, name: ${JSON.stringify(projectName)} },\n  auth: { provider: "supabase", requireEmailConfirmation: true },\n  workspace: { slugSource: "user_input", defaultTimezone: "UTC" },\n  permissions: { custom: {} },\n  billing: { provider: "paddle", environment: "sandbox" },\n  entitlements: { features: [], metrics: [] },\n  usage: { enabled: true },\n  notifications: { email: { name: "resend", enabled: false }, push: { name: "web-push", enabled: false } },\n  domains: { enabled: false },\n  pwa: { enabled: false },\n  platform: { enabled: true, supportReadOnly: true },\n})\n`],
@@ -170,7 +195,7 @@ function generatedFiles(product: GeneratedProductIdentity, config = resolveCliCo
     ["proxy.ts", `import { NextResponse, type NextRequest } from "next/server"\nimport { createServerSupabaseClient } from "@sapienx/saas-core-runtime"\n\nexport async function proxy(request: NextRequest) {\n  const protectedRoute = request.nextUrl.pathname.startsWith("/app") || request.nextUrl.pathname.startsWith("/onboarding") || request.nextUrl.pathname.startsWith("/platform")\n  if (!protectedRoute) return NextResponse.next()\n  let response = NextResponse.next({ request })\n  const client = createServerSupabaseClient({ cookies: {\n    getAll: () => request.cookies.getAll().map(({ name, value }) => ({ name, value })),\n    setAll: (cookiesToSet) => { for (const cookie of cookiesToSet) response.cookies.set(cookie.name, cookie.value, cookie.options) },\n  } })\n  const { data } = await client.auth.getUser()\n  if (!data.user) {\n    const redirect = new URL("/login", request.url)\n    redirect.searchParams.set("next", request.nextUrl.pathname)\n    return NextResponse.redirect(redirect)\n  }\n  return response\n}\n\nexport const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)"] }\n`],
     ["src/lib/supabase.ts", `import { cookies } from "next/headers"\nimport { createNextServerSupabaseClient } from "@sapienx/saas-core-runtime"\n\nexport async function createServerClient() {\n  const cookieStore = await cookies()\n  return createNextServerSupabaseClient(cookieStore as any)\n}\n`],
     ["src/lib/core.ts", `import { createCoreRepositories } from "@sapienx/saas-core-runtime"\nimport { createServerClient } from "./supabase"\n\nexport async function coreRepositories() { return createCoreRepositories(await createServerClient()) }\n`],
-    ["src/app/globals.css", `:root { --ink:#101827; --muted:#637087; --line:#e2e8f0; --surface:#fff; --canvas:#f6f8fb; --brand:#315cf6; --good:#14845a; --warn:#b66a00; font-family: Inter, ui-sans-serif, system-ui, sans-serif; color:var(--ink); background:var(--canvas); }\n* { box-sizing:border-box; } body { margin:0; background:var(--canvas); } a { color:inherit; text-decoration:none; } button, input, select { font:inherit; } .saas-shell { min-height:100vh; display:grid; grid-template-columns:248px minmax(0,1fr); } .saas-sidebar { background:#0e1729; color:#dbe6ff; padding:24px 16px; display:flex; flex-direction:column; gap:28px; } .saas-brand { display:flex; gap:10px; align-items:center; font-size:15px; } .saas-brand small { display:block; color:#91a2c4; font-size:11px; margin-top:3px; } .saas-brand-mark { width:32px; height:32px; display:grid; place-items:center; border-radius:10px; background:#7ce1ba; color:#091322; font-weight:800; } .saas-nav { display:grid; gap:6px; } .saas-nav a { padding:10px 12px; border-radius:9px; color:#9eacc6; } .saas-nav a:hover, .saas-nav a.active { color:white; background:#1c2b48; } .saas-sidebar-footer { margin-top:auto; border-top:1px solid #293752; padding-top:14px; display:grid; gap:8px; color:#91a2c4; font-size:12px; } .saas-sidebar-footer a { color:#c6d4ee; } .saas-main { min-width:0; padding:32px clamp(18px,5vw,72px) 72px; } .saas-mobile-header { display:none; } .saas-content { max-width:1120px; margin:auto; } .saas-eyebrow { color:var(--brand); text-transform:uppercase; letter-spacing:.12em; font-size:11px; font-weight:800; } h1 { font-size:clamp(30px,4vw,48px); letter-spacing:-.045em; margin:8px 0 12px; } h2 { letter-spacing:-.025em; margin:0 0 8px; } h3 { margin:0 0 8px; } p { color:var(--muted); line-height:1.6; } .saas-grid { display:grid; gap:16px; } .saas-grid.two { grid-template-columns:repeat(2,minmax(0,1fr)); } .saas-grid.three { grid-template-columns:repeat(3,minmax(0,1fr)); } .saas-card, .saas-plan-card, .saas-empty, .saas-state { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:20px; box-shadow:0 14px 38px rgba(15,23,42,.05); } .saas-card-kicker { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.1em; font-weight:800; } .saas-button { display:inline-flex; justify-content:center; border:0; border-radius:9px; background:var(--brand); color:white; padding:11px 15px; cursor:pointer; font-weight:700; } .saas-button.secondary { background:#edf2ff; color:#2847ae; } .saas-button:disabled { opacity:.55; cursor:not-allowed; } .saas-form { display:grid; gap:13px; max-width:460px; } .saas-form label { display:grid; gap:6px; font-size:13px; font-weight:700; } .saas-form input, .saas-form select, .saas-switcher select { border:1px solid #ccd5e4; border-radius:9px; padding:11px 12px; background:white; color:var(--ink); } .saas-table { width:100%; border-collapse:collapse; } .saas-table th, .saas-table td { text-align:left; padding:13px 9px; border-bottom:1px solid var(--line); font-size:13px; } .saas-table th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; } .saas-badge { display:inline-flex; border-radius:999px; padding:5px 9px; font-size:11px; text-transform:capitalize; background:#edf1f6; color:#526074; } .saas-badge.success { background:#e6f7ef; color:var(--good); } .saas-badge.warning { background:#fff3dd; color:var(--warn); } .saas-badge.danger { background:#ffebee; color:#b4233d; } .saas-badge.info { background:#e7efff; color:#3155b7; } .saas-switcher { display:grid; gap:5px; max-width:340px; color:var(--muted); font-size:12px; } .saas-plan-price { display:block; font-size:28px; margin:10px 0; } .saas-plan-card ul { padding-left:19px; color:var(--muted); min-height:90px; line-height:1.9; } .saas-plan-card button { border:1px solid #cbd5e1; border-radius:8px; padding:9px 12px; background:white; } .saas-plan-card.current { border-color:#8ba4ff; box-shadow:0 0 0 3px #e8edff; } .saas-billing-status { display:grid; gap:8px; } .saas-billing-status span { color:var(--muted); font-size:12px; } .saas-usage { display:grid; gap:8px; } .saas-usage > div:first-child { display:flex; justify-content:space-between; gap:12px; font-size:13px; } .saas-progress { height:8px; background:#e7edf6; border-radius:99px; overflow:hidden; } .saas-progress span { display:block; height:100%; background:var(--brand); border-radius:inherit; } .saas-empty, .saas-state { text-align:center; padding:48px 20px; } .saas-empty p, .saas-state p { max-width:520px; margin:8px auto 18px; } .saas-state.error { border-color:#f3b3be; color:#9d2037; } .auth-page { min-height:100vh; display:grid; place-items:center; padding:22px; } .auth-card { width:min(100%,440px); background:white; border:1px solid var(--line); border-radius:20px; padding:30px; box-shadow:0 24px 80px rgba(15,23,42,.1); } .auth-card .saas-brand { margin-bottom:30px; } .form-error { color:#b4233d; background:#fff0f2; padding:10px 12px; border-radius:8px; font-size:13px; } .notice { color:var(--good); background:#e9f8f0; padding:10px 12px; border-radius:8px; font-size:13px; } @media(max-width:800px) { .saas-shell { display:block; } .saas-sidebar { display:none; } .saas-mobile-header { display:flex; align-items:center; justify-content:space-between; gap:16px; background:#0e1729; color:white; padding:13px 16px; } .saas-main { padding:24px 16px 52px; } .saas-grid.two, .saas-grid.three { grid-template-columns:1fr; } .saas-table { min-width:620px; } .table-scroll { overflow:auto; } }\n`],
+    ["src/styles/tailwind.css", `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n`],
     ["src/app/layout.tsx", `import type { ReactNode } from "react"\nimport type { Metadata } from "next"\nimport "./globals.css"\n\nexport const metadata: Metadata = { title: ${JSON.stringify(projectName)}, description: ${JSON.stringify(`${projectName} application foundation`)} }\nexport default function RootLayout({ children }: { children: ReactNode }) { return <html lang="en"><body>{children}</body></html> }\n`],
     ["src/app/page.tsx", `import Link from "next/link"\nexport default function Home() { return <main className="auth-page"><div className="auth-card"><div className="saas-brand"><span className="saas-brand-mark">S</span><strong>${jsxString(projectName)}</strong></div><div className="saas-eyebrow">SaaS Core foundation</div><h1>Start with the product domain.</h1><p>Auth, workspaces, team permissions, plans, usage, billing and operator controls are ready as a reusable platform layer.</p><div style={{display:"flex",gap:10,flexWrap:"wrap"}}><Link className="saas-button" href="/signup">Create account</Link><Link className="saas-button secondary" href="/login">Sign in</Link></div></div></main> }\n`],
     ["src/app/(auth)/login/page.tsx", authPage("Sign in", "/api/auth/signin", "New here?", "/signup", "Sign up", projectName)],
@@ -250,6 +275,7 @@ function generatedFiles(product: GeneratedProductIdentity, config = resolveCliCo
   files.set("src/app/app/page.tsx", generatedAppHomeV11(config))
   files.set("src/app/app/settings/page.tsx", generatedSettingsPageV11(config))
   files.set("src/app/app/setup/page.tsx", generatedSetupPage(config))
+  files.set("src/app/app/ui-lab/page.tsx", generatedUiLabPage())
   files.set("src/app/platform/page.tsx", generatedPlatformIndexPageV11())
   files.set("src/lib/platform.tsx", generatedPlatformNavigation())
   files.set("src/app/platform/billing/page.tsx", generatedPlatformBillingPage())
@@ -517,6 +543,7 @@ export function PlatformNavigation({ role }: { role?: string | null }) { return 
 }
 
 function generatedPlatformIndexPageV11(): string {
+  return generatedPlatformIndexPageV12()
   return `import Link from "next/link"
 import { coreRepositories } from "@/lib/core"
 import { PlatformNavigation } from "@/lib/platform"
@@ -533,6 +560,29 @@ export default async function PlatformPage({ searchParams }: { searchParams: Pro
     const search: any[] = query.q?.trim() ? await repos.platform.search(query.q.trim(), 20) : []
     return <main className="saas-content"><PlatformNavigation role={member.role} /><div className="saas-eyebrow">Platform Control</div><h1>Operator overview.</h1><p>Signed in as <StatusBadge status={member.role} />. Support and auditor paths are read-only and never impersonate customers.</p><form className="saas-card saas-form" method="get"><label>Search permitted records<input name="q" defaultValue={query.q ?? ""} placeholder="Search" /></label><button className="saas-button" type="submit">Search</button></form><div className="saas-grid three" style={{marginTop:16}}>{can(["platform_owner", "platform_admin", "support", "auditor"]) && <Link className="saas-card" href="/platform/workspaces"><h3>Workspaces</h3><p>{workspaces.length} customer workspaces.</p></Link>}{can(["platform_owner", "platform_admin", "billing_admin"]) && <Link className="saas-card" href="/platform/billing"><h3>Billing operations</h3><p>{billing.length} recent subscription records.</p></Link>}<Link className="saas-card" href="/platform/attention"><h3>Needs attention</h3><p>{attention.length} current operational signals.</p></Link>{can(["platform_owner", "platform_admin", "support", "auditor"]) && <Link className="saas-card" href="/platform/health"><h3>Health</h3><p>Database and provider diagnostics.</p></Link>}</div>{query.q && <div className="saas-card" style={{marginTop:16}}><h2>Search results</h2>{search.length ? <div className="table-scroll"><table className="saas-table"><thead><tr><th>Type</th><th>Result</th><th>Detail</th></tr></thead><tbody>{search.map((item: any) => <tr key={item.result_type + item.id}><td>{item.result_type}</td><td><Link href={item.href}>{item.title}</Link></td><td>{item.subtitle}</td></tr>)}</tbody></table></div> : <p>No matching permitted records.</p>}</div>}<div className="saas-card" style={{marginTop:16}}><h2>Needs attention <span className="saas-badge warning">{attention.length}</span></h2>{attention.length ? <div className="table-scroll"><table className="saas-table"><thead><tr><th>Severity</th><th>Workspace</th><th>Issue</th><th>Action</th></tr></thead><tbody>{attention.map((item: any) => <tr key={item.issue_key}><td>{item.severity}</td><td>{item.workspace_name}</td><td>{item.message}</td><td><Link href={item.deep_link}>Review</Link></td></tr>)}</tbody></table></div> : <p>No current attention items.</p>}</div></main>
   } catch (error) { return <main className="saas-content"><div className="saas-state error"><strong>Platform query failed</strong><p>{error instanceof Error ? error.message : "Unknown error"}</p></div></main> }
+}
+`
+}
+
+function generatedPlatformIndexPageV12(): string {
+  return `import Link from "next/link"
+import { DefaultPlatformView, ErrorState, StatusBadge } from "@sapienx/saas-core-ui"
+import { coreRepositories } from "@/lib/core"
+import { PlatformNavigation } from "@/lib/platform"
+export const dynamic = "force-dynamic"
+export default async function PlatformPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const query = await searchParams
+  const repos: any = await coreRepositories()
+  const member: any = await repos.platform.getCurrentMember()
+  if (!member || member.status !== "active") return <main className="saas-content"><div className="saas-state"><strong>Platform Control</strong><p>This account is not a platform operator. Customer workspace roles do not grant platform access.</p></div></main>
+  const can = (roles: string[]) => roles.includes(member.role)
+  try {
+    const workspaces: any[] = can(["platform_owner", "platform_admin", "support", "auditor"]) ? await repos.platform.listWorkspaces() : []
+    const billing: any[] = can(["platform_owner", "platform_admin", "billing_admin"]) ? await repos.platform.listSubscriptions(12) : []
+    const attention: any[] = await repos.platform.attentionFiltered({ limit: 12 })
+    const search: any[] = query.q?.trim() ? await repos.platform.search(query.q.trim(), 20) : []
+    return <DefaultPlatformView title="Operator overview"><PlatformNavigation role={member.role} /><p>Signed in as <StatusBadge status={member.role} />. Support and auditor paths are read-only and never impersonate customers.</p><form className="saas-card saas-form" method="get"><label>Search permitted records<input name="q" defaultValue={query.q ?? ""} placeholder="Search permitted records" /></label><button className="saas-button" type="submit">Search</button></form><div className="saas-grid three">{can(["platform_owner", "platform_admin", "support", "auditor"]) && <Link className="saas-card" href="/platform/workspaces"><h3>Workspaces</h3><p>{workspaces.length} customer workspaces.</p></Link>}{can(["platform_owner", "platform_admin", "billing_admin"]) && <Link className="saas-card" href="/platform/billing"><h3>Billing operations</h3><p>{billing.length} recent subscription records.</p></Link>}<Link className="saas-card" href="/platform/attention"><h3>Needs attention</h3><p>{attention.length} current operational signals.</p></Link>{can(["platform_owner", "platform_admin", "support", "auditor"]) && <Link className="saas-card" href="/platform/health"><h3>Health</h3><p>Database and provider diagnostics.</p></Link>}</div>{query.q && <section className="saas-card" aria-labelledby="search-results-heading"><h2 id="search-results-heading">Search results</h2>{search.length ? <div className="table-scroll"><table className="saas-table"><thead><tr><th>Type</th><th>Result</th><th>Detail</th></tr></thead><tbody>{search.map((item: any) => <tr key={item.result_type + item.id}><td>{item.result_type}</td><td><Link href={item.href}>{item.title}</Link></td><td>{item.subtitle}</td></tr>)}</tbody></table></div> : <p>No matching permitted records.</p>}</section>}<section className="saas-card" aria-labelledby="attention-heading"><h2 id="attention-heading">Needs attention <span className="saas-badge warning">{attention.length}</span></h2>{attention.length ? <div className="table-scroll"><table className="saas-table"><thead><tr><th>Severity</th><th>Workspace</th><th>Issue</th><th>Action</th></tr></thead><tbody>{attention.map((item: any) => <tr key={item.issue_key}><td>{item.severity}</td><td>{item.workspace_name}</td><td>{item.message}</td><td><Link href={item.deep_link}>Review</Link></td></tr>)}</tbody></table></div> : <p>No current attention items.</p>}</section></DefaultPlatformView>
+  } catch (error) { return <main className="saas-content"><ErrorState title="Platform query failed" description={error instanceof Error ? error.message : "Unknown error"} /></main> }
 }
 `
 }
@@ -693,6 +743,7 @@ export default async function AppHome() { let context: any; let error = ""; try 
 }
 
 function generatedAppHomeV11(config: ResolvedCliConfig): string {
+  return generatedAppHomeV12(config)
   const planCard = config.billing ? "<Link className=\"saas-card\" href=\"/app/plan\"><h3>Plan & usage</h3><p>Inspect effective entitlements and metering.</p></Link>" : ""
   return `import Link from "next/link"
 import { EmptyState } from "@sapienx/saas-core-ui"
@@ -702,7 +753,57 @@ export default async function AppHome() { let context: any; let error = ""; try 
 `
 }
 
+function generatedAppHomeV12(config: ResolvedCliConfig): string {
+  const billingAction = config.billing ? '<Link className="saas-button" href="/app/plan">Review plan</Link>' : ''
+  const setupLink = '<Link className="saas-button saas-button-secondary" href="/app/setup">Open Setup Center</Link>'
+  const entitlementLoad = config.billing
+    ? 'const entitlements: any = await context.repos.entitlements.get(workspace.id); const used: any = await context.repos.usage.get(workspace.id, "api_calls"); planName = entitlements.planName; usage = { used: used?.amount ?? 0, limit: entitlements.limits.api_calls ?? null }'
+    : ''
+  return `import Link from "next/link"
+import { DefaultOverviewView, EmptyState, ErrorState } from "@sapienx/saas-core-ui"
+import { getWorkspaceContext } from "@/lib/workspace"
+export const dynamic = "force-dynamic"
+export default async function AppHome() {
+  let context: any
+  try { context = await getWorkspaceContext() } catch (cause) { return <main className="saas-content"><ErrorState title="Runtime setup required" description={cause instanceof Error ? cause.message : "Core is not configured yet."} action={${setupLink}} /></main> }
+  const workspace = context.currentWorkspace
+  if (!workspace) return <main className="saas-content"><EmptyState title="Create your first workspace" description="A workspace is the tenant boundary for your product." action={<Link className="saas-button" href="/onboarding">Create workspace</Link>} /></main>
+  try {
+    const members: any[] = await context.repos.memberships.list(workspace.id)
+    let planName = "Not enabled"
+    let usage: { used: number; limit: number | null } | undefined
+    ${entitlementLoad}
+    return <DefaultOverviewView workspaceName={workspace.name} memberCount={members.length} planName={planName} usage={usage} actions={<div className="sc-page-actions"><Link className="saas-button secondary" href="/app/team">Manage team</Link>${billingAction}</div>} />
+  } catch (cause) { return <main className="saas-content"><ErrorState title="Workspace data unavailable" description={cause instanceof Error ? cause.message : "The current workspace could not be loaded."} action={${setupLink}} /></main> }
+}
+`
+}
+
+function generatedUiLabPage(): string {
+  return `"use client"
+import { useState } from "react"
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger, Button, Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Checkbox, CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, Dialog, DialogClose, DialogContent, InputOTP, InputOTPGroup, InputOTPSlot,
+  DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, Label, Popover, PopoverClose, PopoverContent, PopoverTrigger,
+  RadioGroup, RadioGroupItem, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Separator, Sheet, SheetClose, SheetContent,
+  SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger, Slider, Switch, Tabs, TabsContent, TabsList, TabsTrigger,
+  Textarea, ToastProvider, Toaster, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, toast
+} from "@sapienx/saas-core-ui"
+
+export default function UiLabPage() {
+  const [commandOpen, setCommandOpen] = useState(false)
+  const [checked, setChecked] = useState(false)
+  const [enabled, setEnabled] = useState(true)
+  const [choice, setChoice] = useState("workspace")
+  return <TooltipProvider delayDuration={150}><ToastProvider><Toaster /><main className="sc-content sc-ui-lab" data-testid="ui-lab"><div className="sc-page-heading"><div><div className="sc-eyebrow">Core interaction lab</div><h1>Production primitives in context.</h1><p>Every control below is keyboard-aware, portal-safe and backed by the same public UI contracts used by product screens.</p></div><Button data-testid="command-trigger" variant="secondary" onClick={() => setCommandOpen(true)}>Open command menu</Button></div><div className="sc-ui-lab-grid"><Card><CardHeader><CardTitle>Overlays and menus</CardTitle><CardDescription>Focus management, escape handling and outside-click behavior.</CardDescription></CardHeader><CardContent className="sc-ui-lab-actions"><Dialog><DialogTrigger asChild><Button data-testid="open-dialog">Open dialog</Button></DialogTrigger><DialogContent data-testid="dialog-content"><DialogHeader><DialogTitle>Workspace details</DialogTitle><DialogDescription>This dialog traps focus and restores it to the trigger when closed.</DialogDescription></DialogHeader><div className="sc-form"><Label htmlFor="lab-name">Workspace name</Label><input id="lab-name" className="sc-input" defaultValue="Demo workspace" /><Label htmlFor="lab-note">Note</Label><Textarea id="lab-note" defaultValue="Keep this product-owned." /></div><DialogFooter><DialogClose asChild><Button data-testid="dialog-close" variant="secondary">Close</Button></DialogClose><Button onClick={() => toast.success("Workspace saved")}>Save changes</Button></DialogFooter></DialogContent></Dialog><Sheet><SheetTrigger asChild><Button data-testid="open-sheet" variant="outline">Open sheet</Button></SheetTrigger><SheetContent data-testid="sheet-content" side="right"><SheetHeader><SheetTitle>Quick settings</SheetTitle><SheetDescription>A responsive sheet for secondary actions.</SheetDescription></SheetHeader><div className="sc-form"><Label htmlFor="sheet-switch">Product notifications</Label><Switch id="sheet-switch" checked={enabled} onCheckedChange={setEnabled} /><Separator /><p>Radix owns focus, keyboard navigation and dismissal.</p></div><SheetFooter><SheetClose asChild><Button variant="secondary">Done</Button></SheetClose></SheetFooter></SheetContent></Sheet><DropdownMenu><DropdownMenuTrigger asChild><Button data-testid="menu-trigger" variant="outline">Workspace actions</Button></DropdownMenuTrigger><DropdownMenuContent align="start"><DropdownMenuLabel>Workspace</DropdownMenuLabel><DropdownMenuItem data-testid="menu-item-settings" onSelect={() => toast.info("Settings selected")}>Settings</DropdownMenuItem><DropdownMenuItem onSelect={() => setCommandOpen(true)}>Open command menu</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onSelect={() => toast.warning("This is a safe demo action")}>Archive preview</DropdownMenuItem></DropdownMenuContent></DropdownMenu><Popover><PopoverTrigger asChild><Button data-testid="popover-trigger" variant="outline">Show details</Button></PopoverTrigger><PopoverContent data-testid="popover-content"><strong>Portal content</strong><p>Popover content remains attached to the document layer and inherits theme tokens.</p><PopoverClose asChild><Button size="sm" variant="secondary">Dismiss</Button></PopoverClose></PopoverContent></Popover><Tooltip><TooltipTrigger asChild><Button data-testid="tooltip-trigger" variant="ghost">Hover for help</Button></TooltipTrigger><TooltipContent data-testid="tooltip-content">Keyboard and screen-reader friendly hint</TooltipContent></Tooltip></CardContent></Card><Card><CardHeader><CardTitle>Selection and disclosure</CardTitle><CardDescription>Controlled state, semantic labels and responsive content.</CardDescription></CardHeader><CardContent className="sc-ui-lab-stack"><div><Label htmlFor="lab-select">View mode</Label><Select value={choice} onValueChange={setChoice}><SelectTrigger id="lab-select" data-testid="select-trigger"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="workspace">Workspace</SelectItem><SelectItem value="team">Team</SelectItem><SelectItem value="billing">Billing</SelectItem></SelectContent></Select></div><Tabs defaultValue="overview"><TabsList aria-label="Lab sections"><TabsTrigger value="overview" data-testid="tabs-overview">Overview</TabsTrigger><TabsTrigger value="settings" data-testid="tabs-settings">Settings</TabsTrigger></TabsList><TabsContent value="overview" data-testid="tabs-overview-panel"><p>Selected view: <strong>{choice}</strong></p></TabsContent><TabsContent value="settings" data-testid="tabs-settings-panel"><p>Settings are product-owned and server-authorized.</p></TabsContent></Tabs><Accordion type="single" collapsible defaultValue="access"><AccordionItem value="access"><AccordionTrigger data-testid="accordion-trigger">What is protected?</AccordionTrigger><AccordionContent data-testid="accordion-content">Core protects identity, workspace membership, entitlements and operator boundaries.</AccordionContent></AccordionItem><AccordionItem value="custom"><AccordionTrigger>What stays product-owned?</AccordionTrigger><AccordionContent>Product routes, domain tables, brand language and product-specific policies.</AccordionContent></AccordionItem></Accordion></CardContent></Card><Card><CardHeader><CardTitle>Form controls and feedback</CardTitle><CardDescription>Real primitives are composable with native form semantics.</CardDescription></CardHeader><CardContent className="sc-ui-lab-stack"><div className="sc-ui-lab-control"><Checkbox id="lab-checkbox" data-testid="checkbox" checked={checked} onCheckedChange={(value) => setChecked(value === true)} /><Label htmlFor="lab-checkbox">Enable workspace digest</Label></div><div className="sc-ui-lab-control"><Switch id="lab-enabled" data-testid="switch" checked={enabled} onCheckedChange={setEnabled} /><Label htmlFor="lab-enabled">Live notifications</Label></div><RadioGroup value={choice} onValueChange={setChoice} aria-label="Workspace view"><div className="sc-ui-lab-control"><RadioGroupItem value="workspace" id="radio-workspace" /><Label htmlFor="radio-workspace">Workspace view</Label></div><div className="sc-ui-lab-control"><RadioGroupItem value="team" id="radio-team" /><Label htmlFor="radio-team">Team view</Label></div></RadioGroup><Label htmlFor="lab-slider">Usage threshold</Label><Slider id="lab-slider" data-testid="slider" defaultValue={[64]} max={100} step={1} aria-label="Usage threshold" /><div><Label htmlFor="lab-otp">Verification code</Label><InputOTP id="lab-otp" maxLength={6} aria-label="Verification code" render={() => <InputOTPGroup>{[0, 1, 2, 3, 4, 5].map((index) => <InputOTPSlot key={index} index={index} />)}</InputOTPGroup>} /></div><Button data-testid="toast-trigger" onClick={() => toast.success("Saved with Core feedback")}>Show success toast</Button></CardContent></Card></div><CommandDialog open={commandOpen} onOpenChange={setCommandOpen}><CommandInput placeholder="Search workspace actions..." /><CommandList><CommandEmpty>No actions found.</CommandEmpty><CommandGroup heading="Navigate"><CommandItem data-testid="command-item-overview" onSelect={() => setCommandOpen(false)}>Overview</CommandItem><CommandItem onSelect={() => setCommandOpen(false)}>Team</CommandItem><CommandItem onSelect={() => setCommandOpen(false)}>Settings</CommandItem></CommandGroup></CommandList></CommandDialog></main></ToastProvider></TooltipProvider>
+}
+`
+}
+
 function generatedTeamPage(): string {
+  return generatedTeamPageV12()
   return `import { getWorkspaceContext } from "@/lib/workspace"
 import { StatusBadge } from "@sapienx/saas-core-ui"
 export const dynamic = "force-dynamic"
@@ -711,11 +812,52 @@ export default async function TeamPage({ searchParams }: { searchParams: Promise
 }
 
 function generatedPlanPage(): string {
+  return generatedPlanPageV12()
   return `import { BillingStatus, PlanCard, UsageMeter } from "@sapienx/saas-core-ui"
 import { getWorkspaceContext } from "@/lib/workspace"
 export const dynamic = "force-dynamic"
 function price(plan: any, interval: "month" | "year") { const cents = interval === "year" ? plan.billing?.yearlyPriceCents : plan.billing?.monthlyPriceCents; return cents === 0 ? "$0" : cents == null ? "Configured in provider" : "$" + (cents / 100).toFixed(0) + " / " + interval }
 export default async function PlanPage({ searchParams }: { searchParams: Promise<{ error?: string; billing_action?: string }> }) { const query = await searchParams; const context: any = await getWorkspaceContext(); const workspace = context.currentWorkspace; if (!workspace) return <main className="saas-content"><div className="saas-state">Create a workspace to see plan state.</div></main>; const entitlements: any = await context.repos.entitlements.get(workspace.id); const plans: any[] = await context.repos.billing.listPlans(); const used: any = await context.repos.usage.get(workspace.id, "api_calls"); const subscription: any = entitlements.subscription; return <main className="saas-content"><div className="saas-eyebrow">Commercial state</div><h1>Plan & usage.</h1>{query.error && <div className="form-error">Billing action unavailable: {query.error.replaceAll("_", " ")}.</div>}{query.billing_action && <div className="notice">Billing provider request accepted. Local Core state will update only after a verified webhook.</div>}<div className="saas-grid two"><div className="saas-card"><BillingStatus plan={entitlements.planName} status={subscription.status} /><div style={{marginTop:20}}><UsageMeter label="API calls" used={used?.amount ?? 0} limit={entitlements.limits.api_calls ?? null} /></div>{subscription.status === "past_due" && <div className="form-error" style={{marginTop:16}}>Payment issue: access falls back to Free when the grace period expires.</div>}<div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:16}}>{subscription.provider_customer_id && <form action="/api/billing/portal" method="post"><button className="saas-button secondary" type="submit">Manage subscription</button></form>}{subscription.provider_subscription_id && subscription.status !== "canceled" && <form action="/api/billing/cancel" method="post"><button className="saas-button secondary" type="submit">Cancel at period end</button></form>}{subscription.provider_subscription_id && subscription.status === "canceled" && <form action="/api/billing/resume" method="post"><button className="saas-button secondary" type="submit">Resume subscription</button></form>}</div></div><div className="saas-card"><h2>Effective entitlement</h2><p>Manual override → scheduled plan → subscription → payment restriction fallback.</p><strong>{entitlements.planName}</strong><p>Workspace: {workspace.name}</p></div></div><div className="saas-grid three" style={{marginTop:16}}>{plans.map((plan: any) => <PlanCard key={plan.key} name={plan.name} planKey={plan.key} price={price(plan, "month")} features={Object.keys(plan.features ?? {}).filter((key) => plan.features[key]).concat(Object.entries(plan.limits ?? {}).filter(([, value]) => value !== null).map(([key, value]) => key + ": " + value))} current={entitlements.planKey === plan.key} action="/api/billing/checkout" />)}</div></main> }
+`
+}
+
+function generatedTeamPageV12(): string {
+  return `import { DefaultTeamView } from "@sapienx/saas-core-ui"
+import { getWorkspaceContext } from "@/lib/workspace"
+export const dynamic = "force-dynamic"
+export default async function TeamPage({ searchParams }: { searchParams: Promise<{ invited?: string; error?: string; local_invitation_link?: string }> }) {
+  const query = await searchParams
+  const context: any = await getWorkspaceContext()
+  const workspace = context.currentWorkspace
+  const members: any[] = workspace ? await context.repos.memberships.list(workspace.id) : []
+  const invitations: any[] = workspace ? await context.repos.invitations.list(workspace.id) : []
+  const beforeContent = <>{query.error && <div className="sc-alert sc-alert-danger" role="alert">{query.error === "invite_delivery_failed" ? "Invitation created, but email delivery failed. Retry after fixing Resend." : "The invitation could not be created. Check the seat limit, role, or pending duplicate."}</div>}{query.local_invitation_link && <div className="sc-alert sc-alert-warning" role="status"><strong>Development-only invitation link</strong><p>Resend is not configured. Share this local link only in a safe development environment: <a href={query.local_invitation_link}>{query.local_invitation_link}</a></p></div>}</>
+  const afterContent = workspace ? <section className="saas-card" aria-labelledby="invitation-heading"><h2 id="invitation-heading">Invitations</h2><p>Delivery and acceptance status are read from the Core invitation boundary.</p><div className="table-scroll"><table className="saas-table"><thead><tr><th>Email</th><th>Role</th><th>Delivery</th><th>Status</th></tr></thead><tbody>{invitations.map((invitation: any) => <tr key={invitation.id}><td>{invitation.normalized_email}</td><td>{invitation.role}</td><td>{invitation.email_delivery_status}</td><td>{invitation.status}</td></tr>)}</tbody></table></div></section> : undefined
+  return <DefaultTeamView data={{ workspaceName: workspace?.name ?? "No workspace selected", workspaceId: workspace?.id, members: members.map((member: any) => ({ id: member.id, role: member.role, status: member.status })), canInvite: Boolean(workspace), invitationAction: "/api/invitations" }} beforeContent={beforeContent} afterContent={afterContent} />
+}
+`
+}
+
+function generatedPlanPageV12(): string {
+  return `import { DefaultPlanView, ErrorState } from "@sapienx/saas-core-ui"
+import { getWorkspaceContext } from "@/lib/workspace"
+export const dynamic = "force-dynamic"
+function price(plan: any, interval: "month" | "year") { const cents = interval === "year" ? plan.billing?.yearlyPriceCents : plan.billing?.monthlyPriceCents; return cents === 0 ? "$0" : cents == null ? "Configured in provider" : "$" + (cents / 100).toFixed(0) + " / " + interval }
+export default async function PlanPage({ searchParams }: { searchParams: Promise<{ error?: string; billing_action?: string }> }) {
+  const query = await searchParams
+  const context: any = await getWorkspaceContext()
+  const workspace = context.currentWorkspace
+  if (!workspace) return <main className="saas-content"><div className="saas-state">Create a workspace to see plan state.</div></main>
+  try {
+    const entitlements: any = await context.repos.entitlements.get(workspace.id)
+    const plans: any[] = await context.repos.billing.listPlans()
+    const used: any = await context.repos.usage.get(workspace.id, "api_calls")
+    const subscription: any = entitlements.subscription
+    const billingAction = <div className="sc-page-actions">{subscription.provider_customer_id && <form action="/api/billing/portal" method="post"><button className="saas-button secondary" type="submit">Manage subscription</button></form>}{subscription.provider_subscription_id && subscription.status !== "canceled" && <form action="/api/billing/cancel" method="post"><button className="saas-button secondary" type="submit">Cancel at period end</button></form>}{subscription.provider_subscription_id && subscription.status === "canceled" && <form action="/api/billing/resume" method="post"><button className="saas-button secondary" type="submit">Resume subscription</button></form>}</div>
+    const beforeContent = <>{query.error && <div className="sc-alert sc-alert-danger" role="alert">Billing action unavailable: {query.error.replaceAll("_", " ")}.</div>}{query.billing_action && <div className="sc-alert sc-alert-info" role="status">Billing provider request accepted. Local Core state will update only after a verified webhook.</div>}{subscription.status === "past_due" && <div className="sc-alert sc-alert-danger" role="alert">Payment issue: access falls back to Free when the grace period expires.</div>}</>
+    return <DefaultPlanView data={{ planName: entitlements.planName, planKey: entitlements.planKey, subscriptionStatus: subscription.status, usage: { label: "API calls", used: used?.amount ?? 0, limit: entitlements.limits.api_calls ?? null }, planAction: "/api/billing/checkout", plans: plans.map((plan: any) => ({ key: plan.key, name: plan.name, price: price(plan, "month"), features: Object.keys(plan.features ?? {}).filter((key) => plan.features[key]).concat(Object.entries(plan.limits ?? {}).filter(([, value]) => value !== null).map(([key, value]) => key + ": " + value)) })) }} billingAction={billingAction} beforeContent={beforeContent} />
+  } catch (cause) { return <main className="saas-content"><ErrorState title="Billing state unavailable" description={cause instanceof Error ? cause.message : "The current commercial state could not be loaded."} /></main> }
+}
 `
 }
 
@@ -742,12 +884,30 @@ export default async function SettingsPage() { const context: any = await getWor
 }
 
 function generatedSetupPage(config: ResolvedCliConfig): string {
+  return generatedSetupPageV12(config)
   return `import { inspectProviderConfiguration } from "@sapienx/saas-core"
 import { inspectRuntimeHealth } from "@sapienx/saas-core-runtime"
 import { createServerClient } from "@/lib/supabase"
 export const dynamic = "force-dynamic"
 const modules = ${JSON.stringify({ billing: config.billing, email: config.email, domains: config.domains, pwa: config.pwa, push: config.push, platform: config.platform })}
 export default async function SetupPage() { let checks: any[] = []; let providerChecks: any[] = inspectProviderConfiguration(process.env, modules); try { checks = await inspectRuntimeHealth({ client: await createServerClient(), expectedSchemaVersion: "${SCHEMA_VERSION}", environment: process.env }) } catch (error) { checks = [{ key: "runtime", label: "Runtime", status: "error", detail: error instanceof Error ? error.message : "Runtime check failed." }] } return <main className="saas-content"><div className="saas-eyebrow">Setup Center</div><h1>Production readiness.</h1><p>These checks use the same health and provider diagnostics as the CLI. A configured provider is not reported as operational until its live boundary is verified.</p><div className="saas-grid two">{[...checks, ...providerChecks].map((check: any) => <div className="saas-card" key={check.key}><span className="saas-card-kicker">{check.label}</span><h3>{String(check.status).replaceAll("_", " ")}</h3><p>{check.detail}</p>{check.missing?.length ? <small>Missing: {check.missing.join(", ")}</small> : null}</div>)}</div><div className="saas-card" style={{marginTop:16}}><h2>Product boundary</h2><p>Core owns identity, tenants, team, plans and operations. Add product tables with workspace_id and product-specific policies under src/product.</p></div></main> }
+`
+}
+
+function generatedSetupPageV12(config: ResolvedCliConfig): string {
+  return `import { DefaultSetupView } from "@sapienx/saas-core-ui"
+import { inspectProviderConfiguration } from "@sapienx/saas-core"
+import { inspectRuntimeHealth } from "@sapienx/saas-core-runtime"
+import { createServerClient } from "@/lib/supabase"
+export const dynamic = "force-dynamic"
+const modules = ${JSON.stringify({ billing: config.billing, email: config.email, domains: config.domains, pwa: config.pwa, push: config.push, platform: config.platform })}
+export default async function SetupPage() {
+  let checks: any[] = []
+  const providerChecks: any[] = inspectProviderConfiguration(process.env, modules)
+  try { checks = await inspectRuntimeHealth({ client: await createServerClient(), expectedSchemaVersion: "${SCHEMA_VERSION}", environment: process.env }) } catch (error) { checks = [{ key: "runtime", label: "Runtime", status: "error", detail: error instanceof Error ? error.message : "Runtime check failed." }] }
+  const providerChecksForView = providerChecks.map(({ key, label, state, detail, missing }: any) => ({ key, label, status: state, detail, ...(missing?.length ? { missing } : {}) }))
+  return <DefaultSetupView checks={[...checks, ...providerChecksForView]} afterContent={<section className="saas-card" aria-labelledby="product-boundary-heading"><h2 id="product-boundary-heading">Product boundary</h2><p>Core owns identity, tenants, team, plans and operations. Add product tables with workspace_id and product-specific policies under src/product.</p></section>} />
+}
 `
 }
 

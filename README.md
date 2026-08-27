@@ -147,6 +147,7 @@ pnpm dev
 | `supabase/migrations/` | Core’s ordered migration stream; add product migrations later and use `workspace_id`. |
 | `/app/setup` | Setup Center with the same readiness diagnostics used by the CLI. |
 | `/app` and `/platform` | Customer workspace and separate operator boundary. |
+| `/app/ui-lab` | Product-owned proof surface for real overlays, menus, selection, feedback and responsive shell interactions. |
 
 The generated project includes its own `supabase/config.toml`, an intentionally
 empty `supabase/seed.sql` and bundled Core migrations. Generated products always
@@ -158,7 +159,7 @@ product-install or dependency-override flag. Run `pnpm release:verify` from
 this repository to exercise that workflow.
 
 See [Getting started](docs/GETTING-STARTED.md) and
-[Product integration](docs/PRODUCT-INTEGRATION.md).
+[Product integration](docs/PRODUCT-INTEGRATION.md), plus the [UI fidelity scorecard](docs/UI-FIDELITY.md).
 
 ## Generated application: what you actually get
 

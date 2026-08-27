@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AppShell, Button, Card, EmptyState, StatusBadge, Tabs, TabsContent, TabsList, TabsTrigger, WorkspaceSwitcher, getStatusLabel, resolveThemeConfig, responsiveEntityPresentation } from "./index.js"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger, AppShell, Button, Card, Dialog, DropdownMenu, EmptyState, InputOTP, NativeSelect, Popover, Select, Sheet, StatusBadge, Tabs, TabsContent, TabsList, TabsTrigger, Tooltip, WorkspaceSwitcher, getStatusLabel, resolveThemeConfig, responsiveEntityPresentation } from "./index.js"
 
 describe("SaaS Core UI public foundation", () => {
   it("keeps the 1.1 public exports working while using the new semantic classes", () => {
@@ -35,8 +35,16 @@ describe("SaaS Core UI public foundation", () => {
 
   it("keeps the reusable primitive breadth provider-free and semantic", () => {
     const markup = renderToStaticMarkup(<><Accordion><AccordionItem><AccordionTrigger>Details</AccordionTrigger><AccordionContent>Content</AccordionContent></AccordionItem></Accordion><Tabs><TabsList><TabsTrigger aria-selected="true">One</TabsTrigger></TabsList><TabsContent>Panel</TabsContent></Tabs></>)
-    expect(markup).toContain("<details")
+    expect(markup).not.toContain("<details")
     expect(markup).toContain("role=\"tablist\"")
     expect(markup).toContain("role=\"tabpanel\"")
+  })
+
+  it("exports real interactive primitive roots and an explicit native form helper", () => {
+    for (const primitive of [Dialog, DropdownMenu, InputOTP, Popover, Select, Sheet, Tooltip]) {
+      expect(primitive).toBeDefined()
+    }
+    expect(renderToStaticMarkup(<NativeSelect aria-label="Native fallback"><option value="one">One</option></NativeSelect>)).toContain("sc-select-native")
+    expect(renderToStaticMarkup(<Button asChild><a href="/app">Open app</a></Button>)).toContain('href="/app"')
   })
 })

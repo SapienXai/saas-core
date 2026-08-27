@@ -154,7 +154,7 @@ try {
   const next = start("pnpm", ["--dir", app, "exec", "next", "dev", "--port", "4322"], { env: { ...env, APP_URL: "http://127.0.0.1:4322", SAAS_CORE_PRODUCT_NAME: "Release Verify" } })
   await waitFor("http://127.0.0.1:4322/", next)
   run("pnpm", ["--dir", app, "exec", "playwright", "install", ...(process.env.CI ? ["--with-deps"] : []), "chromium"])
-  run("node", ["generated-app.e2e.mjs"], { cwd: app, env: { ...env, SAAS_CORE_APP_URL: "http://127.0.0.1:4322" } })
+  run("node", ["generated-app.e2e.mjs"], { cwd: app, env: { ...env, SAAS_CORE_APP_URL: "http://127.0.0.1:4322", SAAS_CORE_SCREENSHOT_DIR: join(root, "output", "playwright") } })
   relocatedApp = join(appDirectory, "relocated-app")
   cpSync(app, relocatedApp, { recursive: true, filter: (path) => !path.includes(`${sep}node_modules`) && !path.includes(`${sep}.next`) && basename(path) !== ".env.local" && basename(path) !== ".npmrc" })
   assertPortableProduct(relocatedApp, join(artifactDirectory, "artifacts"))

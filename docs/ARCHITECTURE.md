@@ -69,5 +69,13 @@ the 1.1.x exports (`AppShell`, `WorkspaceSwitcher`, `StatusBadge`, `PlanCard`,
 New consumers can use the root or explicit subpath exports for better tree
 shaking and clearer client boundaries.
 
+Interactive primitives are backed by Radix UI, Vaul, cmdk, Embla,
+`react-day-picker`, `react-resizable-panels` and Sonner. CVA owns variant
+composition, Lucide owns iconography, and Tailwind is available to generated
+products through `tailwind-preset`; the published semantic CSS remains the
+stable fallback and token layer. The product-owned generated `/app/ui-lab`
+route provides an authenticated proof surface for portal, keyboard, focus,
+theme and responsive behavior.
+
 The complete ReserveVia review and exclusion rationale is recorded in
-[UI parity](UI-PARITY.md).
+[the UI fidelity scorecard](UI-FIDELITY.md) and [source inventory](UI-PARITY.md).

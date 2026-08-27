@@ -1,6 +1,7 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Monitor, Moon, Sun } from "lucide-react"
 
 export type ThemeMode = "light" | "dark" | "system"
 export type ThemePreset = "default" | "neutral" | "violet" | "blue"
@@ -16,16 +17,24 @@ export type SaaSThemeConfig = {
   brand?: BrandConfig
 }
 export const DEFAULT_THEME_CONFIG: Required<Pick<SaaSThemeConfig, "preset" | "mode" | "primary" | "accent" | "radius">> = { preset: "default", mode: "system", primary: "#6757e8", accent: "#91e0c0", radius: "medium" }
+const presetColors: Record<ThemePreset, { primary: string; accent: string }> = {
+  default: { primary: "#6757e8", accent: "#91e0c0" },
+  neutral: { primary: "#475569", accent: "#cbd5e1" },
+  violet: { primary: "#7c3aed", accent: "#c4b5fd" },
+  blue: { primary: "#2563eb", accent: "#93c5fd" },
+}
 
 export function resolveThemeConfig(input: unknown): SaaSThemeConfig {
   if (!input || typeof input !== "object") return { ...DEFAULT_THEME_CONFIG }
   const raw = input as Record<string, unknown>
   const brand = raw.brand && typeof raw.brand === "object" ? raw.brand as Record<string, unknown> : undefined
+  const preset = typeof raw.preset === "string" && ["default", "neutral", "violet", "blue"].includes(raw.preset) ? raw.preset as ThemePreset : DEFAULT_THEME_CONFIG.preset
+  const colors = presetColors[preset]
   return {
-    preset: typeof raw.preset === "string" && ["default", "neutral", "violet", "blue"].includes(raw.preset) ? raw.preset as ThemePreset : DEFAULT_THEME_CONFIG.preset,
+    preset,
     mode: typeof raw.mode === "string" && ["light", "dark", "system"].includes(raw.mode) ? raw.mode as ThemeMode : DEFAULT_THEME_CONFIG.mode,
-    primary: typeof raw.primary === "string" ? raw.primary : DEFAULT_THEME_CONFIG.primary,
-    accent: typeof raw.accent === "string" ? raw.accent : DEFAULT_THEME_CONFIG.accent,
+    primary: typeof raw.primary === "string" ? raw.primary : colors.primary,
+    accent: typeof raw.accent === "string" ? raw.accent : colors.accent,
     ...(typeof raw.background === "string" ? { background: raw.background } : {}),
     radius: typeof raw.radius === "string" && ["small", "medium", "large", "full"].includes(raw.radius) ? raw.radius as ThemeRadius : DEFAULT_THEME_CONFIG.radius,
     ...(brand ? { brand: { name: typeof brand.name === "string" && brand.name ? brand.name : "SaaS product", ...(typeof brand.logo === "string" ? { logo: brand.logo } : {}), ...(typeof brand.icon === "string" ? { icon: brand.icon } : {}) } } : {}),
@@ -49,13 +58,19 @@ export function ThemeProvider({ children, config = {}, storageKey = "saas-core-t
   const initialMode = safeConfig.mode ?? "system"
   const [mode, setModeState] = useState<ThemeMode>(initialMode)
   const [resolvedMode, setResolvedMode] = useState<"light" | "dark">(initialMode === "system" ? "light" : initialMode)
-  useEffect(() => { try { const stored = window.localStorage.getItem(storageKey); if (stored === "light" || stored === "dark" || stored === "system") setModeState(stored) } catch { /* optional preference */ } }, [storageKey])
+  const userChangedMode = useRef(false)
+  useEffect(() => { try { const stored = window.localStorage.getItem(storageKey); if (!userChangedMode.current && (stored === "light" || stored === "dark" || stored === "system")) setModeState(stored) } catch { /* optional preference */ } }, [storageKey])
   useEffect(() => { const update = () => setResolvedMode(mode === "system" ? systemMode() : mode); update(); if (mode !== "system") return; const media = window.matchMedia("(prefers-color-scheme: dark)"); media.addEventListener?.("change", update); return () => media.removeEventListener?.("change", update) }, [mode])
   useEffect(() => { document.documentElement.dataset.theme = mode; document.documentElement.style.colorScheme = resolvedMode }, [mode, resolvedMode])
-  const setMode = useCallback((next: ThemeMode) => { setModeState(next); try { window.localStorage.setItem(storageKey, next) } catch { /* optional preference */ } }, [storageKey])
+  const setMode = useCallback((next: ThemeMode) => { userChangedMode.current = true; setModeState(next); try { window.localStorage.setItem(storageKey, next) } catch { /* optional preference */ } }, [storageKey])
   const value = useMemo(() => ({ mode, resolvedMode, setMode, config: safeConfig }), [mode, resolvedMode, safeConfig, setMode])
   return <ThemeContext.Provider value={value}><div className="sc-theme-root" style={themeVariables(safeConfig)}>{children}</div></ThemeContext.Provider>
 }
 
 export function useTheme() { return useContext(ThemeContext) }
-export function ThemeToggle() { const { mode, setMode } = useTheme(); return <button className="sc-icon-button" type="button" aria-label={`Theme: ${mode}. Change theme`} onClick={() => setMode(mode === "dark" ? "light" : mode === "light" ? "system" : "dark")}><span aria-hidden="true">{mode === "dark" ? "☾" : mode === "light" ? "☀" : "◐"}</span></button> }
+export function ThemeToggle() {
+  const { mode, setMode } = useTheme()
+  const Icon = mode === "dark" ? Moon : mode === "light" ? Sun : Monitor
+  const nextMode = mode === "dark" ? "light" : "dark"
+  return <button className="sc-icon-button" type="button" aria-label={`Theme: ${mode}. Change to ${nextMode}`} title={`Theme: ${mode}`} onClick={() => setMode(nextMode)}><Icon size={17} strokeWidth={1.8} aria-hidden="true" /></button>
+}
