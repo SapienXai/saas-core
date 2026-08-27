@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     payload?.data?.bounce?.type ||
     reason,
   ).toLowerCase()
-  const pauseBooking = ["email.bounced", "email.complained", "email.suppressed"].includes(String(payload?.type)) || /(permanent|invalid|suppressed|unsubscribed|mailbox|undeliverable|hard|complaint)/i.test(failureType)
+  const pauseDelivery = ["email.bounced", "email.complained", "email.suppressed"].includes(String(payload?.type)) || /(permanent|invalid|suppressed|unsubscribed|mailbox|undeliverable|hard|complaint)/i.test(failureType)
   const rawEventAt = payload?.created_at || payload?.data?.created_at || null
   const parsedEventAt = rawEventAt ? new Date(String(rawEventAt)) : null
   const eventAt = parsedEventAt && Number.isFinite(parsedEventAt.getTime()) ? parsedEventAt.toISOString() : null
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     target_event_type: String(payload.type),
     target_event_at: eventAt,
     target_error: reason,
-    target_pause_booking: pauseBooking,
+    target_pause_delivery: pauseDelivery,
     target_payload: payload,
   } as any)
   if (error) {

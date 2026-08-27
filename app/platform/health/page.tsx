@@ -1,18 +1,3 @@
-import { Activity, CheckCircle2, CircleAlert, HelpCircle, Settings2, TriangleAlert } from "lucide-react"
-import { getPlatformHealth } from "@/lib/platform-operations"
-import { PlatformPageHeader, PlatformSectionHeader, PlatformSurface } from "@/components/platform/platform-primitives"
-
+import { PlatformAttention } from "@/components/platform/platform-generic"
 export const dynamic = "force-dynamic"
-
-const statusCopy = { operational: "Operational", warning: "Warning", error: "Error", not_configured: "Not configured", unknown: "Unknown" }
-const statusStyles = { operational: "border-emerald-400/25 bg-emerald-500/10 text-emerald-300", warning: "border-amber-400/25 bg-amber-500/10 text-amber-200", error: "border-rose-400/25 bg-rose-500/10 text-rose-300", not_configured: "border-slate-400/20 bg-slate-500/10 text-slate-400", unknown: "border-sky-400/25 bg-sky-500/10 text-sky-200" }
-
-export default async function PlatformHealthPage() {
-  const health = await getPlatformHealth()
-  const issues = health.filter((item) => item.status === "error" || item.status === "warning").length
-  return <div className="space-y-6"><PlatformPageHeader eyebrow="Operations" title="Platform health" description="Safe server-side checks and configuration signals from the integrations Reservevia already uses." actions={<span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${issues ? "border-amber-400/25 bg-amber-500/10 text-amber-200" : "border-emerald-400/25 bg-emerald-500/10 text-emerald-300"}`}>{issues ? `${issues} needs review` : "No active issues"}</span>} /><PlatformSurface className="p-4 sm:p-5"><PlatformSectionHeader title="Service posture" description="Provider reachability is deliberately marked unknown when the current data model only proves configuration." icon={Activity} /><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{health.map((item) => <HealthCard key={item.key} item={item} />)}</div></PlatformSurface><PlatformSurface><div className="border-b border-white/10 px-4 py-4 sm:px-5"><PlatformSectionHeader title="How to read this" description="Unknown and not configured are valid states, not failures hidden behind a green badge." icon={HelpCircle} /></div><div className="grid gap-3 p-4 text-xs leading-5 text-slate-500 sm:grid-cols-3 sm:p-5"><p><strong className="text-slate-300">Operational</strong><br />The application completed a reliable local check.</p><p><strong className="text-slate-300">Warning / Error</strong><br />A real failure or unresolved condition was found in stored operational data.</p><p><strong className="text-slate-300">Unknown</strong><br />Credentials or state exist, but this page does not claim live provider health without a safe check.</p></div></PlatformSurface></div>
-}
-function HealthCard({ item }: { item: Awaited<ReturnType<typeof getPlatformHealth>>[number] }) {
-  const Icon = item.status === "operational" ? CheckCircle2 : item.status === "warning" ? TriangleAlert : item.status === "error" ? CircleAlert : item.status === "not_configured" ? Settings2 : HelpCircle
-  return <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4"><div className="flex items-start justify-between gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.06] text-slate-300"><Icon className="h-4 w-4" /></span><span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusStyles[item.status]}`}>{statusCopy[item.status]}</span></div><p className="mt-4 text-sm font-semibold text-white">{item.label}</p><p className="mt-1 text-xs leading-5 text-slate-500">{item.detail}</p>{item.metric ? <p className="mt-3 text-xs font-semibold text-slate-300">{item.metric}</p> : null}</div>
-}
+export default function PlatformHealthPage() { return <PlatformAttention title="System health" description="Core health checks are available at /api/health. Add provider-specific checks as the product integration grows." /> }

@@ -3,8 +3,8 @@ import { filtersHaveValues, parsePlatformFilters } from "../lib/platform-filters
 
 describe("platform filter parsing", () => {
   it("normalizes supported URL filters and bounds pagination", () => {
-    const filters = parsePlatformFilters(new URLSearchParams("q=%20felix%20&status=attention&plan=pro&page=99999&pageSize=500"))
-    expect(filters).toMatchObject({ q: "felix", status: "attention", plan: "pro", page: 10000, pageSize: 100 })
+    const filters = parsePlatformFilters(new URLSearchParams("q=%20example%20&status=attention&plan=pro&page=99999&pageSize=500"))
+    expect(filters).toMatchObject({ q: "example", status: "attention", plan: "pro", page: 10000, pageSize: 100 })
     expect(filtersHaveValues(filters)).toBe(true)
   })
 

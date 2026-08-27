@@ -83,7 +83,7 @@ export function PwaManagement({ initialData }: { initialData: PwaManagementData 
     <main className="min-h-full bg-slate-50/70 p-4 dark:bg-[#101116] sm:p-6 lg:p-8">
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-600">Reservevia</p>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-violet-600">SaaS Core</p>
           <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{t("manage.pwa.title")}</h1>
           <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">{t("manage.pwa.description", { workspace: initialData.workspace.name })}</p>
         </div>

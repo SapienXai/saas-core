@@ -19,7 +19,7 @@ describe("Paddle billing boundaries", () => {
       nextBilledAt: "2026-09-01T00:00:00Z",
       currentBillingPeriod: { startsAt: "2026-08-01T00:00:00Z", endsAt: "2026-09-01T00:00:00Z" },
       scheduledChange: { action: "cancel", effectiveAt: "2026-09-01T00:00:00Z", resumeAt: null },
-      customData: { reservevia_workspace_id: "workspace" },
+      customData: { saas_core_workspace_id: "workspace" },
       items: [{ price: { id: "pri_test" }, quantity: 1 }],
     })
     expect(subscription).toMatchObject({
@@ -80,7 +80,7 @@ describe("Paddle billing boundaries", () => {
   it("verifies the exact raw body using the official Paddle SDK helper", async () => {
     const rawBody = JSON.stringify({
       event_id: "evt_signature",
-      event_type: "reservevia.test.event",
+      event_type: "saas-core.test.event",
       occurred_at: "2026-08-09T10:00:00Z",
       data: { marker: "raw-body" },
     })

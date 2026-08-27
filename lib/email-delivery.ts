@@ -6,8 +6,7 @@ import { createServiceRoleClient } from "@/lib/supabase"
 
 type DeliveryContext = {
   kind: string
-  reservationId?: string | null
-  restaurantId?: string | null
+  workspaceId?: string | null
   metadata?: Record<string, unknown>
   dedupeKey?: string
   maxAttempts?: number
@@ -15,13 +14,12 @@ type DeliveryContext = {
 
 export async function sendTrackedEmail(params: SendEmailParams, context: DeliveryContext) {
   const service = createServiceRoleClient()
-  const dedupeKey = context.dedupeKey || `${context.kind}:${context.reservationId || "none"}:${params.to.trim().toLowerCase()}`
+  const dedupeKey = context.dedupeKey || `${context.kind}:${context.workspaceId || "none"}:${params.to.trim().toLowerCase()}`
   let { data: event, error: eventError } = await service
     .from("email_delivery_events")
     .upsert({
       kind: context.kind,
-      reservation_id: context.reservationId || null,
-      restaurant_id: context.restaurantId || null,
+      workspace_id: context.workspaceId || null,
       recipient_email: params.to,
       status: "pending",
       metadata: context.metadata || {},
@@ -63,7 +61,7 @@ export async function deliverTrackedEmail(eventId: string) {
     return { success: false as const, error: { message: `Email event is ${claim?.current_status || "not available"}.`, code: claim?.current_status || "not_available" }, retryable }
   }
   const payload = claim.payload as SendEmailParams
-  const result = await sendEmail({ ...payload, idempotencyKey: `reservevia-email-${eventId}` })
+  const result = await sendEmail({ ...payload, idempotencyKey: `saas-core-email-${eventId}` })
   const providerMessageId = result.success && result.data && typeof result.data === "object" && "id" in result.data ? String(result.data.id || "") || null : null
   const providerResult = result.success && providerMessageId
   const errorMessage = !providerResult ? (result.success ? "Email provider returned no message identifier." : result.error && typeof result.error === "object" && "message" in result.error ? String(result.error.message) : "Email provider rejected the message.") : ""
@@ -93,16 +91,10 @@ export async function deliverTrackedEmail(eventId: string) {
         target_event_type: providerEvent.event_type,
         target_event_at: providerEvent.event_at,
         target_error: failureReason,
-        target_pause_booking: ["email.bounced", "email.complained", "email.suppressed"].includes(providerEvent.event_type) || /(permanent|invalid|suppressed|unsubscribed|mailbox|undeliverable|hard|complaint)/i.test(failureType),
+        target_pause_delivery: ["email.bounced", "email.complained", "email.suppressed"].includes(providerEvent.event_type) || /(permanent|invalid|suppressed|unsubscribed|mailbox|undeliverable|hard|complaint)/i.test(failureType),
         target_payload: providerEvent.payload,
       } as any)
       if (replayError) console.error("Stored provider webhook could not be reconciled:", replayError.message)
-    }
-  }
-  if (!retryable && !providerResult) {
-    const { data: event } = await service.from("email_delivery_events").select("kind, restaurant_id").eq("id", eventId).maybeSingle()
-    if (event?.kind === "unclaimed_business_reservation" && event.restaurant_id) {
-      await service.from("restaurant_claim_profiles").update({ business_email_delivery_status: "paused", business_email_last_error: errorMessage.slice(0, 2000), business_email_paused_at: new Date().toISOString() }).eq("restaurant_id", event.restaurant_id).eq("source", "dataengine").in("ownership_status", ["unclaimed", "claim_pending"])
     }
   }
   return providerResult ? { ...result, providerMessageId, retryable: false, nextAttemptAt: null } : { success: false as const, error: { message: errorMessage, code: errorCode }, providerMessageId, retryable, nextAttemptAt: retryable ? nextAttemptAt : null }
@@ -110,9 +102,9 @@ export async function deliverTrackedEmail(eventId: string) {
 
 export async function retryTrackedEmail(eventId: string) {
   const service = createServiceRoleClient()
-  const { data: event, error } = await service.from("email_delivery_events").select("id, status, restaurant_id, attempt_count, max_attempts").eq("id", eventId).maybeSingle()
+  const { data: event, error } = await service.from("email_delivery_events").select("id, status, attempt_count, max_attempts").eq("id", eventId).maybeSingle()
   if (error || !event) throw new Error(error?.message || "Email delivery event not found.")
-  if (event.status === "bounced" || event.status === "paused") throw new Error("Hard-bounced email delivery is paused until the business email is corrected.")
+  if (event.status === "bounced" || event.status === "paused") throw new Error("This email delivery is paused until its delivery settings are corrected.")
   const { error: updateError } = await service.from("email_delivery_events").update({ status: "retrying", next_attempt_at: new Date().toISOString(), failed_at: null, last_error: null, lease_token: null, lease_until: null, max_attempts: Math.max(Number(event.max_attempts || 5), Number(event.attempt_count || 0) + 3) }).eq("id", eventId).in("status", ["failed", "retrying", "pending"])
   if (updateError) throw new Error(updateError.message)
   return deliverTrackedEmail(eventId)

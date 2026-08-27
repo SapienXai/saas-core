@@ -73,7 +73,7 @@ The following source migrations are the source evidence for the clean generic sc
 - Generic custom domains: the normalized/reconciled portions of `20260809190337_custom_restaurant_domains.sql` and subsequent domain indexes.
 - Email delivery, provider webhook idempotency, delivery attempts, and outbox health: `20260822101703_dataengine_reservevia_import.sql`, `20260822114730_dataengine_reservevia_hardening.sql`, `20260822130000_dataengine_outbox_observability.sql`, `20260823051610_dataengine_outbox_trigger_type.sql`, and `20260823093000_resend_delivery_lifecycle.sql`, with all DataEngine/restaurant columns removed.
 
-The clean stream starts at `20260827000000_saas_core_v2_baseline.sql`. It must contain only generic tables, functions, triggers, indexes, and RLS; no migration depends on `restaurants`, `reservations`, seating, restaurant enums, restaurant storage, or product-specific cron jobs.
+The clean stream starts at `20260827204359_saas_core_v2_baseline.sql`. It must contain only generic tables, functions, triggers, indexes, and RLS; no migration depends on `restaurants`, `reservations`, seating, restaurant enums, restaurant storage, or product-specific cron jobs.
 
 ### Remove
 
@@ -87,7 +87,12 @@ The legacy Felix baseline, `restaurants` and all restaurant media/profile tables
 
 ## Source-preservation report
 
-The first baseline is a direct source copy, so reusable files remain source-identical at this checkpoint except for unavailable product screenshots. Extraction reports will add measured source-vs-Core LOC comparisons after each surgical move. The target is a small semantic diff: remove domain imports/branches and substitute typed workspace/product inputs; do not rewrite UI primitives or shell CSS.
+The Phase A baseline was a direct source copy. The current extraction has now
+completed the first surgical pass. The measured report below distinguishes
+domain removal from source-preserving UI moves; the target remains a small
+semantic diff for reusable files: remove domain imports/branches and
+substitute typed workspace/product inputs, without rewriting UI primitives or
+interaction behavior.
 
 Major fidelity anchors:
 
@@ -95,6 +100,30 @@ Major fidelity anchors:
 - `components/manage/manage-shell.tsx`, `manage-sidebar.tsx`, `manage-header.tsx`, `workspace-switcher.tsx`: shell geometry, persistence, collapse, mobile drawer, tooltips, theme, loading, and active states retained.
 - `components/auth/reservevia-auth-shell.tsx` and auth forms: source auth flow and pending/error feedback retained, with product identity injected.
 - onboarding/team/plan/setup/settings/platform compositions: source layout and interaction retained while product data is replaced with generic workspace view models.
+
+### Measured source-preservation report
+
+Counts are byte/line counts from the canonical checkout at
+`e12566a6792c7144f576459e17b9ddce94de9e55` and the current Core checkout.
+They are a review aid, not a claim that every line is semantically generic.
+
+| ReserveVia source | SaaS Core result | Approx. preservation and reason for difference |
+| --- | --- | --- |
+| `components/manage/manage-shell.tsx` (10,690 bytes / 249 lines) | `components/manage/manage-shell.tsx` (10,258 / 244) | High preservation. Kept scroll ownership, pull-to-refresh, PWA/install slot, theme portal, collapsed/mobile shell, safe areas, loading and offline states. Removed restaurant usage and plan-notice slots. |
+| `components/manage/manage-sidebar.tsx` (29,392 / 443) | `components/manage/manage-sidebar.tsx` (28,769 / 440) | High preservation. Kept Radix Tooltip/Dropdown/Sheet, expanded and icon-rail states, persistence, account menu, language, theme, push, usage bars, upgrade affordance, keyboard/focus behavior, and mobile scrolling. Removed restaurant, reservation, reports, seating, and restaurant-specific plan metrics. |
+| `components/manage/manage-header.tsx` (52,966 / 1,168) | `components/manage/manage-header.tsx` (6,490 / 44) | Intentional large reduction. The source file is dominated by the reservation realtime subscription, restaurant lookup, reservation event payloads, and reservation popup lifecycle. Core keeps header geometry, workspace/page title, online state, notifications empty state, push hook, account/sign-out action, pending overlay, and navigation behavior. |
+| `components/auth/reservevia-auth-shell.tsx` (7,031 / 131) | `components/auth/auth-shell.tsx` (5,140 / 10) | Split layout and responsive auth presentation preserved; product-specific asset/copy and source formatting were removed. Auth form behavior remains in the copied form components. |
+| `components/ui/button.tsx` (2,395 / 70) | `components/ui/button.tsx` (2,395 / 70) | Source-identical Radix/CVA button implementation. |
+| `components/ui/dialog.tsx` (3,616 / 122) | `components/ui/dialog.tsx` (3,616 / 122) | Source-identical dialog, focus trap, Escape/outside dismissal, and portal behavior. |
+| `components/ui/sheet.tsx` (3,863 / 135) | `components/ui/sheet.tsx` (3,863 / 135) | Source-identical mobile drawer/sheet behavior and animations. |
+| `styles/reservevia-lilac.css` (22,006 / 741) | `styles/core-lilac.css` (19,327 / 659) | Palette and management interaction selectors preserved; removed selectors tied to restaurant pages, seating, public booking and ReserveVia assets. |
+| `app/globals.css` (169,229 / 7,168) | `app/globals.css` (5,250 / 192) | Intentional scope reduction. The source file combines marketing, public restaurant, booking, map, seating, and management CSS. Core keeps application shell geometry, scroll/document locking, portal theme behavior, safe-area/mobile rules, reduced motion, focus, and feedback styles. |
+
+The `manage-header.tsx` and global CSS reductions are the two deliberate large
+diffs. They are not replacements for the shell: their removed majority is
+traceable to product realtime/domain surfaces. The sidebar, shell, overlays,
+and primitives remain close to the production source because they are the
+platform’s interaction language.
 
 ## Extraction proof obligations
 
@@ -104,4 +133,3 @@ Major fidelity anchors:
 4. Verify `/app`, auth/onboarding, team, plan, setup, settings, PWA, platform, light/dark, desktop/mobile, dialogs, menus, toasts, and sidebar interactions.
 5. Prove a temporary Projects product uses only the workspace boundary and does not require restaurant concepts.
 6. Document how ReserveVia could recompose its removed domain on top of Core without changing Core internals.
-

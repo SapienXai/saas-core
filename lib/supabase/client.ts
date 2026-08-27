@@ -21,7 +21,7 @@ export function getSupabaseBrowserClient() {
       autoRefreshToken: true,
       experimental: { appendPkceFlowIdToRedirects: true },
     },
-    global: { headers: { "X-Client-Info": "reservevia/browser" } },
+    global: { headers: { "X-Client-Info": "saas-core/browser" } },
   })
 
   return browserClient

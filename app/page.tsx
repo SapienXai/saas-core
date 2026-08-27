@@ -1,129 +1,23 @@
-import type { Metadata } from "next"
-import { notFound } from "next/navigation"
-import { MarketingHome } from "@/components/marketing/marketing-home"
-import { loadMarketingPlans } from "@/lib/marketing/public-plans"
-import { loadPublicBillingPrices } from "@/lib/marketing/public-billing-prices"
-import { resolvePublicRestaurantRequest } from "@/lib/domains/public-resolver"
-import { getPlatformUrl } from "@/lib/platform-urls"
-import { getHostedRestaurantUrl, getRestaurantPublicUrl } from "@/lib/domains/public-url"
-import { getHostedBrandUrl } from "@/lib/domains/public-url"
-import { BrandStructuredData } from "@/components/brand-structured-data"
-import { PublicBrandBookingPage } from "@/components/public-brand-booking-page"
-import { RestaurantLandingPage } from "@/components/restaurant-landing-page"
-import { RestaurantStructuredData } from "@/components/restaurant-structured-data"
-import { LanguageProvider } from "@/context/language-context"
-import { redirect } from "next/navigation"
-import type { MarketingPlan } from "@/lib/marketing/plan-catalog"
-import { RESERVEVIA_OG_HERO } from "@/lib/brand-assets"
-import { getServerLanguage, translateServer } from "@/lib/server-i18n"
-import { buildRestaurantMetadata, getRestaurantTitle } from "@/lib/restaurant-seo"
+import Link from "next/link"
+import Image from "next/image"
+import { ArrowRight, Layers3, ShieldCheck, Sparkles } from "lucide-react"
+import { PRODUCT_CONFIG } from "@/lib/product-config"
 
-export const dynamic = "force-dynamic"
-
-type HomePageProps = {
-  searchParams?: Promise<{ lang?: string; manageToken?: string }>
-}
-
-export async function generateMetadata({ searchParams }: HomePageProps): Promise<Metadata> {
-  const query = await searchParams
-  const language = await getServerLanguage(query?.lang)
-  const publicRequest = await resolvePublicRestaurantRequest()
-  if (publicRequest.brand) {
-    if (publicRequest.state === "suspended") {
-      return { title: `${publicRequest.brand.name} reservations | Reservevia`, alternates: { canonical: getHostedBrandUrl(publicRequest.brand.slug) }, robots: { index: false, follow: false } }
-    }
-    const canonical = publicRequest.hostname ? `https://${publicRequest.hostname}` : getHostedBrandUrl(publicRequest.brand.slug)
-    const title = `${publicRequest.brand.name} reservations | Reservevia`
-    const description = `${publicRequest.brand.description}. Find a table at ${publicRequest.brand.name}.`
-    return { title, description, alternates: { canonical }, openGraph: { title, description, url: canonical, siteName: "Reservevia", type: "website" }, robots: { index: true, follow: true } }
-  }
-  if ((publicRequest.kind === "HOSTED_RESTAURANT" || publicRequest.kind === "CUSTOM_RESTAURANT") && publicRequest.restaurant) {
-    const restaurant = publicRequest.restaurant
-    if (publicRequest.state === "suspended") {
-      return {
-        title: getRestaurantTitle(restaurant.name),
-        alternates: { canonical: getHostedRestaurantUrl(restaurant.slug) },
-        robots: { index: false, follow: false },
-      }
-    }
-    const canonical = await getRestaurantPublicUrl({ id: publicRequest.restaurantId, slug: restaurant.slug, workspaceId: publicRequest.workspaceId })
-    return buildRestaurantMetadata({
-      restaurant,
-      canonical,
-      fallbackDescription: translateServer(language, "public.reserveAtDescription", { restaurant: restaurant.name }),
-      language,
-    })
-  }
-
-  if (publicRequest.kind === "HOSTED_RESTAURANT" || publicRequest.kind === "CUSTOM_RESTAURANT") {
-    return {
-      title: translateServer(language, "public.restaurantUnavailableMeta"),
-      robots: { index: false, follow: false },
-    }
-  }
-
-  return {
-    title: translateServer(language, "marketing.metaTitle"),
-    description: translateServer(language, "marketing.metaDescription"),
-    keywords: translateServer(language, "marketing.metaKeywords"),
-    alternates: { canonical: getPlatformUrl("/") },
-    openGraph: {
-      title: translateServer(language, "marketing.metaTitle"),
-      description: translateServer(language, "marketing.metaOgDescription"),
-      url: getPlatformUrl("/"),
-      siteName: "Reservevia",
-      type: "website",
-      images: [{ url: RESERVEVIA_OG_HERO, width: 1200, height: 630, alt: translateServer(language, "marketing.metaImageAlt") }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: translateServer(language, "marketing.metaTitle"),
-      description: translateServer(language, "marketing.metaOgDescription"),
-      images: [RESERVEVIA_OG_HERO],
-    },
-  }
-}
-
-export default async function Home({ searchParams }: HomePageProps) {
-  const query = await searchParams
-  const language = await getServerLanguage(query?.lang)
-  const publicRequest = await resolvePublicRestaurantRequest()
-  if (publicRequest.brand) {
-    if (publicRequest.state === "suspended") redirect(getHostedBrandUrl(publicRequest.brand.slug))
-    const canonical = publicRequest.hostname ? `https://${publicRequest.hostname}` : getHostedBrandUrl(publicRequest.brand.slug)
-    return <><LanguageProvider initialLanguage={language}><BrandStructuredData brand={publicRequest.brand} canonicalUrl={canonical} /><PublicBrandBookingPage brand={publicRequest.brand} /></LanguageProvider></>
-  }
-  if (publicRequest.kind === "HOSTED_RESTAURANT" || publicRequest.kind === "CUSTOM_RESTAURANT") {
-    if (!publicRequest.restaurant) notFound()
-    if (publicRequest.state === "suspended") redirect(getHostedRestaurantUrl(publicRequest.restaurant.slug))
-    const canonical = await getRestaurantPublicUrl({
-      id: publicRequest.restaurantId,
-      slug: publicRequest.restaurant.slug,
-      workspaceId: publicRequest.workspaceId,
-    })
-    return (
-      <>
-        <LanguageProvider initialLanguage={language}>
-          <RestaurantStructuredData restaurant={publicRequest.restaurant} canonicalUrl={canonical} />
-          <RestaurantLandingPage restaurant={publicRequest.restaurant} reservationToken={query?.manageToken} />
-        </LanguageProvider>
-      </>
-    )
-  }
-
-  if (publicRequest.kind === "UNKNOWN" || publicRequest.kind === "PLATFORM_APP") notFound()
-
-  let plans: MarketingPlan[] = []
-  try {
-    plans = await loadMarketingPlans()
-  } catch (error) {
-    console.error("Marketing plan catalog could not be loaded:", error)
-  }
-  const billingPrices = await loadPublicBillingPrices()
-
+export default function Home() {
   return (
-    <LanguageProvider initialLanguage={language}>
-      <MarketingHome plans={plans} billingPrices={billingPrices} />
-    </LanguageProvider>
+    <main className="min-h-screen bg-slate-950 px-6 py-16 text-white sm:px-10">
+      <div className="mx-auto grid max-w-5xl gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+        <section>
+          <div className="mb-8 inline-flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.06] px-3 py-2"><Image src={PRODUCT_CONFIG.iconPath} alt="" width={32} height={32} className="h-8 w-8 rounded-lg" /><span className="text-sm font-semibold">{PRODUCT_CONFIG.name}</span></div>
+          <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-violet-300">Workspace foundation</p>
+          <h1 className="max-w-3xl text-4xl font-bold tracking-tight sm:text-6xl">Build the product. Keep the platform quality.</h1>
+          <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">{PRODUCT_CONFIG.description} Authentication, tenancy, billing, platform control, PWA behavior, and the management experience are ready at the workspace boundary.</p>
+          <div className="mt-8 flex flex-wrap gap-3"><Link href="/login" className="inline-flex h-12 items-center gap-2 rounded-xl bg-violet-500 px-5 text-sm font-bold text-white transition hover:bg-violet-400">Open workspace <ArrowRight className="h-4 w-4" /></Link><Link href="/signup" className="inline-flex h-12 items-center rounded-xl border border-white/15 px-5 text-sm font-bold text-white transition hover:bg-white/10">Create account</Link></div>
+        </section>
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          {[{icon:Layers3,title:"Workspace-first",body:"Every product domain attaches to an explicit workspace boundary."},{icon:ShieldCheck,title:"Secure by default",body:"Server authorization and row-level policies protect membership data."},{icon:Sparkles,title:"Production interactions",body:"Responsive shell, overlays, feedback, themes, and PWA support stay intact."}].map(({icon:Icon,title,body}) => <div key={title} className="rounded-3xl border border-white/10 bg-white/[0.06] p-5"><Icon className="h-5 w-5 text-violet-300" /><h2 className="mt-4 text-base font-bold">{title}</h2><p className="mt-2 text-sm leading-6 text-slate-300">{body}</p></div>)}
+        </section>
+      </div>
+    </main>
   )
 }

@@ -43,9 +43,9 @@ type Plan = {
   name: string
   monthly_price_usd_cents: number
   sort_order: number
-  restaurant_limit: number
-  user_limit: number
-  reservation_limit: number | null
+  workspace_limit: number | null
+  user_limit: number | null
+  activity_limit: number | null
   history_days: number | null
   features: Record<string, boolean>
 }
@@ -92,19 +92,19 @@ const PLAN_SALES_COPY: Partial<Record<string, {
   highlights: TranslationKey[]
 }>> = {
   starter: {
-    positioning: "marketing.planStarterTarget",
-    description: "marketing.planStarterDescription",
-    highlights: ["manage.planUsage.featureCustomDomain", "manage.planUsage.featureGuestHistory", "manage.planUsage.featurePush"],
+    positioning: "manage.planUsage.billing.starterPositioning",
+    description: "manage.planUsage.billing.starterDescription",
+    highlights: ["manage.planUsage.featureCustomDomain", "manage.planUsage.featureActivityHistory", "manage.planUsage.featurePush"],
   },
   pro: {
-    positioning: "marketing.planProTarget",
-    description: "marketing.planProDescription",
-    highlights: ["manage.planUsage.featureAdvancedReports", "manage.planUsage.featureGuestHistory", "manage.planUsage.featureCustomPwa"],
+    positioning: "manage.planUsage.billing.proPositioning",
+    description: "manage.planUsage.billing.proDescription",
+    highlights: ["manage.planUsage.featureAdvancedReports", "manage.planUsage.featureActivityHistory", "manage.planUsage.featureCustomPwa"],
   },
   business: {
-    positioning: "marketing.planBusinessTarget",
-    description: "marketing.planBusinessDescription",
-    highlights: ["manage.planUsage.featureMultiRestaurant", "manage.planUsage.featurePush", "manage.planUsage.featureAdvancedReports"],
+    positioning: "manage.planUsage.billing.businessPositioning",
+    description: "manage.planUsage.billing.businessDescription",
+    highlights: ["manage.planUsage.featureMultiWorkspace", "manage.planUsage.featurePush", "manage.planUsage.featureAdvancedReports"],
   },
 }
 
@@ -214,9 +214,10 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
           name: data.entitlements.planName,
           monthlyPriceUsdCents: data.entitlements.monthlyPriceUsdCents,
           limits: {
-            restaurants: data.entitlements.limits.restaurants,
+            workspaces: data.entitlements.limits.workspaces,
             users: data.entitlements.limits.users,
-            reservationsPerPeriod: data.entitlements.limits.reservationsPerPeriod,
+            activityPerPeriod: data.entitlements.limits.activityPerPeriod,
+            historyDays: data.entitlements.limits.historyDays,
           },
           scheduledPlan: data.entitlements.scheduledPlan
             ? {
@@ -224,9 +225,10 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                 name: data.entitlements.scheduledPlan.name,
                 effectiveAt: data.entitlements.scheduledPlan.effectiveAt,
                 limits: {
-                  restaurants: data.entitlements.scheduledPlan.limits.restaurants,
+                  workspaces: data.entitlements.scheduledPlan.limits.workspaces,
                   users: data.entitlements.scheduledPlan.limits.users,
-                  reservationsPerPeriod: data.entitlements.scheduledPlan.limits.reservationsPerPeriod,
+                  activityPerPeriod: data.entitlements.scheduledPlan.limits.activityPerPeriod,
+                  historyDays: data.entitlements.scheduledPlan.limits.historyDays,
                 },
               }
             : null,
@@ -564,7 +566,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                 const configured = configuredPrices.some((price) => price.planKey === plan.key && price.interval === billingInterval) && configuredPaidPlans.includes(plan.key)
                 const recommended = plan.key === "pro"
                 const isDowngrade = isPaid && plan.sort_order < currentPlanSortOrder
-                const copy = PLAN_SALES_COPY[plan.key] || { positioning: "manage.planUsage.billing.moreRoomToGrow", description: "manage.planUsage.billing.moreCapacity", highlights: ["manage.planUsage.billing.moreUsageHeadroom", "manage.planUsage.billing.moreGuestContext", "manage.planUsage.billing.moreTeamControl"] }
+                const copy = PLAN_SALES_COPY[plan.key] || { positioning: "manage.planUsage.billing.moreRoomToGrow", description: "manage.planUsage.billing.moreCapacity", highlights: ["manage.planUsage.billing.moreUsageHeadroom", "manage.planUsage.billing.moreActivityContext", "manage.planUsage.billing.moreTeamControl"] }
                 const selected = selectedPlanKey === plan.key
                 const selecting = selectingPlan === plan.key
                 const savings = annualSavings(plan.key)
@@ -600,7 +602,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                       {billingInterval === "year" && savings && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{t("manage.planUsage.billing.savePercent", { percent: String(savings.percent) })}</span>}
                     </div>
                     <p className="mt-2 min-h-10 text-xs leading-5 text-slate-600 dark:text-slate-300">{t(copy.description)}</p>
-                    <div className="mt-4 grid grid-cols-3 gap-2 border-y border-slate-100 py-3 dark:border-white/10"><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.restaurant_limit}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.restaurants")}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.user_limit}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.teamMembers")}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.reservation_limit === null ? "∞" : plan.reservation_limit.toLocaleString()}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.reservationsPerMonth")}</p></div></div>
+                    <div className="mt-4 grid grid-cols-3 gap-2 border-y border-slate-100 py-3 dark:border-white/10"><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.workspace_limit === null ? "∞" : plan.workspace_limit}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.workspaces")}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.user_limit === null ? "∞" : plan.user_limit}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.teamMembers")}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.activity_limit === null ? "∞" : plan.activity_limit.toLocaleString()}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.activityPerPeriod")}</p></div></div>
                     <ul className="mt-4 space-y-2 text-xs text-slate-700 dark:text-slate-200">{copy.highlights.map((highlight) => <li key={highlight} className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-300" />{t(highlight)}</li>)}</ul>
                     <Button type="button" onClick={() => isPaid ? changePlan(plan.key) : startCheckout(plan.key)} loading={activeAction === (isPaid ? `plan-preview:${plan.key}` : `checkout-preview:${plan.key}`)} disabled={!billing.paddleConfigured || !configured} className={`mt-5 min-h-11 w-full rounded-xl px-3 py-2 text-sm font-semibold transition ${recommended && !isDowngrade ? "bg-violet-600 text-white hover:bg-violet-700" : "border border-slate-200 bg-transparent text-slate-800 hover:bg-slate-50 dark:border-white/10 dark:text-white dark:hover:bg-white/10"}`}>{configured && billing.paddleConfigured ? <><span>{isPaid ? t(isDowngrade ? "manage.planUsage.billing.moveTo" : "manage.planUsage.billing.upgradeTo", { plan: plan.name }) : t("manage.planUsage.billing.choose", { plan: plan.name })}</span><ArrowRight className="ml-1 h-3.5 w-3.5" /></> : t("manage.planUsage.billing.billingSetupRequired")}</Button>
                     {selecting && <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 rounded-2xl bg-white/80 text-[10px] font-semibold text-violet-700 backdrop-blur-[2px] dark:bg-[#22232e]/85 dark:text-violet-200" role="status"><OrbLoader label={t("manage.planUsage.billing.loadingPreview", { plan: plan.name })} state="working" size="sm" showLabel={false} /><span>{t("manage.planUsage.billing.updatingPreview")}</span></div>}
@@ -736,7 +738,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                 <p className="mt-1 text-[11px] leading-5 text-rose-800/75 dark:text-rose-200/75">{t("manage.planUsage.billing.cancellationConfirm")}</p>
                 <label className="block text-xs font-semibold text-rose-950 dark:text-rose-100">Why are you leaving?
                   <select value={cancellationReason} onChange={(event) => { setCancellationReason(event.target.value); setBillingConfirmation((current) => current?.type === "cancel" ? { ...current, reason: event.target.value } : current) }} className="mt-1.5 h-10 w-full rounded-lg border border-rose-200 bg-white px-2 text-xs text-slate-900 dark:border-rose-300/20 dark:bg-white/10 dark:text-white">
-                    <option value="too_expensive">Too expensive</option><option value="not_using">Not using Reservevia enough</option><option value="seasonal">Seasonal or temporary closure</option><option value="missing_feature">Missing a feature</option><option value="technical_problem">Technical problems</option><option value="switching_solution">Switching to another solution</option><option value="other">Other</option>
+                    <option value="too_expensive">Too expensive</option><option value="not_using">Not using the workspace enough</option><option value="seasonal">Seasonal or temporary pause</option><option value="missing_feature">Missing a feature</option><option value="technical_problem">Technical problems</option><option value="switching_solution">Switching to another solution</option><option value="other">Other</option>
                   </select>
                 </label>
                 <textarea value={cancellationFeedback} onChange={(event) => { setCancellationFeedback(event.target.value); setBillingConfirmation((current) => current?.type === "cancel" ? { ...current, feedback: event.target.value } : current) }} maxLength={1000} rows={2} placeholder="Optional feedback" className="w-full rounded-lg border border-rose-200 bg-white px-2.5 py-2 text-xs text-slate-900 placeholder:text-slate-400 dark:border-rose-300/20 dark:bg-white/10 dark:text-white" />

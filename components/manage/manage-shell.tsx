@@ -12,8 +12,6 @@ import { useManageContext } from "@/context/manage-context"
 import { useLanguage } from "@/context/language-context"
 import { ManagementPageLoading } from "@/components/ui/page-loading"
 import { ManageAppInstallPrompt, type ManagementPwaBranding } from "@/components/manage/manage-app-install-prompt"
-import { ManagePlanLimitNotice } from "@/components/manage/plan-limit-notice"
-import { ReservationUsageNotice } from "@/components/manage/reservation-usage-notice"
 
 type PullRefreshState = "idle" | "pulling" | "ready" | "refreshing"
 
@@ -60,18 +58,15 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
   }, [router, setManagedPullDistance, setManagedPullState])
 
   useEffect(() => {
-    // The public reservation experience remains light until it has its own
-    // complete dark palette. Management owns its theme locally instead.
-    setTheme("light")
-    setManageDarkMode(window.localStorage.getItem("felix:manage:theme") === "dark")
-    setSidebarCollapsed(window.localStorage.getItem("reservevia:manage:sidebar-collapsed") === "1")
+    setManageDarkMode(window.localStorage.getItem("saas-core:manage:theme") === "dark")
+    setSidebarCollapsed(window.localStorage.getItem("saas-core:manage:sidebar-collapsed") === "1")
     hasLoadedThemePreferenceRef.current = true
     setHasLoadedThemePreference(true)
   }, [setTheme])
 
   useEffect(() => {
     if (!hasLoadedThemePreferenceRef.current || !hasLoadedThemePreference) return
-    window.localStorage.setItem("felix:manage:theme", manageDarkMode ? "dark" : "light")
+    window.localStorage.setItem("saas-core:manage:theme", manageDarkMode ? "dark" : "light")
   }, [hasLoadedThemePreference, manageDarkMode])
 
   useEffect(() => {
@@ -192,7 +187,7 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
     if (window.matchMedia("(min-width: 768px)").matches) {
       setSidebarCollapsed((prev) => {
         const next = !prev
-        window.localStorage.setItem("reservevia:manage:sidebar-collapsed", next ? "1" : "0")
+        window.localStorage.setItem("saas-core:manage:sidebar-collapsed", next ? "1" : "0")
         return next
       })
       return
@@ -239,11 +234,11 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
           <ManageSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} isCollapsed={sidebarCollapsed} isDark={manageDarkMode} onThemeChange={setManageDarkMode} toggleSidebar={toggleSidebar} />
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <ManageHeader user={user} toggleSidebar={toggleSidebar} />
-            <main ref={mainRef} className="manage-main min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 pb-6 pt-3 md:px-6 md:pb-6 md:pt-5"><ManagePlanLimitNotice /><ReservationUsageNotice />{children}</main>
+            <main ref={mainRef} className="manage-main min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 pb-6 pt-3 md:px-6 md:pb-6 md:pt-5">{children}</main>
           </div>
         </div>
       </div>
-      {!pathname.startsWith("/manage/pwa") && !pathname.startsWith("/manage/seating/print") && <ManageAppInstallPrompt branding={branding} />}
+      {!pathname.startsWith("/app/pwa") && <ManageAppInstallPrompt branding={branding} />}
     </div>
   )
 }

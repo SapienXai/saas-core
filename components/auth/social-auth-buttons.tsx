@@ -4,7 +4,6 @@ import { useState } from "react"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/context/language-context"
-import { trackMarketingEvent } from "@/lib/marketing/analytics"
 
 type SocialProvider = "google"
 
@@ -31,7 +30,6 @@ export function SocialAuthButtons({ redirectPath, onError }: SocialAuthButtonsPr
   async function continueWith(provider: SocialProvider) {
     setLoadingProvider(provider)
     onError("")
-    trackMarketingEvent("signup_started", { source: "signup" })
 
     try {
       const supabase = getSupabaseBrowserClient()

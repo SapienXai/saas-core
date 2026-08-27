@@ -25,9 +25,9 @@ export type PrivacyNoticeContent = {
 
 const DEFAULT_VERSION = "2026-08-04-v1"
 const DEFAULT_COUNTRY = "Türkiye"
-const DEFAULT_EMAIL = "support@reservevia.com"
-const DEFAULT_PHONE = "+90 549 412 3888"
-const DEFAULT_ADDRESS = "Çıldır Mahallesi, Muğla, Türkiye"
+const DEFAULT_EMAIL = "support@example.com"
+const DEFAULT_PHONE = ""
+const DEFAULT_ADDRESS = ""
 
 function getSetting(name: string, fallback: string) {
   return process.env[name]?.trim() || fallback
@@ -40,17 +40,15 @@ function getListSetting(name: string, fallback: readonly string[]) {
 }
 
 export function getPrivacyNoticeContent({
-  restaurantPhone,
   language,
 }: {
-  restaurantPhone?: string | null
   language?: string | null
 } = {}): PrivacyNoticeContent {
   const { locale, messages } = getPrivacyMessages(language)
-  const dataControllerName = getSetting("PRIVACY_NOTICE_DATA_CONTROLLER_NAME", "Reservevia")
+  const dataControllerName = getSetting("PRIVACY_NOTICE_DATA_CONTROLLER_NAME", "SaaS Core")
   const country = getSetting("PRIVACY_NOTICE_COUNTRY", DEFAULT_COUNTRY)
   const contactEmail = getSetting("PRIVACY_NOTICE_CONTACT_EMAIL", DEFAULT_EMAIL)
-  const contactPhone = getSetting("PRIVACY_NOTICE_CONTACT_PHONE", restaurantPhone?.trim() || DEFAULT_PHONE)
+  const contactPhone = getSetting("PRIVACY_NOTICE_CONTACT_PHONE", DEFAULT_PHONE)
   const contactAddress = getSetting("PRIVACY_NOTICE_CONTACT_ADDRESS", DEFAULT_ADDRESS)
   const retentionPeriod = getSetting("PRIVACY_NOTICE_RETENTION_PERIOD", messages.retentionPeriod)
   const recipients = getListSetting("PRIVACY_NOTICE_RECIPIENTS", messages.recipients)

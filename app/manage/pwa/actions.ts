@@ -64,8 +64,6 @@ export async function getPwaManagementData(): Promise<PwaManagementResult> {
     const branding = buildEffectivePwaBranding({
       workspaceId: currentWorkspace.id,
       workspaceName: currentWorkspace.workspace?.name,
-      restaurantId: managementContext.activeRestaurantId,
-      restaurants: managementContext.restaurants,
       settings: settings.data,
       customBrandingEnabled: currentWorkspace.customPwaEnabled,
     })
@@ -102,7 +100,7 @@ export async function savePwaSettings(input: { appName?: string; themeColor?: st
       updated_by: current.user_id,
     }, { onConflict: "workspace_id" })
     if (error) throw new Error(error.message)
-    revalidatePath("/manage/pwa")
+    revalidatePath("/app/pwa")
     return { success: true, message: "PWA branding saved." }
   } catch (error) {
     return { success: false, message: error instanceof Error ? error.message : "PWA branding could not be saved." }
@@ -131,14 +129,14 @@ export async function uploadPwaIcon(formData: FormData) {
     const extension = file.type.split("/")[1]?.replace("jpeg", "jpg") || "png"
     const path = `${current.workspace_id}/pwa/icon/${crypto.randomUUID()}.${extension}`
     const supabase = createServiceRoleClient()
-    const upload = await supabase.storage.from("restaurant-assets").upload(path, Buffer.from(bytes), {
+    const upload = await supabase.storage.from("workspace-assets").upload(path, Buffer.from(bytes), {
       cacheControl: "31536000",
       contentType: file.type,
       upsert: false,
     })
     if (upload.error) throw new Error(upload.error.message)
 
-    const publicUrl = supabase.storage.from("restaurant-assets").getPublicUrl(path).data.publicUrl
+    const publicUrl = supabase.storage.from("workspace-assets").getPublicUrl(path).data.publicUrl
     const { data: previous } = await supabase
       .from("workspace_pwa_settings")
       .select("icon_url")
@@ -150,15 +148,15 @@ export async function uploadPwaIcon(formData: FormData) {
       updated_by: current.user_id,
     }, { onConflict: "workspace_id" })
     if (error) {
-      await supabase.storage.from("restaurant-assets").remove([path])
+      await supabase.storage.from("workspace-assets").remove([path])
       throw new Error(error.message)
     }
 
     const previousPath = storagePathFromPublicUrl(previous?.icon_url)
     if (previousPath && previousPath.startsWith(`${current.workspace_id}/pwa/icon/`)) {
-      await supabase.storage.from("restaurant-assets").remove([previousPath])
+      await supabase.storage.from("workspace-assets").remove([previousPath])
     }
-    revalidatePath("/manage/pwa")
+    revalidatePath("/app/pwa")
     return { success: true, message: "PWA icon updated." }
   } catch (error) {
     return { success: false, message: error instanceof Error ? error.message : "PWA icon could not be uploaded." }
@@ -181,9 +179,9 @@ export async function removePwaIcon() {
     if (error) throw new Error(error.message)
     const path = storagePathFromPublicUrl(settings?.icon_url)
     if (path?.startsWith(`${current.workspace_id}/pwa/icon/`)) {
-      await supabase.storage.from("restaurant-assets").remove([path])
+      await supabase.storage.from("workspace-assets").remove([path])
     }
-    revalidatePath("/manage/pwa")
+    revalidatePath("/app/pwa")
     return { success: true, message: "PWA icon reset to the workspace default." }
   } catch (error) {
     return { success: false, message: error instanceof Error ? error.message : "PWA icon could not be removed." }

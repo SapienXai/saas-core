@@ -88,7 +88,7 @@ function createOutboxService() {
 }
 
 function request(method: "GET" | "POST", headers: Record<string, string> = {}) {
-  return new Request("https://reservevia.test/api/internal/cron/email-outbox", { method, headers })
+  return new Request("https://saas-core.test/api/internal/cron/email-outbox", { method, headers })
 }
 
 describe("email outbox cron route", () => {

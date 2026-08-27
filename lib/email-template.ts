@@ -1,6 +1,7 @@
 import "server-only"
 
 import { getConfiguredRootDomain } from "@/lib/domains/hostname"
+import { PRODUCT_CONFIG } from "@/lib/product-config"
 import { getEmailMessages } from "@/i18n/email-messages"
 import { resolveLanguage } from "@/i18n/config"
 
@@ -65,7 +66,7 @@ export function renderEmailActionLinks(actions: EmailCta[]) {
   return `<div style="margin-top:18px;text-align:center">${actions.map((action) => `<p style="margin:8px 0"><a href="${escapeHtml(safeUrl(action.href))}" style="color:#6d28d9;font-size:13px;font-weight:700;text-decoration:underline">${escapeHtml(action.label)} &nbsp;→</a></p>`).join("")}</div>`
 }
 
-export function renderReserveviaEmail({
+export function renderCoreEmail({
   lang = "en",
   preheader,
   eyebrow,
@@ -112,8 +113,8 @@ export function renderReserveviaEmail({
               <td style="padding:0 0 14px 4px">
                 <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse">
                   <tr>
-                    <td style="width:34px;height:34px;border-radius:11px;background:#17142d;color:#fff;text-align:center;vertical-align:middle;font-size:18px;font-weight:800;letter-spacing:-1px">R</td>
-                    <td style="padding-left:10px;color:#17142d;font-size:13px;font-weight:800;letter-spacing:2px">RESERVEVIA</td>
+                    <td style="width:34px;height:34px;border-radius:11px;background:#17142d;color:#fff;text-align:center;vertical-align:middle;font-size:18px;font-weight:800;letter-spacing:-1px">S</td>
+                    <td style="padding-left:10px;color:#17142d;font-size:13px;font-weight:800;letter-spacing:2px">${escapeHtml(PRODUCT_CONFIG.name.toUpperCase())}</td>
                   </tr>
                 </table>
               </td>

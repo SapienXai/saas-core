@@ -1,9 +1,9 @@
 import { Vercel } from "@vercel/sdk"
 import { createClient } from "@supabase/supabase-js"
 
-const [restaurantSlug] = process.argv.slice(2)
-if (!restaurantSlug) {
-  console.error("Usage: npm run domains:reconcile -- <restaurant-slug>")
+const [workspaceSlug] = process.argv.slice(2)
+if (!workspaceSlug) {
+  console.error("Usage: pnpm run domains:reconcile -- <workspace-slug>")
   process.exit(1)
 }
 
@@ -23,23 +23,23 @@ if (!token || !projectId || !supabaseUrl || !serviceRoleKey) {
 }
 
 const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
-const { data: restaurant, error: restaurantError } = await supabase
-  .from("restaurants")
+const { data: workspace, error: workspaceError } = await supabase
+  .from("workspaces")
   .select("id, slug")
-  .eq("slug", restaurantSlug)
+  .eq("slug", workspaceSlug)
   .single()
-if (restaurantError || !restaurant) {
-  console.error("Restaurant not found.")
+if (workspaceError || !workspace) {
+  console.error("Workspace not found.")
   process.exit(1)
 }
 
 const { data: localDomain, error: domainError } = await supabase
-  .from("restaurant_domains")
+  .from("workspace_domains")
   .select("id, hostname, status")
-  .eq("restaurant_id", restaurant.id)
+  .eq("workspace_id", workspace.id)
   .maybeSingle()
 if (domainError || !localDomain || localDomain.status === "removed") {
-  console.error("Restaurant does not have a connected domain mapping.")
+  console.error("Workspace does not have a connected domain mapping.")
   process.exit(1)
 }
 
@@ -54,7 +54,7 @@ try {
   const dnsConfigured = !dns.misconfigured
   const status = providerVerified && dnsConfigured ? "active" : "verifying"
   const { error } = await supabase
-    .from("restaurant_domains")
+    .from("workspace_domains")
     .update({
       status,
       verification_state: providerVerified ? "verified" : "pending",
@@ -67,7 +67,7 @@ try {
     })
     .eq("id", localDomain.id)
   if (error) throw new Error(error.message)
-  console.log(`Reconciled ${restaurant.slug} domain ${localDomain.hostname}: ${status}.`)
+  console.log(`Reconciled ${workspace.slug} domain ${localDomain.hostname}: ${status}.`)
 } catch {
   console.error("Domain provider reconciliation failed without changing provider ownership.")
   process.exit(1)

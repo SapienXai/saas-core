@@ -112,7 +112,7 @@ async function applyPaddleTransactionEvent(event: NormalizedPaddleEvent) {
   const transactionId = stringValue(event.data.id)
   if (!transactionId) throw new BillingSyncError("INVALID_TRANSACTION", "Paddle transaction ID is missing.")
   const customData = asRecord(event.data.customData || event.data.custom_data)
-  const workspaceId = stringValue(customData.reservevia_workspace_id)
+  const workspaceId = stringValue(customData.saas_core_workspace_id)
   const supabase = createServiceRoleClient()
   let query = supabase.from("billing_checkout_sessions").update({ status: event.eventType === "transaction.completed" || event.eventType === "transaction.paid" || event.eventType === "transaction.billed" ? "completed" : event.eventType === "transaction.payment_failed" || event.eventType === "transaction.canceled" ? "failed" : "created" }).eq("provider", "paddle").eq("provider_transaction_id", transactionId)
   if (workspaceId) query = query.eq("workspace_id", workspaceId)
@@ -123,7 +123,7 @@ async function applyPaddleTransactionEvent(event: NormalizedPaddleEvent) {
 
 export function getWorkspaceIdFromEvent(event: NormalizedPaddleEvent) {
   const customData = asRecord(event.data.customData || event.data.custom_data)
-  return stringValue(customData.reservevia_workspace_id)
+  return stringValue(customData.saas_core_workspace_id)
 }
 
 export function getSubscriptionPlanForStatus(status: PaddleSubscriptionStatus, purchasedPlan: PaidPlanKey): PaidPlanKey | "free" {
@@ -174,7 +174,7 @@ export async function applyPaddleSubscriptionEvent(event: NormalizedPaddleEvent)
   if (!subscription.id) throw new BillingSyncError("INVALID_SUBSCRIPTION", "Paddle subscription ID is missing.")
 
   const environment = getBillingEnvironment()
-  const eventEnvironment = stringValue(asRecord(subscription.customData).reservevia_billing_environment)
+  const eventEnvironment = stringValue(asRecord(subscription.customData).saas_core_billing_environment)
   if (eventEnvironment && eventEnvironment !== environment) {
     throw new BillingSyncError("ENVIRONMENT_MISMATCH", "Paddle subscription belongs to another billing environment.")
   }
@@ -195,7 +195,7 @@ export async function applyPaddleSubscriptionEvent(event: NormalizedPaddleEvent)
   if (existingByProvider.error) throw new Error(existingByProvider.error.message)
 
   const workspaceId = existingByProvider.data?.workspace_id || getWorkspaceIdFromEvent(event)
-  if (!workspaceId) throw new BillingSyncError("UNKNOWN_WORKSPACE", "Paddle subscription is not linked to a Reservevia workspace.")
+  if (!workspaceId) throw new BillingSyncError("UNKNOWN_WORKSPACE", "Paddle subscription is not linked to a workspace.")
 
   const current = await supabase
     .from("workspace_subscriptions")
@@ -203,7 +203,7 @@ export async function applyPaddleSubscriptionEvent(event: NormalizedPaddleEvent)
     .eq("workspace_id", workspaceId)
     .maybeSingle()
   if (current.error) throw new Error(current.error.message)
-  if (!current.data) throw new BillingSyncError("UNKNOWN_WORKSPACE", "Reservevia workspace subscription does not exist.")
+  if (!current.data) throw new BillingSyncError("UNKNOWN_WORKSPACE", "Workspace subscription does not exist.")
 
   const canReplaceCanceledSubscription = current.data.plan_key === "free" && current.data.provider_status === "canceled"
   if (current.data.provider_subscription_id && current.data.provider_subscription_id !== subscription.id && !canReplaceCanceledSubscription) {

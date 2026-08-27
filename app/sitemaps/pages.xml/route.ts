@@ -4,10 +4,8 @@ export const dynamic = "force-static"
 
 const pages = [
   ["/", "weekly", "1"],
-  ["/restaurants", "daily", "0.9"],
-  ["/pricing", "monthly", "0.6"],
-  ["/privacy", "monthly", "0.4"],
-  ["/terms", "monthly", "0.4"],
+  ["/login", "monthly", "0.6"],
+  ["/signup", "monthly", "0.6"],
 ] as const
 
 export async function GET() {

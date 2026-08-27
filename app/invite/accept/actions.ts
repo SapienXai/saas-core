@@ -25,6 +25,6 @@ export async function acceptInvitation() {
   }
 
   cookieStore.delete(INVITATION_INTENT_COOKIE)
-  cookieStore.set("reservevia_workspace_id", data[0].workspace_id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 90, path: "/" })
+  cookieStore.set("saas_core_workspace_id", data[0].workspace_id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 90, path: "/" })
   return { success: true, workspaceId: data[0].workspace_id }
 }

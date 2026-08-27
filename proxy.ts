@@ -16,7 +16,7 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const requestUrl = getRequestUrl(request)
   const classification = classifyHostname(requestHostname(request))
-  const isTenantHost = classification.kind === "HOSTED_RESTAURANT" || classification.kind === "CUSTOM_RESTAURANT"
+  const isTenantHost = classification.kind === "HOSTED_WORKSPACE" || classification.kind === "CUSTOM_WORKSPACE"
   const keepLocalHostBehavior = isLocalTenantHost(classification.hostname)
 
   if (classification.kind === "PLATFORM_WWW") {
@@ -24,7 +24,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(redirectUrl, 308)
   }
 
-  // Management and authentication have one canonical origin. Public tenant hosts remain read-only restaurant origins and never become alternate management origins. Local *.localhost testing keeps the direct route.
+  // Management and authentication have one canonical origin. Local *.localhost testing keeps the direct route.
   if (isTenantHost && !keepLocalHostBehavior) {
     const isManagementOrAuthRoute = pathname.startsWith("/manage") || pathname.startsWith("/platform") ||
       ["/login", "/signup", "/forgot-password", "/reset-password", "/onboarding", "/auth", "/invite"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
@@ -35,7 +35,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const isManageRoute =
-    pathname.startsWith("/manage") &&
+    (pathname.startsWith("/app") || pathname.startsWith("/manage")) &&
     !pathname.startsWith("/manage/login") &&
     !pathname.startsWith("/manage/reset-password") &&
     !pathname.startsWith("/manage/update-password")
@@ -48,7 +48,8 @@ export async function proxy(request: NextRequest) {
   const isPlatformAppRoot = classification.kind === "PLATFORM_APP" && pathname === "/"
   const needsSession = isManageRoute || isPlatformRoute || isOnboardingRoute || isAuthEntryRoute || isPlatformAppRoot
 
-  // Public pages do not need a session lookup. Avoiding the Supabase roundtrip here keeps marketing, restaurant, legal, and reservation pages responsive.
+  // Public entry and auth pages do not need a session lookup. Avoiding the
+  // Supabase roundtrip here keeps the unauthenticated surface responsive.
   if (!needsSession) return NextResponse.next()
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
@@ -67,7 +68,7 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(redirectUrl)
     }
     if (isPlatformAppRoot) {
-      return NextResponse.redirect(new URL("/login?redirect=%2Fmanage", requestUrl))
+      return NextResponse.redirect(new URL("/login?redirect=%2Fapp", requestUrl))
     }
     return NextResponse.next()
   }

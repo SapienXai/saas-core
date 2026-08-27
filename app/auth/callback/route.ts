@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     })
     return NextResponse.redirect(new URL("/login?error=oauth_failed", url))
   }
-  const next = safeInternalRedirect(url.searchParams.get("next"), "/manage")
+  const next = safeInternalRedirect(url.searchParams.get("next"), "/app")
   const flowId = url.searchParams.get("sb_flow_id")
   const exchangeOptions = flowId ? { flowId } : undefined
 

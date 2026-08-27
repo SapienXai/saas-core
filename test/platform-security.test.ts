@@ -10,17 +10,17 @@ describe("platform control hardening", () => {
   })
 
   it("keeps support inspection read-only and audited", () => {
-    const support = readFileSync("lib/platform-support.ts", "utf8")
-    expect(support).toContain("requirePlatformRole")
-    expect(support).toContain('platform.support.view')
-    expect(support).not.toContain("auth.admin")
+    const platform = readFileSync("lib/platform-admin.ts", "utf8")
+    expect(platform).toContain("requirePlatformRole")
+    expect(platform).toContain("platform_audit_logs")
+    expect(platform).not.toContain("auth.admin")
   })
 
   it("keeps domain refresh scoped to provider reads and audit state", () => {
-    const operations = readFileSync("lib/platform-operations.ts", "utf8")
-    expect(operations).toContain("requirePlatformWriteAccess")
-    expect(operations).toContain("platform.domain.recheck")
+    const operations = readFileSync("lib/domains/domain-service.ts", "utf8")
+    expect(operations).toContain("requireWorkspaceRole")
     expect(operations).toContain("getProjectDomain")
-    expect(operations).not.toContain("removeProjectDomain")
+    expect(operations).toContain('eq("workspace_id", workspaceId)')
+    expect(operations).toContain("last_checked_at")
   })
 })

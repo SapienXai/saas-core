@@ -5,7 +5,6 @@ import { getManagementContext } from "@/lib/management-context"
 import { buildEffectivePwaBranding, getGenericPwaBranding, getPwaIconAssetUrl, getPwaIconVersion, PWA_FALLBACK_ICON } from "@/lib/pwa"
 import { ManageLayoutClient } from "@/app/manage/manage-layout-client"
 import { toInitialContext } from "@/lib/management-layout-data"
-import { createServiceRoleClient } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
 
@@ -13,16 +12,10 @@ const getManagementLayoutData = cache(async function getManagementLayoutData() {
   const context = await getManagementContext()
   if (!context?.currentWorkspace?.id) return { context, branding: getGenericPwaBranding() }
 
-  const { data: settings } = await createServiceRoleClient()
-    .from("workspace_pwa_settings")
-    .select("app_name, icon_url, theme_color, background_color")
-    .eq("workspace_id", context.currentWorkspace.id)
-    .maybeSingle()
+  const { data: settings } = await (await import("@/lib/supabase")).createServiceRoleClient().from("workspace_pwa_settings").select("app_name, icon_url, theme_color, background_color").eq("workspace_id", context.currentWorkspace.id).maybeSingle()
   const branding = buildEffectivePwaBranding({
     workspaceId: context.currentWorkspace.id,
     workspaceName: context.currentWorkspace.workspace?.name,
-    restaurantId: context.activeRestaurantId,
-    restaurants: context.restaurants,
     settings,
     customBrandingEnabled: context.currentWorkspace.customPwaEnabled,
   })
@@ -33,14 +26,13 @@ export async function generateMetadata(): Promise<Metadata> {
   const { branding } = await getManagementLayoutData()
   const manifestParams = new URLSearchParams()
   if (branding.workspaceId) manifestParams.set("workspace", branding.workspaceId)
-  if (branding.restaurantId) manifestParams.set("restaurant", branding.restaurantId)
   if (branding.iconUrl !== PWA_FALLBACK_ICON) manifestParams.set("v", getPwaIconVersion(branding))
   const manifestUrl = manifestParams.size
     ? `/manifest.webmanifest?${manifestParams.toString()}`
     : "/manifest.webmanifest"
   return {
     title: {
-      default: `${branding.appName} | Reservevia`,
+      default: branding.appName,
       template: `%s | ${branding.appName}`,
     },
     manifest: manifestUrl,

@@ -9,4 +9,3 @@ export default async function TeamPage() {
   if (!result.success || !result.data) redirect("/manage")
   return <TeamManagement initialData={result.data} />
 }
-

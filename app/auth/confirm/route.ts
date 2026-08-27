@@ -32,9 +32,8 @@ export async function GET(request: Request) {
 
   const state = await getAccountState()
   const invitationRequested = Boolean((await cookies()).get(INVITATION_INTENT_COOKIE)?.value) || next === "/invite/accept"
-  const continuationRequested = next.startsWith("/claim/") || next.startsWith("/reservation/manage/")
   const destination = state.authenticated
-    ? invitationRequested ? "/invite/accept" : continuationRequested ? next : state.path === "/onboarding" ? (next === "/manage" ? "/onboarding" : next) : "/manage"
+    ? invitationRequested ? "/invite/accept" : state.path === "/onboarding" ? (next === "/app" ? "/onboarding" : next) : "/app"
     : "/login"
   return NextResponse.redirect(new URL(destination, url))
 }

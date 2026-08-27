@@ -39,7 +39,7 @@ function postStaticAssetCache(registration: ServiceWorkerRegistration) {
 }
 
 async function ensureServiceWorkerControlsPage() {
-  const reloadKey = "reservevia:manage:sw-control-reloaded"
+  const reloadKey = "saas-core:manage:sw-control-reloaded"
   const clearReloadMarker = () => {
     try { window.sessionStorage.removeItem(reloadKey) } catch {}
   }
@@ -87,7 +87,7 @@ export function ManageOfflineServiceWorker() {
       if (userRequestedUpdateRef.current) window.location.reload()
     }
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.type === "RESERVEVIA_SW_ACTIVATED") setUpdateAvailable(false)
+      if (event.data?.type === "SAAS_CORE_SW_ACTIVATED") setUpdateAvailable(false)
     }
 
     navigator.serviceWorker.addEventListener("controllerchange", onControllerChange)
@@ -120,7 +120,7 @@ export function ManageOfflineServiceWorker() {
         // single controlled reload on a first visit.
         void ensureServiceWorkerControlsPage()
       })
-      .catch((error) => console.warn("Failed to register Reservevia management service worker:", error))
+      .catch((error) => console.warn("Failed to register the management service worker:", error))
 
     return () => {
       cancelled = true

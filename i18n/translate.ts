@@ -71,9 +71,9 @@ export function translateMessage(
   const key = keys.get(message) || (message.endsWith(".") ? keys.get(message.slice(0, -1)) : keys.get(`${message}.`))
   if (key) return translate(language, key, replacements)
 
-  const adjustedSlug = message.match(/^Restaurant created successfully\. The public address was already in use, so we used “(.+)”\.$/)
+  const adjustedSlug = message.match(/^Workspace created successfully\. The public address was already in use, so we used “(.+)”\.$/)
   if (adjustedSlug) {
-    return translate(language, "manage.errors.restaurantCreatedWithAdjustedSlug", { slug: adjustedSlug[1] })
+    return translate(language, "manage.common.workspaceCreatedWithAdjustedSlug", { slug: adjustedSlug[1] })
   }
 
   const paddleMapping = message.match(/^Paddle (sandbox|production) price mapping is not configured for (.+)\.$/)

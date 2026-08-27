@@ -12,7 +12,7 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient> {
   const cookieStore = await cookies()
   return createServerClient(url, key, {
     auth: { flowType: "pkce", autoRefreshToken: false, persistSession: false },
-    global: { headers: { "X-Client-Info": "reservevia/server" } },
+    global: { headers: { "X-Client-Info": "saas-core/server" } },
     cookies: {
       getAll() {
         return cookieStore.getAll()

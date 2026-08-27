@@ -1,6 +1,6 @@
-const RESERVEVIA_SW_VERSION = "reservevia-manage-v3"
-const RESERVEVIA_STATIC_CACHE = `${RESERVEVIA_SW_VERSION}:static`
-const RESERVEVIA_CACHE_PREFIX = "reservevia-manage-"
+const SAAS_CORE_SW_VERSION = "saas-core-manage-v1"
+const SAAS_CORE_STATIC_CACHE = `${SAAS_CORE_SW_VERSION}:static`
+const SAAS_CORE_CACHE_PREFIX = "saas-core-manage-"
 
 function isSameOrigin(url) {
   return url.origin === self.location.origin
@@ -26,25 +26,25 @@ async function isManagementAssetRequest(request, clientId) {
   if (!pageUrl) return false
   try {
     const page = new URL(pageUrl)
-    return page.origin === self.location.origin && page.pathname.startsWith("/manage")
+    return page.origin === self.location.origin && (page.pathname.startsWith("/app") || page.pathname.startsWith("/manage"))
   } catch {
     return false
   }
 }
 
 function isManagementNavigation(request, url) {
-  return request.mode === "navigate" && isSameOrigin(url) && url.pathname.startsWith("/manage")
+  return request.mode === "navigate" && isSameOrigin(url) && (url.pathname.startsWith("/app") || url.pathname.startsWith("/manage"))
 }
 
 function offlineResponse() {
   return new Response(
-    "<!doctype html><html><head><title>Reservevia offline</title><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head><body style=\"font-family:system-ui,sans-serif;padding:24px\"><main><h1>You're offline</h1><p>Reconnect to continue managing reservations.</p><button onclick=\"location.reload()\">Retry</button></main></body></html>",
+    "<!doctype html><html><head><title>SaaS Core offline</title><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head><body style=\"font-family:system-ui,sans-serif;padding:24px\"><main><h1>You're offline</h1><p>Reconnect to continue managing your workspace.</p><button onclick=\"location.reload()\">Retry</button></main></body></html>",
     { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } },
   )
 }
 
 async function cacheFirstStatic(request) {
-  const cache = await caches.open(RESERVEVIA_STATIC_CACHE)
+  const cache = await caches.open(SAAS_CORE_STATIC_CACHE)
   const cached = await cache.match(request)
   if (cached) return cached
 
@@ -59,13 +59,13 @@ async function cacheFirstStatic(request) {
 
 function safeManagementUrl(value) {
   try {
-    const candidate = new URL(typeof value === "string" ? value : "/manage", self.location.origin)
-    if (candidate.origin !== self.location.origin || !candidate.pathname.startsWith("/manage")) {
-      return new URL("/manage", self.location.origin).href
+    const candidate = new URL(typeof value === "string" ? value : "/app", self.location.origin)
+    if (candidate.origin !== self.location.origin || !(candidate.pathname.startsWith("/app") || candidate.pathname.startsWith("/manage"))) {
+      return new URL("/app", self.location.origin).href
     }
     return candidate.href
   } catch {
-    return new URL("/manage", self.location.origin).href
+    return new URL("/app", self.location.origin).href
   }
 }
 
@@ -79,7 +79,7 @@ self.addEventListener("activate", (event) => {
       .then((cacheNames) => Promise.all(
         cacheNames
           .filter((cacheName) => (
-            (cacheName.startsWith(RESERVEVIA_CACHE_PREFIX) && cacheName !== RESERVEVIA_STATIC_CACHE) ||
+            (cacheName.startsWith(SAAS_CORE_CACHE_PREFIX) && cacheName !== SAAS_CORE_STATIC_CACHE) ||
             cacheName.startsWith("manage-offline-")
           ))
           .map((cacheName) => caches.delete(cacheName)),
@@ -87,21 +87,21 @@ self.addEventListener("activate", (event) => {
       .then(() => self.clients.claim())
       .then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
       .then((clientList) => {
-        for (const client of clientList) client.postMessage({ type: "RESERVEVIA_SW_ACTIVATED", version: RESERVEVIA_SW_VERSION })
+        for (const client of clientList) client.postMessage({ type: "SAAS_CORE_SW_ACTIVATED", version: SAAS_CORE_SW_VERSION })
       }),
   )
 })
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "CLEAR_MANAGE_OFFLINE_CACHE") {
-    event.waitUntil(caches.keys().then((cacheNames) => Promise.all(cacheNames.filter((name) => name.startsWith(RESERVEVIA_CACHE_PREFIX) || name.startsWith("manage-offline-")).map((name) => caches.delete(name)))))
+    event.waitUntil(caches.keys().then((cacheNames) => Promise.all(cacheNames.filter((name) => name.startsWith(SAAS_CORE_CACHE_PREFIX) || name.startsWith("manage-offline-")).map((name) => caches.delete(name)))))
   }
   if (event.data?.type === "CACHE_STATIC_URLS" && Array.isArray(event.data.urls)) {
     const safeUrls = event.data.urls.filter((value) => {
       try { return isSafeStaticAsset(new URL(value, self.location.origin)) } catch { return false }
     })
     event.waitUntil(
-      caches.open(RESERVEVIA_STATIC_CACHE).then((cache) => Promise.all(safeUrls.map(async (value) => {
+      caches.open(SAAS_CORE_STATIC_CACHE).then((cache) => Promise.all(safeUrls.map(async (value) => {
         const response = await fetch(value)
         if (response.ok && response.type === "basic") await cache.put(value, response)
       }))).catch(() => undefined),
@@ -133,14 +133,14 @@ self.addEventListener("push", (event) => {
   let data = {}
   try { data = event.data ? event.data.json() : {} } catch { data = {} }
 
-  const title = data.title || "Reservevia"
+  const title = data.title || "SaaS Core"
   const icon = typeof data.icon === "string" && data.icon ? data.icon : "/icon-512.png"
   const options = {
-    body: data.body || "Reservation activity received.",
+    body: data.body || "Workspace activity received.",
     icon,
     badge: typeof data.badge === "string" && data.badge ? data.badge : icon,
-    data: { url: safeManagementUrl(data.url), reservationId: data.reservationId, event: data.event },
-    tag: data.reservationId ? `reservation-${data.reservationId}-${data.event || "activity"}` : undefined,
+    data: { url: safeManagementUrl(data.url), activityId: data.activityId, event: data.event },
+    tag: data.activityId ? `activity-${data.activityId}-${data.event || "activity"}` : undefined,
     renotify: true,
   }
   event.waitUntil(self.registration.showNotification(title, options))

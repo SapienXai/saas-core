@@ -71,10 +71,9 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams
   const size = requestedIconSize(searchParams)
   const workspaceId = searchParams.get("workspace")?.trim()
-  const restaurantId = searchParams.get("restaurant")?.trim() || null
   if (!workspaceId) return fallbackResponse(request)
 
-  const branding = await getPublicPwaBranding(workspaceId, restaurantId)
+  const branding = await getPublicPwaBranding(workspaceId)
   if (!branding || branding.iconUrl === PWA_FALLBACK_ICON) return fallbackResponse(request)
 
   const storagePath = storagePathFromPublicUrl(branding.iconUrl)
@@ -82,7 +81,7 @@ export async function GET(request: Request) {
   if (storagePath) {
     const { data, error } = await createServiceRoleClient()
       .storage
-      .from("restaurant-assets")
+      .from("workspace-assets")
       .download(storagePath)
     if (error || !data) return fallbackResponse(request)
     sourceBytes = await data.arrayBuffer()

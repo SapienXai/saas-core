@@ -6,7 +6,7 @@ export async function GET() {
   return NextResponse.json(
     {
       status: "ok",
-      service: "reservevia",
+      service: "saas-core",
       version: process.env.VERCEL_GIT_COMMIT_SHA || null,
     },
     { headers: { "Cache-Control": "no-store" } },

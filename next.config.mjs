@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  distDir: process.env.RESERVEVIA_E2E === '1' ? '.next-e2e' : '.next',
+  distDir: process.env.SAAS_CORE_E2E === '1' ? '.next-e2e' : '.next',
   // Keep LAN testing interactive as well as loopback testing. Next's dev
   // asset guard otherwise serves the HTML but blocks the client chunks, which
   // leaves server-rendered buttons without their React event handlers.

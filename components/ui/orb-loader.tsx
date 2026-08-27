@@ -71,7 +71,7 @@ export function OrbLoader({
         size={orbSizes[size]}
         theme={resolvedTheme}
         speed={speed}
-        className="reservevia-orb-canvas"
+        className="saas-core-orb-canvas"
         aria-hidden="true"
       />
       {showLabel && <span className="text-sm text-muted-foreground">{resolvedLabel}</span>}

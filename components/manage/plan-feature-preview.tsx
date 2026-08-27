@@ -15,6 +15,7 @@ type Props = {
   currentPlanKey: string
 }
 
+/** SaaS Core-derived plan capability preview, with product-neutral feature keys. */
 export function PlanFeaturePreview({ plan, currentPlanKey }: Props) {
   const { getTranslation } = useLanguage()
   const t = getTranslation
@@ -52,7 +53,7 @@ export function PlanFeaturePreview({ plan, currentPlanKey }: Props) {
         ))}
       </div>
 
-      {(plan?.key && plan.key !== currentPlanKey) && (
+      {plan?.key && plan.key !== currentPlanKey && (
         <p className="mt-3 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
           <ArrowUpRight className="h-3.5 w-3.5 text-violet-500" />
           {t("manage.planUsage.selectPackage")}

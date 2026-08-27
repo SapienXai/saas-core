@@ -1,16 +1,20 @@
 import type { TranslationKey } from "@/i18n"
 
+/**
+ * Stable feature keys owned by the Core plan catalog. Product plans may turn
+ * these capabilities on or off without changing the billing UI.
+ */
 export const PLAN_FEATURE_LABELS: Record<string, TranslationKey> = {
-  hostedRestaurantPage: "manage.planUsage.featureHostedPage",
+  workspaceManagement: "manage.planUsage.featureWorkspaceManagement",
   emailNotifications: "manage.planUsage.featureEmailNotifications",
-  removeReserveviaBranding: "manage.planUsage.featureRemoveBranding",
+  removeBranding: "manage.planUsage.featureRemoveBranding",
   customDomain: "manage.planUsage.featureCustomDomain",
   basicAnalytics: "manage.planUsage.featureAnalytics",
   csvExport: "manage.planUsage.featureCsv",
-  guestHistory: "manage.planUsage.featureGuestHistory",
+  activityHistory: "manage.planUsage.featureActivityHistory",
   automatedNotifications: "manage.planUsage.featureAutomatedNotifications",
   advancedReports: "manage.planUsage.featureAdvancedReports",
   customPWA: "manage.planUsage.featureCustomPwa",
   pushNotifications: "manage.planUsage.featurePush",
-  multiRestaurant: "manage.planUsage.featureMultiRestaurant",
+  multiWorkspace: "manage.planUsage.featureMultiWorkspace",
 }

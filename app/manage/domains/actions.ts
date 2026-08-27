@@ -1,51 +1,44 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import {
-  connectRestaurantDomain,
-  domainErrorMessage,
-  DomainServiceError,
-  refreshRestaurantDomain,
-  removeRestaurantDomain,
-} from "@/lib/domains/domain-service"
+import { connectWorkspaceDomain, domainErrorMessage, DomainServiceError, refreshWorkspaceDomain, removeWorkspaceDomain } from "@/lib/domains/domain-service"
 
-function actionError(error: unknown, action: string, restaurantId: string) {
+function actionError(error: unknown, action: string) {
   const code = error instanceof DomainServiceError ? error.code : "UNKNOWN"
-  console.error("Reservevia custom domain action failed", {
+  console.error("Custom domain action failed", {
     action,
-    restaurantId,
     code,
     error: error instanceof Error ? error.message : String(error),
   })
   return { success: false as const, code, message: domainErrorMessage(error) }
 }
 
-export async function connectRestaurantDomainAction(restaurantId: string, hostname: string, publicSurface: "restaurant" | "brand" = "restaurant") {
+export async function connectWorkspaceDomainAction(hostname: string) {
   try {
-    const result = await connectRestaurantDomain(restaurantId, hostname, publicSurface)
+    const result = await connectWorkspaceDomain(hostname)
     revalidatePath("/manage/domains")
     return { success: true, ...result }
   } catch (error) {
-    return actionError(error, "connect", restaurantId)
+    return actionError(error, "connect")
   }
 }
 
-export async function refreshRestaurantDomainAction(restaurantId: string) {
+export async function refreshWorkspaceDomainAction() {
   try {
-    const result = await refreshRestaurantDomain(restaurantId)
+    const result = await refreshWorkspaceDomain()
     revalidatePath("/manage/domains")
     return { success: true, ...result }
   } catch (error) {
-    return actionError(error, "refresh", restaurantId)
+    return actionError(error, "refresh")
   }
 }
 
-export async function removeRestaurantDomainAction(restaurantId: string) {
+export async function removeWorkspaceDomainAction() {
   try {
-    const result = await removeRestaurantDomain(restaurantId)
+    const result = await removeWorkspaceDomain()
     revalidatePath("/manage/domains")
     return result.success ? { success: true } : { success: false, code: "PROVIDER" as const, message: "Domain could not be removed." }
   } catch (error) {
-    return actionError(error, "remove", restaurantId)
+    return actionError(error, "remove")
   }
 }

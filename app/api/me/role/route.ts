@@ -20,8 +20,6 @@ export async function GET() {
       memberships: context?.memberships || [],
       currentWorkspace: context?.currentWorkspace || null,
       ownedWorkspaceId: context?.ownedWorkspaceId || null,
-      restaurants: context?.restaurants || [],
-      activeRestaurantId: context?.activeRestaurantId || null,
       canCreateWorkspace: context?.canCreateWorkspace ?? false,
     })
   } catch {

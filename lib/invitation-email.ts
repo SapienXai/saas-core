@@ -4,7 +4,7 @@ import { getEmailMessages, interpolateEmail } from "@/i18n/email-messages"
 import { formatDate } from "@/i18n/format"
 import { resolveLanguage } from "@/i18n/config"
 import { sendEmail } from "@/lib/email-service"
-import { escapeHtml, renderEmailDetails, renderEmailNotice, renderReserveviaEmail } from "@/lib/email-template"
+import { escapeHtml, renderEmailDetails, renderEmailNotice, renderCoreEmail } from "@/lib/email-template"
 import { getInvitationUrl } from "@/lib/invitations"
 
 export type WorkspaceInvitationEmailInput = {
@@ -25,7 +25,7 @@ export function buildWorkspaceInvitationEmail(input: WorkspaceInvitationEmailInp
   const workspaceName = escapeHtml(input.workspaceName)
   const inviterLabel = escapeHtml(input.inviterLabel)
   const acceptUrl = getInvitationUrl(input.token)
-  const from = process.env.RESERVEVIA_SYSTEM_EMAIL_FROM?.trim() || "Reservevia <noreply@reservevia.com>"
+  const from = process.env.SAAS_CORE_SYSTEM_EMAIL_FROM?.trim() || "SaaS Core <noreply@example.com>"
   const expiresOn = formatDate(input.expiresAt, language, { dateStyle: "medium" })
   const htmlReplacements = {
     inviter: inviterLabel,
@@ -45,10 +45,10 @@ export function buildWorkspaceInvitationEmail(input: WorkspaceInvitationEmailInp
   return {
     to: input.to,
     from,
-    replyTo: process.env.RESERVEVIA_SYSTEM_EMAIL_REPLY_TO?.trim() || "support@reservevia.com",
+    replyTo: process.env.SAAS_CORE_SYSTEM_EMAIL_REPLY_TO?.trim() || "support@example.com",
     subject: interpolateEmail(invitation.subject, { workspace: input.workspaceName }),
     text,
-    html: renderReserveviaEmail({
+    html: renderCoreEmail({
       lang: language,
       preheader: interpolateEmail(invitation.preheader, { workspace: input.workspaceName }),
       eyebrow: invitation.eyebrow,

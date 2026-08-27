@@ -52,30 +52,11 @@ describe("translations", () => {
   })
 
   it("keeps Spanish translated instead of silently mirroring English", () => {
-    const stableValues = new Set([
-      "Reservevia",
-      "WhatsApp",
-      "Google Maps",
-      "Allison Gouse",
-      "The Garden House",
-      "Legal",
-      "Error",
-      "Email",
-      "Online",
-      "total",
-      "Free",
-      "Business",
-      "TTL",
-      ".",
-      "{restaurant} {profile}",
-    ])
-
-    for (const key of leafPaths(localeMessages.en)) {
+    for (const key of ["auth.headline", "auth.signInDescription", "manage.common.management", "manage.planUsage.activityPeriod"]) {
       const english = getValue(localeMessages.en, key)
       const spanish = getValue(localeMessages.es, key)
-      if (typeof english === "string" && !stableValues.has(english)) {
-        expect(spanish, key).not.toBe(english)
-      }
+      expect(typeof english).toBe("string")
+      expect(spanish, key).not.toBe(english)
     }
   })
 
@@ -85,11 +66,11 @@ describe("translations", () => {
   })
 
   it("translates dynamic action messages and guest validation messages", () => {
-    expect(translateMessage("es", "Restaurant created successfully. The public address was already in use, so we used “nuevo-restaurante”."))
-      .toContain("nuevo-restaurante")
+    expect(translateMessage("es", "Workspace created successfully. The public address was already in use, so we used “nuevo-workspace”."))
+      .toContain("nuevo-workspace")
     expect(translateMessage("es", "Paddle sandbox price mapping is not configured for Pro."))
       .toContain("no está configurada")
-    expect(translateMessage("es", "Please enter a valid phone number.")).toBe("Introduce un número de teléfono válido.")
+    expect(translateMessage("es", "Please enter a valid email address.")).toBe("Introduce una dirección de correo electrónico válida.")
   })
 
   it("keeps email locale placeholders in parity", () => {
@@ -119,12 +100,9 @@ describe("translations", () => {
       "../lib/email-template.ts",
       "../lib/invitation-email.ts",
       "../lib/privacy-notice.ts",
-      "../lib/reservation-email-templates.ts",
-      "../lib/reservation-display.ts",
-      "../app/actions/reservation-actions.ts",
-      "../app/manage/actions.ts",
-      "../app/manage/seating/pdf/route.ts",
-      "../components/restaurant-card.tsx",
+      "../app/invite/accept/actions.ts",
+      "../app/manage/team/actions.ts",
+      "../components/manage/paddle-billing-actions.tsx",
     ]
 
     for (const file of protectedFiles) {

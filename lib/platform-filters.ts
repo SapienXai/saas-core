@@ -4,8 +4,6 @@ export const PLATFORM_ACTIVITY_FILTERS = ["all", "recent", "inactive", "new"] as
 export const PLATFORM_BILLING_FILTERS = ["all", "active", "past_due", "manual_override", "needs_attention"] as const
 export const PLATFORM_USAGE_FILTERS = ["all", "normal", "approaching", "at_limit"] as const
 export const PLATFORM_DOMAIN_FILTERS = ["all", "connected", "pending", "problem", "none"] as const
-export const PLATFORM_CLAIM_FILTERS = ["all", "unclaimed", "claim_pending", "claimed"] as const
-export const PLATFORM_SOURCE_FILTERS = ["all", "self_service", "platform_manual", "platform_excel", "dataengine", "legacy"] as const
 
 export type PlatformStatusFilter = (typeof PLATFORM_STATUS_FILTERS)[number]
 export type PlatformPlanFilter = (typeof PLATFORM_PLAN_FILTERS)[number]
@@ -13,8 +11,6 @@ export type PlatformActivityFilter = (typeof PLATFORM_ACTIVITY_FILTERS)[number]
 export type PlatformBillingFilter = (typeof PLATFORM_BILLING_FILTERS)[number]
 export type PlatformUsageFilter = (typeof PLATFORM_USAGE_FILTERS)[number]
 export type PlatformDomainFilter = (typeof PLATFORM_DOMAIN_FILTERS)[number]
-export type PlatformClaimFilter = (typeof PLATFORM_CLAIM_FILTERS)[number]
-export type PlatformSourceFilter = (typeof PLATFORM_SOURCE_FILTERS)[number]
 
 export type PlatformListFilters = {
   q: string
@@ -24,8 +20,6 @@ export type PlatformListFilters = {
   billing: PlatformBillingFilter
   usage: PlatformUsageFilter
   domain: PlatformDomainFilter
-  claim: PlatformClaimFilter
-  source: PlatformSourceFilter
   page: number
   pageSize: number
 }
@@ -49,13 +43,11 @@ export function parsePlatformFilters(input: URLSearchParams | Record<string, str
     billing: oneOf(get("billing"), PLATFORM_BILLING_FILTERS, "all"),
     usage: oneOf(get("usage"), PLATFORM_USAGE_FILTERS, "all"),
     domain: oneOf(get("domain"), PLATFORM_DOMAIN_FILTERS, "all"),
-    claim: oneOf(get("claim"), PLATFORM_CLAIM_FILTERS, "all"),
-    source: oneOf(get("source"), PLATFORM_SOURCE_FILTERS, "all"),
     page: positiveInt(get("page"), 1, 10000),
     pageSize: positiveInt(get("pageSize"), 30, 100),
   }
 }
 
 export function filtersHaveValues(filters: PlatformListFilters) {
-  return Boolean(filters.q || filters.status !== "all" || filters.plan !== "all" || filters.activity !== "all" || filters.billing !== "all" || filters.usage !== "all" || filters.domain !== "all" || filters.claim !== "all" || filters.source !== "all")
+  return Boolean(filters.q || filters.status !== "all" || filters.plan !== "all" || filters.activity !== "all" || filters.billing !== "all" || filters.usage !== "all" || filters.domain !== "all")
 }

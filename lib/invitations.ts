@@ -3,7 +3,7 @@ import "server-only"
 import { createHash, randomBytes } from "node:crypto"
 import { getTrustedPlatformOrigin } from "@/lib/domains/hostname"
 
-export const INVITATION_INTENT_COOKIE = "reservevia_invitation_intent"
+export const INVITATION_INTENT_COOKIE = "saas_core_invitation_intent"
 export const INVITATION_EXPIRY_DAYS = 7
 export const INVITATION_RESEND_COOLDOWN_SECONDS = 60
 

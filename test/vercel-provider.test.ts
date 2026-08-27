@@ -39,33 +39,33 @@ afterEach(() => {
 
 function configureProvider() {
   process.env.VERCEL_API_TOKEN = "test-vercel-token"
-  process.env.VERCEL_PROJECT_ID = "prj_reservevia_test"
-  process.env.VERCEL_TEAM_ID = "team_reservevia_test"
+  process.env.VERCEL_PROJECT_ID = "prj_saas_core_test"
+  process.env.VERCEL_TEAM_ID = "team_saas_core_test"
 }
 
 describe("Vercel domain provider boundary", () => {
   it("fails closed when server configuration is missing", async () => {
     delete process.env.VERCEL_API_TOKEN
     delete process.env.VERCEL_PROJECT_ID
-    await expect(addProjectDomain("booking.example.test")).rejects.toMatchObject({ code: "NOT_CONFIGURED" })
+    await expect(addProjectDomain("workspace.example.test")).rejects.toMatchObject({ code: "NOT_CONFIGURED" })
   })
 
   it("treats placeholder environment values as missing configuration", async () => {
     process.env.VERCEL_API_TOKEN = "vercel_api_token_placeholder"
-    process.env.VERCEL_PROJECT_ID = "prj_reservevia_project_id_placeholder"
-    process.env.VERCEL_TEAM_ID = "team_reservevia_team_id_placeholder"
+    process.env.VERCEL_PROJECT_ID = "prj_saas_core_project_id_placeholder"
+    process.env.VERCEL_TEAM_ID = "team_saas_core_team_id_placeholder"
 
     expect(isVercelProviderConfigured()).toBe(false)
-    await expect(addProjectDomain("booking.example.test")).rejects.toMatchObject({ code: "NOT_CONFIGURED" })
+    await expect(addProjectDomain("workspace.example.test")).rejects.toMatchObject({ code: "NOT_CONFIGURED" })
   })
 
   it("returns provider verification and DNS requirements without force reassignment", async () => {
     configureProvider()
     mocks.addProjectDomain.mockResolvedValue({
-      name: "booking.example.test",
-      projectId: "prj_reservevia_test",
+      name: "workspace.example.test",
+      projectId: "prj_saas_core_test",
       verified: false,
-      verification: [{ type: "TXT", domain: "_vercel.booking.example.test", value: "verify-value", reason: "ownership" }],
+      verification: [{ type: "TXT", domain: "_vercel.workspace.example.test", value: "verify-value", reason: "ownership" }],
     })
     mocks.getDomainConfig.mockResolvedValue({
       configuredBy: null,
@@ -75,33 +75,33 @@ describe("Vercel domain provider boundary", () => {
       recommendedCNAME: [{ rank: 1, value: "cname.vercel-dns.example" }],
     })
 
-    const result = await addProjectDomain("booking.example.test")
+    const result = await addProjectDomain("workspace.example.test")
     expect(result.domain.verified).toBe(false)
     expect(result.domain.verification?.[0]).toMatchObject({ type: "TXT", value: "verify-value" })
     expect(result.dns).toMatchObject({ misconfigured: true, recommendedCNAME: [{ value: "cname.vercel-dns.example" }] })
-    expect(mocks.addProjectDomain).toHaveBeenCalledWith(expect.objectContaining({ idOrName: "prj_reservevia_test", teamId: "team_reservevia_test", requestBody: { name: "booking.example.test" } }))
+    expect(mocks.addProjectDomain).toHaveBeenCalledWith(expect.objectContaining({ idOrName: "prj_saas_core_test", teamId: "team_saas_core_test", requestBody: { name: "workspace.example.test" } }))
   })
 
   it("maps verified/configured state and supports refresh/verify/remove", async () => {
     configureProvider()
-    const domain = { name: "booking.example.test", projectId: "prj_reservevia_test", verified: true }
+    const domain = { name: "workspace.example.test", projectId: "prj_saas_core_test", verified: true }
     const dns = { configuredBy: "CNAME", misconfigured: false, recommendedIPv4: [], recommendedCNAME: [] }
     mocks.getProjectDomain.mockResolvedValue(domain)
     mocks.verifyProjectDomain.mockResolvedValue(domain)
     mocks.getDomainConfig.mockResolvedValue(dns)
     mocks.removeProjectDomain.mockResolvedValue({})
 
-    expect((await getProjectDomain("booking.example.test")).domain.verified).toBe(true)
-    expect((await verifyProjectDomain("booking.example.test")).dns?.configuredBy).toBe("CNAME")
-    await removeProjectDomain("booking.example.test")
-    expect(mocks.removeProjectDomain).toHaveBeenCalledWith(expect.objectContaining({ domain: "booking.example.test", requestBody: { removeRedirects: false } }))
+    expect((await getProjectDomain("workspace.example.test")).domain.verified).toBe(true)
+    expect((await verifyProjectDomain("workspace.example.test")).dns?.configuredBy).toBe("CNAME")
+    await removeProjectDomain("workspace.example.test")
+    expect(mocks.removeProjectDomain).toHaveBeenCalledWith(expect.objectContaining({ domain: "workspace.example.test", requestBody: { removeRedirects: false } }))
   })
 
   it("turns provider ownership conflicts into a safe typed error", async () => {
     configureProvider()
     mocks.addProjectDomain.mockRejectedValue(new Error("domain already exists on another project"))
-    await expect(addProjectDomain("booking.example.test")).rejects.toBeInstanceOf(VercelProviderError)
-    await expect(addProjectDomain("booking.example.test")).rejects.toMatchObject({ code: "DOMAIN_CONFLICT" })
+    await expect(addProjectDomain("workspace.example.test")).rejects.toBeInstanceOf(VercelProviderError)
+    await expect(addProjectDomain("workspace.example.test")).rejects.toMatchObject({ code: "DOMAIN_CONFLICT" })
   })
 
   it("preserves provider ownership and release states", async () => {
@@ -111,20 +111,20 @@ describe("Vercel domain provider boundary", () => {
       body: JSON.stringify({ code: "domain_already_owned", message: "Domain is owned by another team" }),
     })
     mocks.addProjectDomain.mockRejectedValueOnce(owned)
-    await expect(addProjectDomain("booking.example.test")).rejects.toMatchObject({ code: "DOMAIN_CONFLICT" })
+    await expect(addProjectDomain("workspace.example.test")).rejects.toMatchObject({ code: "DOMAIN_CONFLICT" })
 
     const releasing = Object.assign(new Error("Domain is still being released"), {
       statusCode: 400,
       body: JSON.stringify({ code: "domain_already_owned", message: "Domain is still being released" }),
     })
     mocks.addProjectDomain.mockRejectedValueOnce(releasing)
-    await expect(addProjectDomain("booking.example.test")).rejects.toMatchObject({ code: "DOMAIN_RELEASING" })
+    await expect(addProjectDomain("workspace.example.test")).rejects.toMatchObject({ code: "DOMAIN_RELEASING" })
   })
 
   it("maps a missing project domain to a typed not-found error", async () => {
     configureProvider()
     mocks.getProjectDomain.mockRejectedValue(Object.assign(new Error("not found"), { statusCode: 404, body: "" }))
-    await expect(getProjectDomain("booking.example.test")).rejects.toMatchObject({ code: "DOMAIN_NOT_FOUND" })
+    await expect(getProjectDomain("workspace.example.test")).rejects.toMatchObject({ code: "DOMAIN_NOT_FOUND" })
   })
 
   it("maps invalid Vercel credentials to a configuration error", async () => {
@@ -133,7 +133,7 @@ describe("Vercel domain provider boundary", () => {
       statusCode: 403,
       body: JSON.stringify({ code: "forbidden", message: "Not authorized", invalidToken: true }),
     }))
-    await expect(addProjectDomain("booking.example.test")).rejects.toMatchObject({
+    await expect(addProjectDomain("workspace.example.test")).rejects.toMatchObject({
       code: "NOT_CONFIGURED",
       message: "Vercel credentials are invalid or do not have access to the configured project/team.",
     })

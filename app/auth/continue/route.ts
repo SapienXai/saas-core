@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const url = getRequestUrl(request)
   const state = await getAccountState()
   if (!state.authenticated) {
-    return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent("/manage")}`, url))
+    return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent("/app")}`, url))
   }
 
   const requested = safeInternalRedirect(url.searchParams.get("redirect"), state.path)
@@ -20,11 +20,8 @@ export async function GET(request: Request) {
 
   const access = requested.startsWith("/platform") ? await getCurrentUserAccess() : null
   const platformRequested = requested.startsWith("/platform") && Boolean(access?.platformRole)
-  const continuationRequested = requested.startsWith("/claim/") || requested.startsWith("/reservation/manage/")
   const destination = platformRequested
     ? requested
-    : continuationRequested
-      ? requested
-    : state.path === "/onboarding" ? "/onboarding" : requested.startsWith("/manage") ? requested : "/manage"
+    : state.path === "/onboarding" ? "/onboarding" : requested.startsWith("/app") ? requested : "/app"
   return NextResponse.redirect(new URL(destination, url))
 }

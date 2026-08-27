@@ -4,23 +4,23 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Armchair, ArrowUpRight, BarChart3, CalendarClock, Check, ChevronDown, ChevronRight, Crown, Globe2, Layers3, LayoutDashboard, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Plus, Shield, Smartphone, Store, Sun, Users, X, WalletCards, type LucideIcon } from "lucide-react"
+import { ArrowUpRight, Check, ChevronDown, ChevronRight, Crown, Globe2, Layers3, LayoutDashboard, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Plus, Shield, Smartphone, Sun, Users, X, WalletCards, type LucideIcon } from "lucide-react"
 import { useLanguage } from "@/context/language-context"
 import { useManageContext } from "@/context/manage-context"
 import { cn } from "@/lib/utils"
 import { ManagePushNotificationSwitch } from "@/components/manage/manage-push-notification-switch"
 import { WorkspaceSwitcher } from "@/components/manage/workspace-switcher"
 import { WorkspaceUpgradeModal } from "@/components/manage/workspace-upgrade-modal"
-import { RESERVEVIA_LOGO_DARK, RESERVEVIA_LOGO_LIGHT } from "@/lib/brand-assets"
 import { localeConfig, type SupportedLanguage } from "@/i18n"
 import { getPlanNavigationHref } from "@/lib/plan-navigation"
+import { PRODUCT_CONFIG } from "@/lib/product-config"
 
-const SETTINGS_GROUP_STORAGE_KEY = "reservevia:manage:sidebar-settings-open"
-const LEGACY_TOOLS_GROUP_STORAGE_KEY = "reservevia:manage:sidebar-tools-open"
+const SETTINGS_GROUP_STORAGE_KEY = "saas-core:manage:sidebar-settings-open"
+const LEGACY_TOOLS_GROUP_STORAGE_KEY = "saas-core:manage:sidebar-tools-open"
 const PLAN_ORDER = ["free", "starter", "pro", "business"] as const
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
@@ -78,7 +78,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const { currentLang, getTranslation, setLanguage } = useLanguage()
   const { role, platformRole, user, currentWorkspace, ownedWorkspaceId, canCreateWorkspace } = useManageContext()
   const isStaff = role === "staff"
-  const isDomainAdmin = role === "admin"
+  const isDomainAdmin = role === "owner" || role === "admin"
   const currentPlanKey = currentWorkspace?.plan?.key || null
   const currentPlanIndex = currentPlanKey ? PLAN_ORDER.indexOf(currentPlanKey as (typeof PLAN_ORDER)[number]) : -1
   const nextPlanKey = currentPlanIndex >= 0 && currentPlanIndex < PLAN_ORDER.length - 1 ? PLAN_ORDER[currentPlanIndex + 1] : null
@@ -88,7 +88,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const workspaceLimits = currentWorkspace?.plan?.limits
   const usageItems: SidebarUsageItem[] = workspaceUsage && workspaceLimits
     ? [
-        { label: getTranslation("manage.planUsage.restaurants"), used: workspaceUsage.restaurants, limit: workspaceLimits.restaurants },
+        { label: getTranslation("manage.planUsage.workspaces"), used: workspaceUsage.workspaces, limit: workspaceLimits.workspaces },
         { label: getTranslation("manage.planUsage.teamMembers"), used: workspaceUsage.users, limit: workspaceLimits.users },
       ]
     : []
@@ -108,17 +108,13 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
 
   const isActive = (path: string) => pathname === path || pathname.startsWith(`${path}/`)
   const navigation: SidebarNavigationItem[] = [
-    { name: getTranslation("manage.sidebar.dashboard"), href: "/manage", icon: LayoutDashboard, current: isActive("/manage") && !["/manage/reports", "/manage/reservations", "/manage/seating", "/manage/restaurants", "/manage/users", "/manage/team", "/manage/plan", "/manage/domains", "/manage/pwa"].some(isActive), disabled: false },
-    { name: getTranslation("manage.sidebar.reports"), href: "/manage/reports", icon: BarChart3, current: isActive("/manage/reports"), disabled: false },
-    { name: getTranslation("manage.sidebar.reservations"), href: "/manage/reservations", icon: CalendarClock, current: isActive("/manage/reservations"), disabled: false },
-    { name: getTranslation("manage.sidebar.seating"), href: "/manage/seating", icon: Armchair, current: isActive("/manage/seating"), disabled: false },
+    { name: getTranslation("manage.sidebar.dashboard"), href: "/app", icon: LayoutDashboard, current: isActive("/app") && !["/app/team", "/app/plan", "/app/domains", "/app/pwa", "/app/settings"].some(isActive), disabled: false },
   ]
   const settingsNavigation: SidebarNavigationItem[] = [
-    { name: getTranslation("manage.sidebar.restaurants"), href: "/manage/restaurants", icon: Store, current: isActive("/manage/restaurants"), disabled: false },
-    { name: getTranslation("manage.sidebar.team"), href: "/manage/team", icon: Users, current: isActive("/manage/team") || isActive("/manage/users"), disabled: !isDomainAdmin },
-    { name: getTranslation("manage.sidebar.planUsage"), href: "/manage/plan", icon: WalletCards, current: isActive("/manage/plan"), disabled: isStaff },
-    { name: getTranslation("manage.sidebar.domains"), href: "/manage/domains", icon: Globe2, current: isActive("/manage/domains"), disabled: !isDomainAdmin },
-    { name: getTranslation("manage.sidebar.managementApp"), href: "/manage/pwa", icon: Smartphone, current: isActive("/manage/pwa"), disabled: false },
+    { name: getTranslation("manage.sidebar.team"), href: "/app/team", icon: Users, current: isActive("/app/team"), disabled: !isDomainAdmin },
+    { name: getTranslation("manage.sidebar.planUsage"), href: "/app/plan", icon: WalletCards, current: isActive("/app/plan"), disabled: isStaff },
+    { name: getTranslation("manage.sidebar.domains"), href: "/app/domains", icon: Globe2, current: isActive("/app/domains"), disabled: !isDomainAdmin },
+    { name: getTranslation("manage.sidebar.managementApp"), href: "/app/pwa", icon: Smartphone, current: isActive("/app/pwa"), disabled: false },
     ...(platformRole ? [{ name: getTranslation("manage.sidebar.platformControl"), href: "/platform", icon: Shield, current: isActive("/platform"), disabled: false }] : []),
   ]
   const availableSettingsNavigation = settingsNavigation.filter((item) => !item.disabled)
@@ -152,7 +148,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
     ? getTranslation("manage.common.staff")
     : isDomainAdmin
       ? getTranslation("manage.common.administrator")
-      : getTranslation("marketing.account")
+      : getTranslation("manage.common.workspace")
   const userDisplayName = user.name.trim() || user.email.trim() || fallbackUserLabel
   const userSecondaryLabel = user.email.trim() || fallbackUserLabel
   const initials = userDisplayName
@@ -165,7 +161,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
 
   const content = (mobile = false) => {
     const compact = !mobile && isCollapsed
-    const logoAsset = isDark ? RESERVEVIA_LOGO_LIGHT : RESERVEVIA_LOGO_DARK
+    const logoAsset = PRODUCT_CONFIG.logoPath
     const settingsListId = mobile ? "manage-sidebar-settings-mobile" : "manage-sidebar-settings"
     const closeAfterUpgradeNavigation = () => {
       if (mobile) {
@@ -402,7 +398,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
             </div>
             <div className="mx-1 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.06]">
               <span className="flex items-center gap-2 text-xs font-semibold">{isDark ? <Moon className="h-4 w-4 text-violet-400" /> : <Sun className="h-4 w-4 text-amber-500" />}{isDark ? getTranslation("manage.common.darkMode") : getTranslation("manage.common.lightMode")}</span>
-              <Switch checked={isDark} onCheckedChange={onThemeChange} className="h-5 w-9 border-0 bg-slate-300 data-[state=checked]:bg-violet-600 dark:bg-slate-600" />
+              <Switch aria-label={isDark ? getTranslation("manage.common.darkMode") : getTranslation("manage.common.lightMode")} checked={isDark} onCheckedChange={onThemeChange} className="h-5 w-9 border-0 bg-slate-300 data-[state=checked]:bg-violet-600 dark:bg-slate-600" />
             </div>
             <ManagePushNotificationSwitch className="mx-1 mt-2" />
             {canCreateWorkspace ? (
@@ -410,7 +406,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
             ) : (
               <DropdownMenuItem onSelect={requestWorkspaceCreation} className="mt-2 cursor-pointer rounded-xl px-3 py-2.5 text-xs font-semibold text-violet-700 focus:bg-violet-50 focus:text-violet-800 dark:text-violet-200 dark:focus:bg-violet-500/10 dark:focus:text-violet-100"><Plus className="h-4 w-4" />{getTranslation("manage.common.createWorkspace")}</DropdownMenuItem>
             )}
-            <DropdownMenuItem onClick={() => window.dispatchEvent(new Event("felix-manage-sign-out"))} className="mt-2 cursor-pointer rounded-xl px-3 py-2.5 text-xs font-semibold text-rose-600 focus:bg-rose-50 focus:text-rose-700 dark:text-rose-300 dark:focus:bg-rose-500/10 dark:focus:text-rose-200"><LogOut className="h-4 w-4" />{getTranslation("manage.common.signOut")}</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => window.dispatchEvent(new Event("saas-core-manage-sign-out"))} className="mt-2 cursor-pointer rounded-xl px-3 py-2.5 text-xs font-semibold text-rose-600 focus:bg-rose-50 focus:text-rose-700 dark:text-rose-300 dark:focus:bg-rose-500/10 dark:focus:text-rose-200"><LogOut className="h-4 w-4" />{getTranslation("manage.common.signOut")}</DropdownMenuItem>
           </div>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -424,6 +420,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
       <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
         <SheetContent side="left" className="h-[100dvh] w-[min(20rem,86vw)] border-0 bg-transparent p-0 shadow-2xl">
           <SheetTitle className="sr-only">{getTranslation("common.navigationMenu")}</SheetTitle>
+          <SheetDescription className="sr-only">{getTranslation("manage.common.workspaceNavigation")}</SheetDescription>
           <div className={cn("h-full", isDark && "dark")}>
             {content(true)}
           </div>

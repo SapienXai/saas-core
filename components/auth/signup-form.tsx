@@ -7,12 +7,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ReserveviaAuthShell } from "@/components/auth/reservevia-auth-shell"
-import { AuthDivider } from "@/components/auth/reservevia-auth-shell"
+import { AuthShell, AuthDivider } from "@/components/auth/auth-shell"
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
-import { trackMarketingEvent } from "@/lib/marketing/analytics"
 
 export function SignupForm() {
   const [email, setEmail] = useState("")
@@ -34,10 +32,10 @@ export function SignupForm() {
     if (requested && requested.startsWith("/") && !requested.startsWith("//")) setRedirectPath(requested)
     else if (["starter", "pro", "business"].includes(plan || "") && ["month", "year"].includes(interval || "month")) setRedirectPath(`/onboarding?plan=${encodeURIComponent(plan || "")}&interval=${encodeURIComponent(interval || "month")}`)
     if (params.get("confirmation") === "sent") {
-      const storedEmail = window.sessionStorage.getItem("reservevia.signup.email") || ""
+      const storedEmail = window.sessionStorage.getItem("saas-core.signup.email") || ""
       if (storedEmail) {
         setEmail(storedEmail)
-        window.sessionStorage.removeItem("reservevia.signup.email")
+        window.sessionStorage.removeItem("saas-core.signup.email")
       }
       setConfirmationMessage("sent")
     }
@@ -51,7 +49,7 @@ export function SignupForm() {
     if (password !== passwordConfirmation) { event.preventDefault(); setError(getTranslation("auth.errors.passwordMismatch")); return }
     setSubmitting(true)
     try {
-      window.sessionStorage.setItem("reservevia.signup.email", email.trim())
+      window.sessionStorage.setItem("saas-core.signup.email", email.trim())
       const response = await fetch("/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -63,7 +61,6 @@ export function SignupForm() {
         setSubmitting(false)
         return
       }
-      trackMarketingEvent("signup_completed", { source: "signup" })
       // Keep the confirmation screen on a real document navigation so the
       // browser does not retain a stale form tree after the auth request.
       window.location.replace(`/signup?redirect=${encodeURIComponent(redirectPath)}&confirmation=sent`)
@@ -107,7 +104,7 @@ export function SignupForm() {
   }
 
   return (
-    <ReserveviaAuthShell title={getTranslation("auth.signUp")} description={getTranslation("auth.signUpDescription")} footer={<span>{getTranslation("auth.alreadyHaveAccount")} <Link className="font-semibold text-stone-950 underline-offset-4 hover:underline" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signIn")}</Link></span>}>
+    <AuthShell title={getTranslation("auth.signUp")} description={getTranslation("auth.signUpDescription")} footer={<span>{getTranslation("auth.alreadyHaveAccount")} <Link className="font-semibold text-stone-950 underline-offset-4 hover:underline" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signIn")}</Link></span>}>
       {error && <Alert variant="destructive" className="mb-4 rounded-[11px] border-rose-200 bg-rose-50 px-3.5 py-2.5 text-[12px] text-rose-900"><AlertDescription>{error}</AlertDescription></Alert>}
       {confirmationMessage ? (
         <section className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-emerald-950" aria-live="polite">
@@ -140,6 +137,6 @@ export function SignupForm() {
           </form>
         </div>
       )}
-    </ReserveviaAuthShell>
+    </AuthShell>
   )
 }

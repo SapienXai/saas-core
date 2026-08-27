@@ -155,7 +155,7 @@ async function getDns(client: Vercel, hostname: string, projectId: string, teamI
     })
     return toDnsConfiguration(config)
   } catch (error) {
-    console.warn("Reservevia Vercel DNS configuration lookup failed", {
+    console.warn("SaaS Core Vercel DNS configuration lookup failed", {
       hostname,
       error: error instanceof Error ? error.message : String(error),
     })

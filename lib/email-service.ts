@@ -1,7 +1,7 @@
 import { Resend } from "resend"
 
-const DEFAULT_FROM = "Reservevia <noreply@reservevia.com>"
-const DEFAULT_REPLY_TO = "support@reservevia.com"
+const DEFAULT_FROM = "SaaS Core <noreply@example.com>"
+const DEFAULT_REPLY_TO = "support@example.com"
 export const MANAGEMENT_EMAIL = process.env.MANAGEMENT_EMAIL || "ops@example.com"
 
 export interface SendEmailParams {
@@ -28,8 +28,8 @@ export async function sendEmail({
   subject,
   html,
   text,
-  from = process.env.RESERVEVIA_SYSTEM_EMAIL_FROM || DEFAULT_FROM,
-  replyTo = process.env.RESERVEVIA_SYSTEM_EMAIL_REPLY_TO || DEFAULT_REPLY_TO,
+  from = process.env.SAAS_CORE_SYSTEM_EMAIL_FROM || DEFAULT_FROM,
+  replyTo = process.env.SAAS_CORE_SYSTEM_EMAIL_REPLY_TO || DEFAULT_REPLY_TO,
   attachments = [],
   idempotencyKey,
 }: SendEmailParams) {

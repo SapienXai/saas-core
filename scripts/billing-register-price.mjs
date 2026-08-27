@@ -26,7 +26,7 @@ try {
   process.exit(1)
 }
 
-if (!/^https?:\/\/(127\.0\.0\.1|localhost):54521$/.test(status.API_URL || "")) {
+if (!/^https?:\/\/(127\.0\.0\.1|localhost):55521$/.test(status.API_URL || "")) {
   console.error("Refusing to modify a non-local Supabase project.")
   process.exit(1)
 }

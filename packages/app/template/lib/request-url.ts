@@ -1,0 +1,41 @@
+/**
+ * Next's development server can build request.url from its bind address
+ * (0.0.0.0) instead of the hostname used by a device on the local network.
+ * Keep auth redirects on the browser's reachable host in development.
+ */
+export function getRequestUrl(request: Request) {
+  const url = new URL(request.url)
+
+  if (process.env.NODE_ENV === "production") return url
+
+  const protocol = firstHeaderValue(request, "x-forwarded-proto") || url.protocol.replace(":", "")
+  const candidateHosts = [
+    firstHeaderValue(request, "x-forwarded-host"),
+    firstHeaderValue(request, "host"),
+  ]
+
+  for (const candidate of candidateHosts) {
+    const origin = originFromHost(candidate, protocol)
+    if (!origin) continue
+    return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)
+  }
+
+  return url
+}
+
+function firstHeaderValue(request: Request, name: string) {
+  return request.headers.get(name)?.split(",")[0]?.trim() || null
+}
+
+function originFromHost(host: string | null, protocol: string) {
+  if (!host || !["http", "https"].includes(protocol)) return null
+
+  try {
+    const url = new URL(`${protocol}://${host}`)
+    if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) return null
+    if (["0.0.0.0", "::", "[::]"].includes(url.hostname)) return null
+    return url.origin
+  } catch {
+    return null
+  }
+}

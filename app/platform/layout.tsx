@@ -19,7 +19,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     await requirePlatformRole()
   } catch (error) {
     if (error instanceof AuthorizationError && error.code === "UNAUTHENTICATED") redirect("/login?redirect=/platform")
-    redirect("/manage")
+    redirect("/app")
   }
   return <PlatformShell>{children}</PlatformShell>
 }

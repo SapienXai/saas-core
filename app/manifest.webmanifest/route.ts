@@ -22,15 +22,11 @@ export async function GET(request: Request) {
     ? context?.memberships.find((membership) => membership.workspaceId === requestedWorkspaceId)
     : undefined
   const workspaceId = requestedWorkspace?.workspaceId || context?.currentWorkspace?.id || null
-  const requestedRestaurantId = new URL(request.url).searchParams.get("restaurant")
-  const restaurantId = workspaceId && workspaceId === context?.currentWorkspace?.id
-    ? context?.restaurants.find((restaurant) => restaurant.id === requestedRestaurantId)?.id || context?.activeRestaurantId || null
-    : null
   const publicBranding = !context && requestedWorkspaceId
-    ? await getPublicPwaBranding(requestedWorkspaceId, requestedRestaurantId)
+    ? await getPublicPwaBranding(requestedWorkspaceId)
     : null
   const branding = publicBranding || (workspaceId
-    ? await getEffectivePwaBranding(workspaceId, restaurantId)
+    ? await getEffectivePwaBranding(workspaceId)
     : getGenericPwaBranding())
   const resolvedWorkspaceId = branding.workspaceId || workspaceId
   const fallbackIcons = [
@@ -40,23 +36,20 @@ export async function GET(request: Request) {
   const icons = branding.iconUrl === PWA_FALLBACK_ICON
     ? fallbackIcons
     : [
-        // The icon route renders exact-size PNGs. Do not advertise static
-        // Reservevia alternatives here or browsers may select them instead.
         { src: getPwaIconAssetUrl(branding, 192), sizes: "192x192", type: "image/png", purpose: "any maskable" },
         { src: getPwaIconAssetUrl(branding, 512), sizes: "512x512", type: "image/png", purpose: "any maskable" },
       ]
   const startParams = new URLSearchParams({ pwa: "1" })
   if (resolvedWorkspaceId) startParams.set("workspace", resolvedWorkspaceId)
-  if (branding.restaurantId) startParams.set("restaurant", branding.restaurantId)
 
   return NextResponse.json({
     name: branding.appName,
     short_name: branding.shortName,
-    description: "Reservevia workspace management",
+    description: "Workspace management",
     id: resolvedWorkspaceId
-      ? `/pwa/${resolvedWorkspaceId}${branding.restaurantId ? `/${branding.restaurantId}` : ""}`
-      : "/pwa/reservevia",
-    start_url: `/manage?${startParams.toString()}`,
+      ? `/pwa/${resolvedWorkspaceId}`
+      : "/pwa/saas-core",
+    start_url: `/app?${startParams.toString()}`,
     scope: "/",
     display: "standalone",
     display_override: ["window-controls-overlay", "standalone"],

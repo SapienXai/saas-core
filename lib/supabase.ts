@@ -1,3 +1,4 @@
+import "server-only"
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js"
 
 /**
@@ -20,6 +21,6 @@ export function createServiceRoleClient(): SupabaseClient {
   }
   return createSupabaseClient(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { "X-Client-Info": "reservevia/seed" } },
+    global: { headers: { "X-Client-Info": "saas-core/seed" } },
   })
 }

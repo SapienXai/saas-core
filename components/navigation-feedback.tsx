@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { OrbLoader } from "@/components/ui/orb-loader"
 
-const NAVIGATION_START_EVENT = "reservevia:navigation-start"
+const NAVIGATION_START_EVENT = "saas-core:navigation-start"
 
 export function startNavigationFeedback() {
   if (typeof window !== "undefined") {

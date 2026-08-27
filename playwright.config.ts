@@ -1,11 +1,11 @@
 import { defineConfig, devices } from "@playwright/test"
 
-const appUrl = process.env.RESERVEVIA_APP_URL || "http://127.0.0.1:3100"
-const fullE2E = process.env.RESERVEVIA_FULL_E2E === "1"
+const appUrl = process.env.SAAS_CORE_APP_URL || "http://127.0.0.1:3100"
+const fullE2E = process.env.SAAS_CORE_FULL_E2E === "1"
 const appPort = new URL(appUrl).port || "3000"
 // Local Supabase and the shared Next dev server are intentionally serialized
 // by default; callers can opt into more workers on stronger CI infrastructure.
-const requestedWorkers = Number(process.env.RESERVEVIA_E2E_WORKERS || "1")
+const requestedWorkers = Number(process.env.SAAS_CORE_E2E_WORKERS || "1")
 const workers = Number.isInteger(requestedWorkers) && requestedWorkers > 0 ? requestedWorkers : 1
 
 export default defineConfig({
@@ -34,7 +34,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: `pnpm run dev:local -- --port ${appPort}`,
+      command: `node scripts/run-with-local-supabase-env.mjs ./node_modules/.bin/next dev --port ${appPort}`,
       url: appUrl,
       reuseExistingServer: false,
       timeout: 120_000,

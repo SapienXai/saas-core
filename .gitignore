@@ -4,6 +4,7 @@
 
 # Dependencies and build output
 node_modules/
+.pnpm-store/
 .next/
 .next-e2e/
 out/
@@ -13,6 +14,7 @@ dist/
 .turbo/
 coverage/
 output/playwright/
+artifacts/
 *.tsbuildinfo
 
 # Logs and local databases
@@ -33,3 +35,4 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+.reference/

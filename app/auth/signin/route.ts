@@ -11,7 +11,7 @@ type SignInBody = {
 function safeRedirect(value: unknown) {
   return typeof value === "string" && value.startsWith("/") && !value.startsWith("//")
     ? value
-    : "/manage"
+    : "/app"
 }
 
 export async function POST(request: Request) {

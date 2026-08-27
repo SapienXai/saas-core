@@ -135,7 +135,7 @@ function friendlyBillingError(error: unknown) {
   if (error instanceof AuthorizationError) return error.message
   if (error instanceof Error && error.message.includes("not configured")) return "Billing is not configured for this environment."
   const providerUnavailable = error instanceof Error && /past_due|30 minutes|cannot change|not change/i.test(error.message)
-  console.error("Reservevia billing action failed", { code: providerUnavailable ? "PROVIDER_CHANGE_UNAVAILABLE" : "BILLING_UNAVAILABLE" })
+  console.error("Billing action failed", { code: providerUnavailable ? "PROVIDER_CHANGE_UNAVAILABLE" : "BILLING_UNAVAILABLE" })
   return providerUnavailable ? "This billing change is temporarily unavailable. Refresh the page and try again." : "Billing service is temporarily unavailable. Please try again."
 }
 
@@ -240,7 +240,7 @@ export async function getPlanUsage() {
       getWorkspaceEntitlements(membership.workspace_id),
       getWorkspaceUsage(membership.workspace_id),
       getCurrentBillingSubscription(membership.workspace_id),
-      supabase.from("plans").select("key, name, monthly_price_usd_cents, sort_order, restaurant_limit, user_limit, reservation_limit, history_days, features").eq("active", true).order("sort_order"),
+      supabase.from("plans").select("key, name, monthly_price_usd_cents, sort_order, workspace_limit, user_limit, activity_limit, history_days, features").eq("active", true).order("sort_order"),
     ])
     if (workspaceError || !workspace) return { success: false, message: "Workspace could not be loaded." }
     if (plans.error) throw new Error(plans.error.message)
@@ -411,7 +411,7 @@ export async function startPaddleCheckout(targetPlan: string, intervalOrRequestK
     const transaction = await getPaddleServerClient(idempotencyKey).transactions.create({
       items: [{ priceId: mapping.provider_price_id, quantity: 1 }],
       ...(subscription.provider_customer_id ? { customerId: subscription.provider_customer_id } : {}),
-      customData: { reservevia_workspace_id: membership.workspace_id, reservevia_target_plan: targetPlan, reservevia_billing_interval: billingInterval, reservevia_billing_environment: environment },
+      customData: { saas_core_workspace_id: membership.workspace_id, saas_core_target_plan: targetPlan, saas_core_billing_interval: billingInterval, saas_core_billing_environment: environment },
     })
     const supabase = createServiceRoleClient()
     const checkoutError = await supabase.from("billing_checkout_sessions").insert({ workspace_id: membership.workspace_id, environment, target_plan_key: targetPlan, provider_price_id: mapping.provider_price_id, provider_transaction_id: transaction.id, idempotency_key: idempotencyKey, status: "created" }).then((result) => result.error)

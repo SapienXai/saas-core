@@ -1,0 +1,10 @@
+{
+  "name": "@saas-core/ui",
+  "version": "2.0.0",
+  "description": "Portable marker for the source-derived SaaS Core UI system",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": ["src", "README.md"]
+}
