@@ -26,3 +26,8 @@ Platform Control operations pages and Core-owned migrations. The Team flow
 uses Resend when configured and otherwise exposes a clearly labeled local
 invitation link. The Plan page submits Core plan keys; provider price IDs stay
 server-side.
+
+Generated Core dependencies are portable versioned package specifications and
+do not depend on the directory of the Core checkout. Testing unpublished Core
+artifacts is a release-harness concern; run `pnpm release:verify` in the Core
+repository for the isolated temporary-registry and relocation check.

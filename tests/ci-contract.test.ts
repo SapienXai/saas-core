@@ -31,4 +31,9 @@ describe("GitHub Actions acceptance contracts", () => {
     expect(workflow).toContain("  release-verify:")
     expect(workflow).toContain("pnpm release:verify")
   })
+
+  it("resolves unpublished Core artifacts through a disposable scoped registry", () => {
+    expect(workflow.match(/scripts\/local-package-registry\.mjs/g)?.length).toBe(3)
+    expect(workflow.match(/@sapienx:registry=%s/g)?.length).toBe(3)
+  })
 })

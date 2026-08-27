@@ -31,7 +31,11 @@ The suite is skipped unless `SAAS_CORE_DB_INTEGRATION=1` is set; the default
 unit run therefore does not claim a database integration result.
 
 The generated-app acceptance path is exercised with packed artifacts by the CI
-`pack` job. The browser journey uses a fresh local Supabase instance to verify
+`pack` job. Generated manifests remain versioned and portable; the Core
+release harness uses a disposable scoped local registry to resolve unpublished
+artifacts. It then copies the generated app to another temporary path and
+performs a frozen reinstall before build verification. The browser journey
+uses a fresh local Supabase instance to verify
 signup, session/protected routes, two-workspace switching, invitation
 wrong-account/replay protection, recovery request, safe redirects and mobile
 overflow in Chromium. `pnpm release:verify` runs the complete local matrix,

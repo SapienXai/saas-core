@@ -11,3 +11,8 @@ resource table:
 ```ts
 type Project = { id: string; workspaceId: string; name: string }
 ```
+
+The generated product name is the source for customer-facing Core branding,
+including auth pages, metadata, the application shell and invitation-email
+fallbacks. Products should not edit those Core-managed files just to rename
+the application.

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2
+
+- Fixed generated Core dependencies to use portable versioned package specs;
+  local packed artifacts are now isolated to the release and acceptance
+  harness instead of being persisted in product manifests or overrides.
+- Added update normalization for affected v1.1.1 products with absolute Core
+  `file:` dependencies and preserved unrelated product dependencies/config.
+- Made generated auth branding, metadata, application shell and invitation
+  email fallback derive from the generated product name.
+- Added generated-product path scanning, multi-name branding coverage and
+  relocated frozen-install acceptance verification.
+
 ## 1.1.1
 
 - Added a canonical least-privilege platform capability model shared by the

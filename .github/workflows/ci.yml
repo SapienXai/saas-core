@@ -63,8 +63,16 @@ jobs:
       - run: pnpm pack:all
       - name: Install packed packages in a generated app
         run: |
+          set -euo pipefail
           temp_dir="$(mktemp -d)"
+          registry_file="$temp_dir/registry-url"
+          node scripts/local-package-registry.mjs "$GITHUB_WORKSPACE/artifacts" "$registry_file" > "$temp_dir/registry.log" 2>&1 &
+          registry_pid=$!
+          trap 'kill "$registry_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do if [ -s "$registry_file" ]; then break; fi; if ! kill -0 "$registry_pid" 2>/dev/null; then cat "$temp_dir/registry.log"; exit 1; fi; sleep 1; done
+          if [ ! -s "$registry_file" ]; then cat "$temp_dir/registry.log"; exit 1; fi
           SAAS_CORE_TARBALL_DIR="$GITHUB_WORKSPACE/artifacts" node packages/core/dist/cli.js init "$temp_dir/sample-app" --yes --non-interactive
+          printf '@sapienx:registry=%s\n' "$(cat "$registry_file")" > "$temp_dir/sample-app/.npmrc"
           pnpm --dir "$temp_dir/sample-app" install --no-frozen-lockfile
           pnpm --dir "$temp_dir/sample-app" typecheck
           pnpm --dir "$temp_dir/sample-app" build
@@ -108,8 +116,15 @@ jobs:
           eval "$(supabase status -o env)"
           temp_dir="$(mktemp -d)"
           echo "SAAS_CORE_ACCEPTANCE_DIR=$temp_dir" >> "$GITHUB_ENV"
+          registry_file="$temp_dir/registry-url"
+          node scripts/local-package-registry.mjs "$GITHUB_WORKSPACE/artifacts" "$registry_file" > "$temp_dir/registry.log" 2>&1 &
+          registry_pid=$!
+          trap 'kill "$registry_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do if [ -s "$registry_file" ]; then break; fi; if ! kill -0 "$registry_pid" 2>/dev/null; then cat "$temp_dir/registry.log"; exit 1; fi; sleep 1; done
+          if [ ! -s "$registry_file" ]; then cat "$temp_dir/registry.log"; exit 1; fi
           SAAS_CORE_TARBALL_DIR="$GITHUB_WORKSPACE/artifacts" node packages/core/dist/cli.js init "$temp_dir/app" --yes --non-interactive
           printf 'APP_URL=%s\nSAAS_CORE_PRODUCT_NAME=CI Auth Acceptance\nNEXT_PUBLIC_SUPABASE_URL=%s\nNEXT_PUBLIC_SUPABASE_ANON_KEY=%s\nSUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' 'http://127.0.0.1:4321' "$API_URL" "$ANON_KEY" "$API_URL" "$ANON_KEY" "$SERVICE_ROLE_KEY" > "$temp_dir/app/.env.local"
+          printf '@sapienx:registry=%s\n' "$(cat "$registry_file")" > "$temp_dir/app/.npmrc"
           pnpm --dir "$temp_dir/app" install --no-frozen-lockfile
           pnpm --dir "$temp_dir/app" build
           (pnpm --dir "$temp_dir/app" exec next dev --port 4321 > "$temp_dir/next.log" 2>&1 & echo $! > "$temp_dir/next.pid")
@@ -167,9 +182,16 @@ jobs:
           eval "$(supabase status -o env)"
           temp_dir="$(mktemp -d)"
           echo "SAAS_CORE_ACCEPTANCE_DIR=$temp_dir" >> "$GITHUB_ENV"
+          registry_file="$temp_dir/registry-url"
+          node scripts/local-package-registry.mjs "$GITHUB_WORKSPACE/artifacts" "$registry_file" > "$temp_dir/registry.log" 2>&1 &
+          registry_pid=$!
+          trap 'kill "$registry_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do if [ -s "$registry_file" ]; then break; fi; if ! kill -0 "$registry_pid" 2>/dev/null; then cat "$temp_dir/registry.log"; exit 1; fi; sleep 1; done
+          if [ ! -s "$registry_file" ]; then cat "$temp_dir/registry.log"; exit 1; fi
           SAAS_CORE_TARBALL_DIR="$GITHUB_WORKSPACE/artifacts" node packages/core/dist/cli.js init "$temp_dir/app" --yes --non-interactive
           cp tests/generated-app.e2e.mjs "$temp_dir/app/generated-app.e2e.mjs"
           printf 'APP_URL=%s\nSAAS_CORE_PRODUCT_NAME=CI Generated Acceptance\nNEXT_PUBLIC_SUPABASE_URL=%s\nNEXT_PUBLIC_SUPABASE_ANON_KEY=%s\nSUPABASE_URL=%s\nSUPABASE_ANON_KEY=%s\nSUPABASE_SERVICE_ROLE_KEY=%s\n' 'http://127.0.0.1:4321' "$API_URL" "$ANON_KEY" "$API_URL" "$ANON_KEY" "$SERVICE_ROLE_KEY" > "$temp_dir/app/.env.local"
+          printf '@sapienx:registry=%s\n' "$(cat "$registry_file")" > "$temp_dir/app/.npmrc"
           pnpm --dir "$temp_dir/app" install --no-frozen-lockfile
           pnpm --dir "$temp_dir/app" build
           (pnpm --dir "$temp_dir/app" exec next dev --port 4321 > "$temp_dir/next.log" 2>&1 & echo $! > "$temp_dir/next.pid")

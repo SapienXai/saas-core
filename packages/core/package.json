@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Provider-neutral SaaS tenancy, permissions, entitlements, usage, billing, domains, audit and platform primitives",
   "type": "module",
   "bin": {

@@ -5,6 +5,11 @@ server-only secrets, configure Supabase Auth redirect/SMTP, register Paddle
 prices and webhook signing, configure Resend, VAPID and the domain provider.
 Run Core Lab only behind an operator boundary.
 
+Generated products should retain the versioned Core package specifications
+produced by `init` and `update`. Registry authentication belongs in developer
+or CI configuration; no local checkout paths or credentials belong in the
+committed product manifest.
+
 Before rollout, verify RLS with two real users, migration history, webhook
 replay/out-of-order handling, rate limits, audit writes, backup/restore and
 provider reconciliation. This repository does not publish packages or mutate

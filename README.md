@@ -13,7 +13,7 @@
   </p>
 
   <p>
-    <img alt="release 1.1.1" src="https://img.shields.io/badge/release-1.1.1-315cf6?style=flat-square">
+    <img alt="release 1.1.2" src="https://img.shields.io/badge/release-1.1.2-315cf6?style=flat-square">
     <img alt="schema 1.3.1" src="https://img.shields.io/badge/schema-1.3.1-0f766e?style=flat-square">
     <img alt="Node 24 plus" src="https://img.shields.io/badge/node-%3E%3D24-111827?style=flat-square">
     <img alt="pnpm 10 plus" src="https://img.shields.io/badge/pnpm-%3E%3D10-111827?style=flat-square">
@@ -149,12 +149,13 @@ pnpm dev
 | `/app` and `/platform` | Customer workspace and separate operator boundary. |
 
 The generated project includes its own `supabase/config.toml`, an intentionally
-empty `supabase/seed.sql` and bundled Core migrations. When developing against
-an unpublished checkout, use local packed artifacts:
-
-```bash
-SAAS_CORE_TARBALL_DIR=/path/to/saas-core/artifacts npx @sapienx/saas-core init my-product
-```
+empty `supabase/seed.sql` and bundled Core migrations. Generated products always
+keep registry-compatible, versioned Core dependency specifications.
+`SAAS_CORE_TARBALL_DIR` is reserved for the Core release and acceptance harness:
+the harness uses its packed-artifact directory to serve a disposable local
+registry, and the variable is never written to a product manifest. It is not a
+product-install or dependency-override flag. Run `pnpm release:verify` from
+this repository to exercise that workflow.
 
 See [Getting started](docs/GETTING-STARTED.md) and
 [Product integration](docs/PRODUCT-INTEGRATION.md).
@@ -351,7 +352,7 @@ tests/                      unit, CLI, database and generated-app acceptance tes
 docs/                       focused architecture, security and operations guides
 ```
 
-All published `@sapienx/saas-core-*` workspace packages are currently `1.1.1`.
+All published `@sapienx/saas-core-*` workspace packages are currently `1.1.2`.
 
 | Package | Role |
 | --- | --- |
@@ -403,13 +404,12 @@ All published `@sapienx/saas-core-*` workspace packages are currently `1.1.1`.
 
 ## Versioning and upgrades
 
-| Current release | Core schema | v1.1.1 migration |
+| Current release | Core schema | Release note |
 | --- | --- | --- |
-| `1.1.1` | `1.3.1` | `20260824040000_v111_platform_operations.sql` |
+| `1.1.2` | `1.3.1` | Generator portability and product branding hardening |
 
-The v1.1.1 migration is additive: it adds canonical Platform Control
-capabilities, audited operator mutations, filtered attention and provider
-reconciliation boundaries. Earlier migration files must remain unchanged.
+The v1.1.2 release has no database migration. The prior v1.1.1 migration is
+additive and remains unchanged.
 
 For an installed product:
 
@@ -426,5 +426,5 @@ through the product’s normal ordered Supabase pipeline, then run `doctor`,
 not silently overwrite product files and does not apply a remote database
 migration automatically.
 
-Read [Upgrading](docs/UPGRADING.md) for the v1.1.0 → v1.1.1 notes and the
+Read [Upgrading](docs/UPGRADING.md) for the v1.1.1 → v1.1.2 notes and the
 [CHANGELOG](CHANGELOG.md) for release history.

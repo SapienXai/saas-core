@@ -16,6 +16,10 @@ session resolution, persistence, transactions, logging and provider secrets.
 The in-memory store is a reference implementation for deterministic tests, not
 a production persistence layer.
 
+Generated products consume versioned Core packages through their normal package
+registry contract. Unpublished local artifacts are resolved only by the Core
+acceptance harness, outside the generated product dependency contract.
+
 Core uses extension points for product features, metrics, lifecycle stages and
 resource/scope access adapters. It does not create universal resources or
 rename product entities into generic abstractions.
