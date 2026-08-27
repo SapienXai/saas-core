@@ -21,6 +21,12 @@ changes without writing. It never rewrites product-owned files or applies a
 remote database migration automatically; migration application remains an
 ordered Supabase operation.
 
+`customize` edits only the product-owned `saas.theme.json` file. It supports
+`--preset default|neutral|violet|blue`, `--mode light|dark|system`,
+`--primary`, `--accent`, `--radius small|medium|large|full`, `--name`,
+`--logo` and `--icon`; with no flags it presents a concise interactive prompt.
+It never rewrites `core.config.ts`, backend routes or platform logic.
+
 Generated `package.json` files use portable `^<Core version>` specifications
 for every Core package. `SAAS_CORE_TARBALL_DIR` is a Core development harness
 input only; the harness uses its packed-artifact directory for isolated
@@ -31,9 +37,10 @@ acceptance installation and it is never copied into generated files or
 credentials as `NOT CONFIGURED`, not `PASS`. `diff` classifies managed-file,
 user-owned-file and package-version drift. `info` is safe for support
 diagnostics and includes the selected module configuration plus the env file
-source used for diagnostics. `test` validates the v1.1.2 manifest, portable
-Core dependencies, Setup Center, Platform routes, managed files and Core
-migration. `doctor` performs live Supabase checks only when credentials are
+source used for diagnostics. `test` validates the v1.2.0 manifest, portable
+Core dependencies, published UI styles, Setup Center, Platform routes,
+managed files and Core migration. `doctor` performs live Supabase checks only
+when credentials are
 available; provider credentials
 are reported as configured-but-unverified until a provider call is made.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto"
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync, realpathSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync, cpSync, rmSync, realpathSync } from "node:fs"
 import { createInterface } from "node:readline/promises"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -12,6 +12,26 @@ import { inspectProviderConfiguration } from "./provider-config.js"
 const VERSION = CORE_VERSION
 const SCHEMA_VERSION = CORE_SCHEMA_VERSION
 const FRAMEWORK_GENERATED_FILES = new Set(["next-env.d.ts"])
+const PRODUCT_OWNED_FILES = new Set([
+  "src/app/layout.tsx",
+  "src/app/page.tsx",
+  "src/styles/product.css",
+  "saas.theme.json",
+  "src/theme/config.ts",
+  "src/product/navigation.ts",
+  "src/product/README.md",
+  "src/app/(auth)/login/page.tsx",
+  "src/app/(auth)/signup/page.tsx",
+  "src/app/(auth)/forgot-password/page.tsx",
+  "src/app/(auth)/reset-password/page.tsx",
+  "src/app/onboarding/page.tsx",
+  "src/app/app/layout.tsx",
+  "src/app/app/page.tsx",
+  "src/app/app/team/page.tsx",
+  "src/app/app/plan/page.tsx",
+  "src/app/app/settings/page.tsx",
+])
+const isProductOwnedFile = (file: string) => PRODUCT_OWNED_FILES.has(file) || file.startsWith("src/product/") || file.startsWith("src/app/(product)/")
 const cyan = (value: string) => `\u001b[36m${value}\u001b[0m`
 const green = (value: string) => `\u001b[32m${value}\u001b[0m`
 const yellow = (value: string) => `\u001b[33m${value}\u001b[0m`
@@ -70,6 +90,63 @@ function coreMigrationSql(filename = "20260824000000_saas_core_v1.sql"): string 
   return source ? readFileSync(source, "utf8") : `-- SaaS Core migration ${VERSION}\n-- Install the package migration from the published distribution before running supabase db reset.\n`
 }
 
+function generatedThemeConfig(projectName: string): string {
+  return json({ preset: "default", mode: "system", primary: "#6757e8", accent: "#91e0c0", radius: "medium", brand: { name: projectName } })
+}
+
+function generatedThemeModule(): string {
+  return `import type { SaaSThemeConfig } from "@sapienx/saas-core-ui"
+import config from "../../saas.theme.json"
+
+export const themeConfig = config as SaaSThemeConfig
+`
+}
+
+function generatedProductNavigation(): string {
+  return `import type { NavItem } from "@sapienx/saas-core-ui"
+
+// Product-owned navigation. Add product routes here without changing Core.
+export const productNavigation: NavItem[] = [
+  { label: "Overview", href: "/app", active: true, icon: "⌂" },
+  { label: "Team", href: "/app/team", icon: "◎" },
+  { label: "Plan & Usage", href: "/app/plan", icon: "◈" },
+  { label: "Setup", href: "/app/setup", icon: "◇" },
+  { label: "Settings", href: "/app/settings", icon: "⚙" },
+  { label: "Platform Control", href: "/platform", icon: "✦" },
+]
+`
+}
+
+function generatedProductCss(): string {
+  return `/* Product-owned presentation overrides. Loaded after @sapienx/saas-core-ui/styles.css. */
+/* Keep overrides scoped to your product to make the Core update boundary obvious. */
+/* Example: .sc-brand-copy strong { letter-spacing: -.04em; } */
+`
+}
+
+function generatedRootLayout(projectName: string): string {
+  return `import type { ReactNode } from "react"
+import type { Metadata } from "next"
+import "@sapienx/saas-core-ui/styles.css"
+import "../styles/product.css"
+import { ThemeProvider } from "@sapienx/saas-core-ui"
+import { themeConfig } from "@/theme/config"
+
+export const metadata: Metadata = { title: ${JSON.stringify(projectName)}, description: ${JSON.stringify(`${projectName} application foundation`)} }
+export default function RootLayout({ children }: { children: ReactNode }) { return <html lang="en" suppressHydrationWarning><body><ThemeProvider config={themeConfig}>{children}</ThemeProvider></body></html> }
+`
+}
+
+function productPresentationContent(content: string): string {
+  return content
+    .replace(/saas-(?!core\b)/g, "sc-")
+    .replace(/\bauth-page\b/g, "sc-auth-page")
+    .replace(/\bauth-card\b/g, "sc-auth-card")
+    .replace(/\bform-error\b/g, "sc-form-error")
+    .replace(/\bnotice\b/g, "sc-notice")
+    .replace(/className="sc-card"/g, "className=\"sc-card sc-card-raw\"")
+}
+
 function generatedFiles(product: GeneratedProductIdentity, config = resolveCliConfig()): Map<string, string> {
   const { name: projectName, key } = product
   const coreDeps = {
@@ -109,7 +186,7 @@ function generatedFiles(product: GeneratedProductIdentity, config = resolveCliCo
     ["src/app/api/workspaces/route.ts", `import { NextResponse } from "next/server"\nimport { coreRepositories } from "@/lib/core"\nexport async function POST(request: Request) { const body = await request.formData(); const name = String(body.get("name") ?? "").trim(); const slug = String(body.get("slug") ?? "").trim(); try { await (await coreRepositories()).workspaces.createWorkspace({ name, slug }); return NextResponse.redirect(new URL("/app", request.url)); } catch { return NextResponse.redirect(new URL("/onboarding?error=create_failed", request.url)); } }\n`],
     ["src/app/app/layout.tsx", `import type { ReactNode } from "react"\nimport { getCurrentUser } from "@sapienx/saas-core-runtime"\nimport { AppShell } from "@sapienx/saas-core-ui"\nimport { createServerClient } from "@/lib/supabase"\nexport const dynamic = "force-dynamic"\nexport default async function AppLayout({ children }: { children: ReactNode }) { let email: string | null = null; try { const user = await getCurrentUser(await createServerClient()); email = user?.email ?? null } catch { /* doctor/setup page remains usable before Supabase credentials exist */ } return <AppShell productName=${jsxString(projectName)} userEmail={email} nav={[{label:"Overview",href:"/app",active:true},{label:"Team",href:"/app/team"},{label:"Plan & usage",href:"/app/plan"},{label:"Settings",href:"/app/settings"},{label:"Platform Control",href:"/platform"}]}>{children}</AppShell> }\n`],
     ["src/app/app/page.tsx", `import Link from "next/link"\nimport { WorkspaceSwitcher, EmptyState } from "@sapienx/saas-core-ui"\nimport { coreRepositories } from "@/lib/core"\nexport const dynamic = "force-dynamic"\nexport default async function AppHome() { let workspaces: any[] = []; let error = ""; try { workspaces = await (await coreRepositories()).workspaces.listUserWorkspaces() as any[] } catch (cause) { error = cause instanceof Error ? cause.message : "Core is not configured yet." } return <main className="saas-content"><div className="saas-eyebrow">Workspace overview</div><h1>Build your product here.</h1><p>The generated app owns product routes. Core owns the platform boundary below them.</p>{error ? <div className="saas-state error"><strong>Runtime setup required</strong><p>{error}</p><Link className="saas-button secondary" href="/onboarding">Continue setup</Link></div> : workspaces.length === 0 ? <EmptyState title="Create your first workspace" description="A workspace is the tenant boundary for your product." action={<Link className="saas-button" href="/onboarding">Create workspace</Link>} /> : <><div className="saas-card"><WorkspaceSwitcher workspaces={workspaces.map((w) => ({id:w.id,name:w.name,slug:w.slug}))} /><p>{workspaces.length} workspace{workspaces.length === 1 ? "" : "s"} available to your account.</p></div><div className="saas-grid three"><Link className="saas-card" href="/app/team"><h3>Team</h3><p>Invite people and manage role hierarchy.</p></Link><Link className="saas-card" href="/app/plan"><h3>Plan & usage</h3><p>Inspect effective entitlements and metering.</p></Link><Link className="saas-card" href="/app/settings"><h3>Workspace settings</h3><p>Branding, PWA and optional services.</p></Link></div></>}</main> }\n`],
-    ["src/app/onboarding/page.tsx", `export const dynamic = "force-dynamic"\nexport default function Onboarding({ searchParams }: { searchParams: Promise<{ error?: string }> }) { return <main className="auth-page"><div className="auth-card"><div className="saas-brand"><span className="saas-brand-mark">S</span><strong>Workspace setup</strong></div><div className="saas-eyebrow">First tenant</div><h1>Create a workspace.</h1><p>Use a product-neutral workspace as the boundary for your future domain tables.</p><form className="saas-form" action="/api/workspaces" method="post"><label>Workspace name<input name="name" placeholder=${jsxString(projectName)} required /></label><label>Workspace slug<input name="slug" placeholder="my-product" pattern="[a-z0-9-]+" required /></label><button className="saas-button" type="submit">Create workspace</button></form></div></main> }\n`],
+    ["src/app/onboarding/page.tsx", `export const dynamic = "force-dynamic"\nexport default function Onboarding({ searchParams }: { searchParams: Promise<{ error?: string }> }) { return <main className="auth-page"><div className="auth-card"><div className="sc-brand"><span className="sc-brand-mark">S</span><strong>Workspace setup</strong></div><div className="sc-eyebrow">First tenant</div><h1>Create a workspace.</h1><p>Use a product-neutral workspace as the boundary for your future domain tables.</p><form className="sc-form" action="/api/workspaces" method="post"><label>Workspace name<input name="name" placeholder=${jsxString(projectName)} required /></label><label>Workspace slug<input name="slug" placeholder="my-product" pattern="[a-z0-9\\-]+" required /></label><button className="sc-button" type="submit">Create workspace</button></form></div></main> }\n`],
     ["src/app/app/team/page.tsx", `import { coreRepositories } from "@/lib/core"\nimport { StatusBadge } from "@sapienx/saas-core-ui"\nexport const dynamic = "force-dynamic"\nexport default async function TeamPage() { const repos = await coreRepositories(); const workspaces = await repos.workspaces.listUserWorkspaces() as any[]; const workspace = workspaces[0]; const members = workspace ? await repos.memberships.list(workspace.id) : []; return <main className="saas-content"><div className="saas-eyebrow">Workspace team</div><h1>People and permissions.</h1><p>Membership is the authorization source; UI controls are not security boundaries.</p>{workspace ? <><div className="saas-card"><h2>Invite a teammate</h2><form className="saas-form" action="/api/invitations" method="post"><input type="hidden" name="workspaceId" value={workspace.id} /><label>Email<input type="email" name="email" required /></label><label>Role<select name="role" defaultValue="member"><option value="admin">Admin</option><option value="manager">Manager</option><option value="member">Member</option><option value="viewer">Viewer</option></select></label><button className="saas-button" type="submit">Create invitation</button></form></div><div className="saas-card" style={{marginTop:16}}><div className="table-scroll"><table className="saas-table"><thead><tr><th>User</th><th>Role</th><th>Status</th></tr></thead><tbody>{members.map((member: any) => <tr key={member.id}><td>{member.user_id}</td><td>{member.role}</td><td><StatusBadge status={member.status} /></td></tr>)}</tbody></table></div></div></> : <div className="saas-state">Create a workspace before managing its team.</div>}</main> }\n`],
     ["src/app/api/invitations/route.ts", `import { NextResponse } from "next/server"\nimport { coreRepositories } from "@/lib/core"\nexport async function POST(request: Request) { const body = await request.formData(); try { const result = await (await coreRepositories()).invitations.create({ workspaceId: String(body.get("workspaceId") ?? ""), email: String(body.get("email") ?? ""), role: String(body.get("role") ?? "member") }); console.info("Core invitation created", { invitationId: (result.invitation as any)?.id, tokenGenerated: true }); return NextResponse.redirect(new URL("/app/team?invited=1", request.url)); } catch { return NextResponse.redirect(new URL("/app/team?error=invite_failed", request.url)); } }\n`],
     ["src/app/app/plan/page.tsx", `import { coreRepositories } from "@/lib/core"\nimport { BillingStatus, PlanCard, UsageMeter } from "@sapienx/saas-core-ui"\nexport const dynamic = "force-dynamic"\nexport default async function PlanPage() { const repos = await coreRepositories(); const workspaces = await repos.workspaces.listUserWorkspaces() as any[]; const workspace = workspaces[0]; if (!workspace) return <main className="saas-content"><div className="saas-state">Create a workspace to see plan state.</div></main>; const entitlements: any = await repos.entitlements.get(workspace.id); return <main className="saas-content"><div className="saas-eyebrow">Commercial state</div><h1>Plan & usage.</h1><div className="saas-grid two"><div className="saas-card"><BillingStatus plan={entitlements.planName} status={entitlements.subscription.status} /><div style={{marginTop:20}}><UsageMeter label="API calls" used={0} limit={entitlements.limits.api_calls ?? null} /></div></div><div className="saas-card"><h2>Effective entitlement</h2><p>Manual override → scheduled plan → subscription → payment restriction fallback.</p><strong>{entitlements.planName}</strong></div></div><div className="saas-grid three" style={{marginTop:16}}><PlanCard name="Free" price="$0" features={["1 seat","Core workspace"]} current={entitlements.planKey === "free"} /><PlanCard name="Starter" price="$19 / month" features={["3 seats","10k API calls"]} current={entitlements.planKey === "starter"} /><PlanCard name="Pro" price="$49 / month" features={["10 seats","Custom domains","PWA"]} current={entitlements.planKey === "pro"} /></div></main> }\n`],
@@ -191,7 +268,18 @@ function generatedFiles(product: GeneratedProductIdentity, config = resolveCliCo
   if (!config.pwa) files.delete("public/sw.js")
   files.set("supabase/migrations/20260824030000_v11_operations.sql", coreMigrationSql("20260824030000_v11_operations.sql"))
   files.set("supabase/migrations/20260824040000_v111_platform_operations.sql", coreMigrationSql("20260824040000_v111_platform_operations.sql"))
-  return files
+  files.delete("src/app/globals.css")
+  files.set("src/styles/product.css", generatedProductCss())
+  files.set("saas.theme.json", generatedThemeConfig(projectName))
+  files.set("src/theme/config.ts", generatedThemeModule())
+  files.set("src/product/navigation.ts", generatedProductNavigation())
+  files.set("src/app/layout.tsx", generatedRootLayout(projectName))
+  const appLayout = files.get("src/app/app/layout.tsx")
+  if (appLayout) files.set("src/app/app/layout.tsx", appLayout
+    .replace('import { AppShell } from "@sapienx/saas-core-ui"', 'import { AppShell } from "@sapienx/saas-core-ui"\nimport { themeConfig } from "@/theme/config"\nimport { productNavigation } from "@/product/navigation"')
+    .replace(/nav=\{\[[\s\S]*?\]\}/, "nav={productNavigation}")
+    .replace(/productName=\{(.*?)\} userEmail=/, "productName={$1} brand={themeConfig.brand} userEmail="))
+  return new Map([...files.entries()].map(([file, content]) => [file, productPresentationContent(content)]))
 }
 
 function generatedCoreConfig(projectName: string, key: string, config: ResolvedCliConfig): string {
@@ -701,6 +789,12 @@ function mergeGeneratedPackage(currentPackage: ProjectPackage, sourcePackage: Pr
 function readProjectPackage(target: string): ProjectPackage | null {
   try { return JSON.parse(readFileSync(join(target, "package.json"), "utf8")) as ProjectPackage } catch { return null }
 }
+function managedFileDrift(target: string, manifest: Manifest) {
+  return Object.entries(manifest.managedFiles).filter(([file, value]) => {
+    if (typeof value !== "string" && value.ownership === "mergeable") return false
+    return !existsSync(join(target, file)) || hash(readFileSync(join(target, file), "utf8")) !== managedHash(value)
+  }).map(([file]) => file)
+}
 function printHeader(command: string) {
   if (command === "init") {
     console.log(`\n${cyan("SaaS Core")} ${dim(`v${VERSION}`)}\n\n${dim("Create a production SaaS foundation")}`)
@@ -792,9 +886,10 @@ async function init(targetArg: string | undefined, options: ReturnType<typeof pa
   }
   const now = new Date().toISOString()
   const prior = readManifest(target)
-  const managedFiles: Record<string, ManagedFile> = { ...(prior ? Object.fromEntries(Object.entries(prior.managedFiles).filter(([file]) => !FRAMEWORK_GENERATED_FILES.has(file)).map(([file, value]) => [file, typeof value === "string" ? { hash: value, ownership: "managed" as const } : value])) : {}) }
-  for (const relative of created.filter((file) => file !== ".saas-core.json" && file !== "src/product/README.md" && !FRAMEWORK_GENERATED_FILES.has(file))) { managedFiles[relative] = { hash: hash(files.get(relative) ?? ""), ownership: relative === "package.json" || relative === "core.config.ts" ? "mergeable" : "managed" } }
-  const manifest: Manifest = { projectName: prior?.projectName ?? projectName, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: modulesForConfig(config), providers: { auth: "supabase", ...(config.billing ? { billing: "paddle" } : {}), ...(config.email ? { email: "resend" } : {}), ...(config.domains ? { domains: "vercel" } : {}), ...(config.push ? { push: "web-push" } : {}) }, configuration: config, managedFiles, generatedFiles: { "src/product/README.md": { ownership: "user-owned" }, "next-env.d.ts": { ownership: "mergeable" } }, installedAt: prior?.installedAt ?? now, updatedAt: now, version: VERSION, modules: modulesForConfig(config) }
+  const managedFiles: Record<string, ManagedFile> = { ...(prior ? Object.fromEntries(Object.entries(prior.managedFiles).filter(([file]) => !FRAMEWORK_GENERATED_FILES.has(file) && !isProductOwnedFile(file)).map(([file, value]) => [file, typeof value === "string" ? { hash: value, ownership: "managed" as const } : value])) : {}) }
+  for (const relative of created.filter((file) => file !== ".saas-core.json" && !FRAMEWORK_GENERATED_FILES.has(file) && !isProductOwnedFile(file))) { managedFiles[relative] = { hash: hash(files.get(relative) ?? ""), ownership: relative === "package.json" || relative === "core.config.ts" ? "mergeable" : "managed" } }
+  const generatedFilesManifest = { ...(prior?.generatedFiles ?? {}), ...Object.fromEntries(created.filter((file) => isProductOwnedFile(file)).map((file) => [file, { ownership: "user-owned" as const }])), "src/product/README.md": { ownership: "user-owned" as const }, "saas.theme.json": { ownership: "user-owned" as const }, "src/styles/product.css": { ownership: "user-owned" as const }, "src/product/navigation.ts": { ownership: "user-owned" as const }, "next-env.d.ts": { ownership: "mergeable" as const } }
+  const manifest: Manifest = { projectName: prior?.projectName ?? projectName, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: modulesForConfig(config), providers: { auth: "supabase", ...(config.billing ? { billing: "paddle" } : {}), ...(config.email ? { email: "resend" } : {}), ...(config.domains ? { domains: "vercel" } : {}), ...(config.push ? { push: "web-push" } : {}) }, configuration: config, managedFiles, generatedFiles: generatedFilesManifest, installedAt: prior?.installedAt ?? now, updatedAt: now, version: VERSION, modules: modulesForConfig(config) }
   if (!options.dryRun) { mkdirSync(target, { recursive: true }); writeFileSync(join(target, ".saas-core.json"), json(manifest), "utf8") }
   console.log(`${green(options.dryRun ? "◇" : "✓")} ${options.dryRun ? "Preparing generated application" : "Generated application"} ${dim(`(${created.length} files)`)}`)
   if (conflicts.length) { console.log(`\n${yellow("Existing files preserved")}`); for (const file of conflicts) console.log(`  ${yellow("conflict")} ${file}`) }
@@ -872,7 +967,7 @@ async function doctor(target: string) {
   }
   add("Cron secret", configuration.billing ? (environment.PADDLE_CRON_SECRET ? "PASS" : "NOT CONFIGURED") : "DISABLED", configuration.billing ? (environment.PADDLE_CRON_SECRET ? "internal lifecycle route protected" : "internal lifecycle route") : "billing disabled")
   if (manifest) {
-    const drift = Object.entries(manifest.managedFiles).filter(([file, value]) => !existsSync(join(target, file)) || hash(readFileSync(join(target, file), "utf8")) !== managedHash(value))
+    const drift = managedFileDrift(target, manifest)
     add("Managed-file drift", drift.length === 0 ? "PASS" : "WARN", drift.length ? `${drift.length} files changed` : "baseline clean")
   } else add("Managed-file drift", "FAIL", "manifest unavailable")
   const buildReady = Boolean(packageJson?.scripts?.build && packageJson?.scripts?.dev)
@@ -883,13 +978,12 @@ async function doctor(target: string) {
 function diff(target: string) {
   const manifest = readManifest(target); if (!manifest) { console.log(red("No .saas-core.json found.")); process.exitCode = 1; return }
   const changes: string[] = []
-  for (const [file, value] of Object.entries(manifest.managedFiles)) { if (!existsSync(join(target, file))) changes.push(`managed file deleted: ${file}`); else if (hash(readFileSync(join(target, file), "utf8")) !== managedHash(value)) changes.push(`managed file modified: ${file}`) }
-  for (const file of Object.keys(manifest.generatedFiles)) if (!existsSync(join(target, file))) changes.push(`generated user-owned file deleted: ${file}`)
+  for (const file of managedFileDrift(target, manifest)) changes.push(`${existsSync(join(target, file)) ? "managed file modified" : "managed file deleted"}: ${file}`)
   let packageJson: ProjectPackage | null = null; try { packageJson = JSON.parse(readFileSync(join(target, "package.json"), "utf8")) as ProjectPackage } catch { /* reported as drift */ }
   for (const [name, spec] of Object.entries({ ...(packageJson?.dependencies ?? {}), ...(packageJson?.devDependencies ?? {}) })) if (isCorePackageName(name) && !isPortableCoreSpec(spec)) changes.push(`package version mismatch: ${name} ${spec}`)
   if (manifest.schemaVersion !== SCHEMA_VERSION) changes.push(`schema drift: manifest ${manifest.schemaVersion}, expected ${SCHEMA_VERSION}`)
   if (manifest.coreVersion !== VERSION) changes.push(`core version drift: manifest ${manifest.coreVersion}, expected ${VERSION}`)
-  if (!manifest.configuration) changes.push("config drift: v1.1 module configuration missing")
+  if (!manifest.configuration) changes.push("config drift: module configuration missing")
   if (!changes.length) console.log(`${green("✓ No Core drift")}\nManaged files checked: ${Object.keys(manifest.managedFiles).length}`)
   else { console.log(`${yellow("Core drift detected")}`); for (const change of changes) console.log(`  ${yellow(change)}`); process.exitCode = 2 }
 }
@@ -901,27 +995,45 @@ function update(target: string, options: ReturnType<typeof parseFlags>) {
   const configuration = resolveCliConfig({ ...configFromManifest(manifest), flags: options })
   const source = generatedFiles(generatedProductIdentity(manifest.projectName ?? readFileSync(join(target, "package.json"), "utf8").match(/"name"\s*:\s*"([^"]+)/)?.[1] ?? "saas-product"), configuration)
   const backup = join(target, ".saas-core-backup", new Date().toISOString().replace(/[:.]/g, "-")); const conflicts: string[] = []; const changes: string[] = []
+  const nextManaged: Record<string, ManagedFile | string> = { ...manifest.managedFiles }
+  const nextGenerated: Record<string, { ownership: "user-owned" | "mergeable" }> = { ...manifest.generatedFiles }
+  const saveBackup = (relative: string, absolute: string) => { if (options.dryRun) return; mkdirSync(dirname(join(backup, relative)), { recursive: true }); cpSync(absolute, join(backup, relative)) }
   for (const [relative, content] of source) {
     const absolute = join(target, relative)
-    if (relative === ".saas-core.json") continue
+    if (relative === ".saas-core.json" || FRAMEWORK_GENERATED_FILES.has(relative)) continue
+    if (isProductOwnedFile(relative)) {
+      const priorValue = manifest.managedFiles[relative]
+      nextGenerated[relative] = { ownership: "user-owned" }
+      delete nextManaged[relative]
+      if (!existsSync(absolute)) {
+        if (!manifest.generatedFiles[relative] || relative === "saas.theme.json" || relative === "src/styles/product.css" || relative === "src/theme/config.ts" || relative === "src/product/navigation.ts") { changes.push(`add ${relative}`); if (!options.dryRun) writeSafe(absolute, content, false) }
+      } else if (priorValue && hash(readFileSync(absolute, "utf8")) === managedHash(priorValue)) {
+        const current = readFileSync(absolute, "utf8")
+        if (current !== content) { changes.push(`migrate ${relative}`); if (!options.dryRun) { saveBackup(relative, absolute); writeFileSync(absolute, content, "utf8") } }
+      } else if (priorValue) conflicts.push(`${relative} (product presentation preserved)`)
+      continue
+    }
     if (!existsSync(absolute)) { changes.push(`add ${relative}`); if (!options.dryRun) writeSafe(absolute, content, false) }
     else {
       const current = readFileSync(absolute, "utf8")
       const baseline = managedHash(manifest.managedFiles[relative] ?? "")
       if (relative === "package.json") {
         try {
-          const currentPackage = JSON.parse(current) as ProjectPackage
-          const sourcePackage = JSON.parse(content) as ProjectPackage
-          const merged = mergeGeneratedPackage(currentPackage, sourcePackage)
-          const mergedText = json(merged)
-          if (mergedText !== current) { changes.push(`update ${relative}`); if (!options.dryRun) { mkdirSync(dirname(join(backup, relative)), { recursive: true }); cpSync(absolute, join(backup, relative)); writeFileSync(absolute, mergedText, "utf8") } }
+          const mergedText = json(mergeGeneratedPackage(JSON.parse(current) as ProjectPackage, JSON.parse(content) as ProjectPackage))
+          if (mergedText !== current) { changes.push(`update ${relative}`); if (!options.dryRun) { saveBackup(relative, absolute); writeFileSync(absolute, mergedText, "utf8") } }
         } catch { conflicts.push(relative) }
       } else if (baseline && hash(current) !== baseline) conflicts.push(relative)
-      else if (hash(current) !== hash(content)) { changes.push(`update ${relative}`); if (!options.dryRun) { mkdirSync(dirname(join(backup, relative)), { recursive: true }); cpSync(absolute, join(backup, relative)); writeFileSync(absolute, content, "utf8") } }
+      else if (hash(current) !== hash(content)) { changes.push(`update ${relative}`); if (!options.dryRun) { saveBackup(relative, absolute); writeFileSync(absolute, content, "utf8") } }
     }
+    if (!conflicts.includes(relative) && existsSync(absolute)) nextManaged[relative] = { hash: hash(readFileSync(absolute, "utf8")), ownership: relative === "package.json" || relative === "core.config.ts" ? "mergeable" : "managed" }
   }
-  const now = new Date().toISOString(); const next: Manifest = { ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: modulesForConfig(configuration), configuration, updatedAt: now, version: VERSION, modules: modulesForConfig(configuration) }
-  if (!options.dryRun) for (const [relative] of source) if (relative !== ".saas-core.json" && existsSync(join(target, relative)) && !conflicts.includes(relative) && !FRAMEWORK_GENERATED_FILES.has(relative)) next.managedFiles[relative] = { hash: hash(readFileSync(join(target, relative), "utf8")), ownership: relative === "package.json" || relative === "core.config.ts" ? "mergeable" : "managed" }
+  const legacyCss = join(target, "src/app/globals.css")
+  const legacyCssBaseline = manifest.managedFiles["src/app/globals.css"]
+  if (existsSync(legacyCss) && legacyCssBaseline && hash(readFileSync(legacyCss, "utf8")) === managedHash(legacyCssBaseline)) { changes.push("remove src/app/globals.css"); if (!options.dryRun) { saveBackup("src/app/globals.css", legacyCss); rmSync(legacyCss); } delete nextManaged["src/app/globals.css"]; delete nextGenerated["src/app/globals.css"] }
+  else if (existsSync(legacyCss)) { nextGenerated["src/app/globals.css"] = { ownership: "user-owned" }; delete nextManaged["src/app/globals.css"] }
+  const now = new Date().toISOString()
+  const next: Manifest = { ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, installedModules: modulesForConfig(configuration), configuration, updatedAt: now, version: VERSION, modules: modulesForConfig(configuration), managedFiles: nextManaged, generatedFiles: nextGenerated }
+  for (const file of PRODUCT_OWNED_FILES) delete next.managedFiles[file]
   if (!options.dryRun) writeFileSync(join(target, ".saas-core.json"), json(next), "utf8")
   console.log(`${green(options.dryRun ? "Dry-run update" : "Core updated")} ${changes.length} change(s)`); if (conflicts.length) { console.log(yellow("Conflicts preserved:")); conflicts.forEach((file) => console.log(`  ${file}`)) }; if (!options.dryRun) console.log(dim(`backup: ${backup}`)); if (options.dryRun) changes.forEach((change) => console.log(`  ${change}`))
 }
@@ -931,15 +1043,54 @@ function test(target: string) {
   const packageJson = readProjectPackage(target)
   checks.push(["Installed manifest", Boolean(manifest), ".saas-core.json"])
   checks.push(["Portable Core dependencies", Boolean(packageJson && Object.entries({ ...(packageJson.dependencies ?? {}), ...(packageJson.devDependencies ?? {}) }).filter(([name]) => isCorePackageName(name)).every(([, spec]) => isPortableCoreSpec(spec))), `^${VERSION} package specs`])
-  checks.push(["Managed files", Boolean(manifest && Object.entries(manifest.managedFiles).every(([file, value]) => existsSync(join(target, file)) && hash(readFileSync(join(target, file), "utf8")) === managedHash(value))), "hash baseline"])
+  checks.push(["Managed files", Boolean(manifest && managedFileDrift(target, manifest).length === 0), "Core-managed baseline"])
   checks.push(["Product boundary", existsSync(join(target, "src/product")), "src/product"])
   checks.push(["Next app routes", existsSync(join(target, "src/app")) && existsSync(join(target, "proxy.ts")), "App Router + proxy"])
-  checks.push(["v1.1 manifest", manifest?.coreVersion === VERSION && manifest?.schemaVersion === SCHEMA_VERSION, `${VERSION} / ${SCHEMA_VERSION}`])
+  checks.push(["v1.2 manifest", manifest?.coreVersion === VERSION && manifest?.schemaVersion === SCHEMA_VERSION, `${VERSION} / ${SCHEMA_VERSION}`])
+  checks.push(["Published UI styles", existsSync(join(target, "saas.theme.json")) && existsSync(join(target, "src/styles/product.css")), "theme config + product CSS"])
   checks.push(["Setup Center", existsSync(join(target, "src/app/app/setup/page.tsx")), "/app/setup"])
   checks.push(["Platform operations", existsSync(join(target, "src/app/platform/health/page.tsx")) && existsSync(join(target, "src/app/platform/audit/page.tsx")), "health + audit routes"])
   checks.push(["Core migration", existsSync(join(target, "supabase/migrations")), "Supabase migration"])
   for (const [label, pass, detail] of checks) console.log(`${pass ? green("✓") : red("✗")} ${label.padEnd(25)} ${dim(detail)}`)
   const passed = checks.filter(([, pass]) => pass).length; console.log(`\n${passed} passed  ${checks.length - passed} failed`); if (passed !== checks.length) process.exitCode = 1
+}
+
+function customizeValue(argv: string[], name: string) {
+  const index = argv.findIndex((value) => value === `--${name}`)
+  if (index >= 0) return argv[index + 1]
+  return argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3)
+}
+
+async function customize(target: string, argv: string[]) {
+  const themePath = join(target, "saas.theme.json")
+  let current: Record<string, unknown> = {}
+  try { if (existsSync(themePath)) current = JSON.parse(readFileSync(themePath, "utf8")) as Record<string, unknown> } catch { console.log(yellow("Theme config was invalid; restoring the product-neutral defaults.")) }
+  const theme = { preset: typeof current.preset === "string" ? current.preset : "default", mode: typeof current.mode === "string" ? current.mode : "system", primary: typeof current.primary === "string" ? current.primary : "#6757e8", accent: typeof current.accent === "string" ? current.accent : "#91e0c0", radius: typeof current.radius === "string" ? current.radius : "medium", brand: typeof current.brand === "object" && current.brand !== null ? { ...(current.brand as Record<string, unknown>) } : {} } as Record<string, unknown> & { brand: Record<string, unknown> }
+  const flags = ["preset", "mode", "primary", "accent", "radius", "name", "logo", "icon"]
+  for (const flag of flags) {
+    const value = customizeValue(argv, flag)
+    if (value === undefined) continue
+    if (flag === "name" || flag === "logo" || flag === "icon") theme.brand[flag === "name" ? "name" : flag] = value
+    else theme[flag] = value
+  }
+  const interactive = input.isTTY && !argv.includes("--non-interactive") && !flags.some((flag) => customizeValue(argv, flag) !== undefined)
+  if (interactive) {
+    const rl = createInterface({ input, output })
+    try {
+      const ask = async (label: string, fallback: string) => (await rl.question(`\n◇ ${label} [${fallback}] `)).trim() || fallback
+      theme.mode = await ask("Theme mode (light, dark, system)", String(theme.mode))
+      theme.primary = await ask("Primary color", String(theme.primary))
+      theme.accent = await ask("Accent color", String(theme.accent))
+      theme.radius = await ask("Radius (small, medium, large, full)", String(theme.radius))
+      theme.preset = await ask("Preset (default, neutral, violet, blue)", String(theme.preset))
+      theme.brand.name = await ask("Product name", String(theme.brand.name ?? "SaaS product"))
+    } finally { rl.close() }
+  }
+  const modes = new Set(["light", "dark", "system"]); const radii = new Set(["small", "medium", "large", "full"]); const presets = new Set(["default", "neutral", "violet", "blue"])
+  if (!modes.has(String(theme.mode)) || !radii.has(String(theme.radius)) || !presets.has(String(theme.preset))) { console.log(red("Invalid theme option. Use mode light|dark|system, radius small|medium|large|full, and preset default|neutral|violet|blue.")); process.exitCode = 1; return }
+  if (!theme.brand.name) theme.brand.name = "SaaS product"
+  mkdirSync(target, { recursive: true }); writeFileSync(themePath, json(theme), "utf8")
+  console.log(`${green("✓ Theme customized")} ${dim(themePath)}\n${dim("Only product-owned appearance configuration was changed.")}`)
 }
 
 export async function runCli(argv = process.argv.slice(2)) {
@@ -950,8 +1101,9 @@ export async function runCli(argv = process.argv.slice(2)) {
   else if (command === "info") info(target)
   else if (command === "update") update(target, options)
   else if (command === "test") test(target)
+  else if (command === "customize" || command === "theme") await customize(target, argv)
   else if (command === "--version" || command === "-v") console.log(VERSION)
-  else { console.log(`Commands: ${cyan("init")} ${cyan("update")} ${cyan("doctor")} ${cyan("diff")} ${cyan("info")} ${cyan("test")}\nOptions: --yes --non-interactive --dry-run`); process.exitCode = 1 }
+  else { console.log(`Commands: ${cyan("init")} ${cyan("update")} ${cyan("customize")} ${cyan("doctor")} ${cyan("diff")} ${cyan("info")} ${cyan("test")}\nOptions: --yes --non-interactive --dry-run`); process.exitCode = 1 }
 }
 
 const invokedPath = process.argv[1] ? realpathSync(process.argv[1]) : ""

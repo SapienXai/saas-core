@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.0
+
+- Added a modular, product-neutral React UI foundation derived from the
+  reusable ReserveVia design-system patterns: semantic primitives, feedback
+  states, typed default views, responsive App/Auth shells and mobile
+  navigation.
+- Added published package-owned CSS through `@sapienx/saas-core-ui/styles.css`,
+  semantic theme tokens, light/dark/system mode, focused theme presets and
+  explicit UI subpath exports with server/client boundaries.
+- Added product-owned `saas.theme.json`, `src/styles/product.css`, typed theme
+  and navigation composition files, plus `saas-core customize`/`theme` with
+  non-interactive flags.
+- Preserved 1.1.x UI imports through a compatibility facade and added
+  ownership-aware update migration for untouched and customized presentation.
+- Added the ReserveVia UI parity/exclusion matrix and documented the package,
+  product and runtime ownership boundaries. Database schema remains `1.3.1`.
+
 ## 1.1.2
 
 - Fixed generated Core dependencies to use portable versioned package specs;

@@ -13,7 +13,7 @@
   </p>
 
   <p>
-    <img alt="release 1.1.2" src="https://img.shields.io/badge/release-1.1.2-315cf6?style=flat-square">
+    <img alt="release 1.2.0" src="https://img.shields.io/badge/release-1.2.0-315cf6?style=flat-square">
     <img alt="schema 1.3.1" src="https://img.shields.io/badge/schema-1.3.1-0f766e?style=flat-square">
     <img alt="Node 24 plus" src="https://img.shields.io/badge/node-%3E%3D24-111827?style=flat-square">
     <img alt="pnpm 10 plus" src="https://img.shields.io/badge/pnpm-%3E%3D10-111827?style=flat-square">
@@ -212,6 +212,28 @@ reusable UI shell components. `init` preserves existing files; `update`
 changes only unmodified managed files, creates a checkpoint and reports
 product-owned conflicts.
 
+### Product-owned presentation
+
+Generated products import the published `@sapienx/saas-core-ui/styles.css`
+asset and then load `src/styles/product.css`, so the packed artifact remains
+styled after relocation or a frozen install. `saas.theme.json` contains the
+product-owned preset, mode, colors, radius and brand values. The product-owned
+`src/theme/config.ts` and `src/product/navigation.ts` files provide typed
+composition points for theme and navigation; they are not Core drift.
+
+Customize the appearance without touching auth, repositories or platform
+routes:
+
+```bash
+saas-core customize --preset violet --mode dark --primary '#6757e8' \
+  --accent '#91e0c0' --radius large --name 'My Product'
+```
+
+Products can replace `AuthShell`, `AppShell` or any default view while keeping
+the same typed server/action contract. See [UI parity](docs/UI-PARITY.md),
+[Architecture](docs/ARCHITECTURE.md) and [CLI](docs/CLI.md) for the ownership
+and migration rules.
+
 ## Developing SaaS Core
 
 This section is for contributors working in this repository, not products
@@ -352,7 +374,7 @@ tests/                      unit, CLI, database and generated-app acceptance tes
 docs/                       focused architecture, security and operations guides
 ```
 
-All published `@sapienx/saas-core-*` workspace packages are currently `1.1.2`.
+All published `@sapienx/saas-core-*` workspace packages are currently `1.2.0`.
 
 | Package | Role |
 | --- | --- |
@@ -406,6 +428,7 @@ All published `@sapienx/saas-core-*` workspace packages are currently `1.1.2`.
 
 | Current release | Core schema | Release note |
 | --- | --- | --- |
+| `1.2.0` | `1.3.1` | ReserveVia-derived modular UI foundation, product-owned presentation and safe UI migration |
 | `1.1.2` | `1.3.1` | Generator portability and product branding hardening |
 
 The v1.1.2 release has no database migration. The prior v1.1.1 migration is
@@ -426,5 +449,6 @@ through the product’s normal ordered Supabase pipeline, then run `doctor`,
 not silently overwrite product files and does not apply a remote database
 migration automatically.
 
-Read [Upgrading](docs/UPGRADING.md) for the v1.1.1 → v1.1.2 notes and the
+Read [Upgrading](docs/UPGRADING.md) for the v1.1.2 → v1.2.0 and v1.1.1 → v1.2.0
+notes and the
 [CHANGELOG](CHANGELOG.md) for release history.

@@ -1,29 +1,53 @@
 {
   "name": "@sapienx/saas-core-ui",
-  "version": "1.1.2",
-  "description": "Brand-configurable React shell primitives for SaaS Core applications",
+  "version": "1.2.0",
+  "description": "Product-neutral, branded React UI foundation for SaaS Core applications",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": ["*.css", "dist/*.css"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./theme": {
+      "types": "./dist/theme.d.ts",
+      "import": "./dist/theme.js"
+    },
+    "./primitives": {
+      "types": "./dist/primitives.d.ts",
+      "import": "./dist/primitives.js"
+    },
+    "./shell": {
+      "types": "./dist/shell.d.ts",
+      "import": "./dist/shell.js"
+    },
+    "./views": {
+      "types": "./dist/views.d.ts",
+      "import": "./dist/views.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && cp src/styles.css dist/styles.css",
     "clean": "rm -rf dist",
     "pack": "pnpm build && pnpm pack --pack-destination ../../artifacts"
   },
   "peerDependencies": {
     "react": ">=18"
   },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.6.0"
+  },
   "devDependencies": {
     "@types/react": "^19.2.18",
-    "react": "^19.2.8"
+    "@types/react-dom": "^19.2.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   }
 }

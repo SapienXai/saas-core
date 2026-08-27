@@ -53,7 +53,7 @@ function runSuite() {
   scenarios.push(runScenario("webhook-signature", "Webhook authenticity", "Paddle raw-body signatures are checked with timestamp tolerance.", () => {
     const rawBody = JSON.stringify({ event: "subscription.updated" }); const now = Date.now(); const timestamp = Math.floor(now / 1000); const signature = createHmac("sha256", "lab-secret").update(`${timestamp}:${rawBody}`).digest("hex"); const valid = verifyPaddleWebhookSignature(rawBody, `ts=${timestamp};h1=${signature}`, "lab-secret", now); const stale = verifyPaddleWebhookSignature(rawBody, `ts=${timestamp - 9999};h1=${signature}`, "lab-secret", now); return { status: valid && !stale ? "PASS" : "FAIL", expected: "valid=true, stale=false", actual: `valid=${valid}, stale=${stale}`, operation: "verifyPaddleWebhookSignature(rawBody)", detail: "The scenario uses a deterministic mock secret; no live provider call is made." }
   }))
-  return { mode: "in-memory-deterministic", version: "1.1.2", generatedAt: new Date().toISOString(), scenarios }
+  return { mode: "in-memory-deterministic", version: "1.2.0", generatedAt: new Date().toISOString(), scenarios }
 }
 
 const server = createServer(async (request, response) => {
