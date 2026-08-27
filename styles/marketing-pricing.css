@@ -1,0 +1,192 @@
+/* Clean pricing surface aligned with the ReserveVia lilac system. */
+.marketing-pricing-modern {
+  overflow: hidden;
+  background: var(--marketing-paper);
+}
+
+.marketing-pricing-modern .marketing-pricing-modern-hero {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, var(--marketing-accent-wash) 0%, color-mix(in srgb, var(--marketing-accent-pale) 30%, var(--marketing-paper)) 58%, var(--marketing-paper) 100%);
+  padding: clamp(3.5rem, 8vw, 6.5rem) 0 clamp(2.5rem, 5vw, 4.5rem);
+}
+
+.marketing-pricing-modern .marketing-pricing-modern-hero::before {
+  position: absolute;
+  top: -13rem;
+  left: 50%;
+  width: 34rem;
+  height: 34rem;
+  border: 1px solid color-mix(in srgb, var(--marketing-accent) 14%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2rem color-mix(in srgb, var(--marketing-accent) 5%, transparent), 0 0 0 5rem color-mix(in srgb, var(--marketing-accent) 3%, transparent);
+  content: "";
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.marketing-pricing-modern .marketing-pricing-hero-inner { position: relative; z-index: 1; }
+.marketing-pricing-modern .marketing-pricing-modern-heading { max-width: 60rem; }
+.marketing-pricing-modern .marketing-pricing-modern-heading h1 { max-width: 24ch; margin-inline: auto; color: var(--marketing-ink); font-family: inherit; font-size: clamp(3rem, 7vw, 6.2rem); font-weight: 850; letter-spacing: -0.078em; line-height: 0.96; text-wrap: balance; }
+.marketing-pricing-modern .marketing-pricing-modern-heading > p:not(.marketing-eyebrow) { max-width: 34rem; margin-inline: auto; color: var(--marketing-muted); font-size: 1rem; line-height: 1.65; }
+
+.marketing-pricing-modern .marketing-pricing-trustline { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.55rem 1.4rem; margin-top: 2rem; color: var(--marketing-ink-deep); font-size: 0.72rem; font-weight: 750; }
+.marketing-pricing-modern .marketing-pricing-trustline span { display: inline-flex; align-items: center; gap: 0.42rem; }
+.marketing-pricing-modern .marketing-pricing-trustline i { display: block; width: 0.42rem; height: 0.42rem; border-radius: 50%; background: var(--marketing-accent); box-shadow: 0 0 0 0.22rem color-mix(in srgb, var(--marketing-accent) 12%, transparent); }
+
+.marketing-pricing-modern .marketing-pricing-modern-grid-section { background: var(--marketing-paper); padding-block: clamp(3.5rem, 7vw, 6rem); }
+.marketing-pricing-modern .marketing-pricing-grid-heading { display: flex; align-items: end; justify-content: space-between; gap: 2rem; }
+.marketing-pricing-modern .marketing-pricing-grid-heading h2 { max-width: 17ch; margin: 0.8rem 0 0; color: var(--marketing-ink); font-size: clamp(2rem, 4vw, 3.25rem); font-weight: 850; letter-spacing: -0.065em; line-height: 1; }
+.marketing-pricing-modern .marketing-pricing-grid-heading > p { max-width: 19rem; margin: 0 0 0.2rem; color: var(--marketing-muted); font-size: 0.82rem; line-height: 1.65; }
+
+.marketing-pricing-grid-surface .marketing-pricing-grid-controls { display: flex; justify-content: flex-end; margin-bottom: 0.75rem; }
+.marketing-pricing-grid-surface .marketing-pricing-billing-toggle { position: relative; display: inline-flex; gap: 0.15rem; border: 1px solid var(--marketing-line); border-radius: 999px; background: color-mix(in srgb, var(--marketing-paper) 86%, var(--marketing-accent-wash)); padding: 0.2rem; box-shadow: 0 0.45rem 1.2rem color-mix(in srgb, var(--marketing-ink-deep) 7%, transparent); isolation: isolate; }
+.marketing-pricing-grid-surface .marketing-pricing-billing-toggle::before { position: absolute; z-index: 0; top: 0.2rem; bottom: 0.2rem; left: 0.2rem; width: calc(50% - 0.075rem); border-radius: 999px; background: var(--marketing-ink); content: ""; transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1); }
+.marketing-pricing-grid-surface .marketing-pricing-billing-toggle[data-active="year"]::before { transform: translateX(calc(100% + 0.15rem)); }
+.marketing-pricing-grid-surface .marketing-pricing-billing-option { position: relative; z-index: 1; min-width: 4.7rem; border: 0; border-radius: 999px; background: transparent; padding: 0.48rem 0.75rem; color: var(--marketing-muted); font-size: 0.68rem; font-weight: 800; line-height: 1; transition: color 180ms ease, opacity 180ms ease; }
+.marketing-pricing-grid-surface .marketing-pricing-billing-option:hover:not(:disabled):not(.marketing-pricing-billing-option-active) { background: color-mix(in srgb, var(--marketing-paper) 88%, var(--marketing-accent-wash)); color: var(--marketing-ink); }
+.marketing-pricing-grid-surface .marketing-pricing-billing-option-active { color: var(--marketing-paper); }
+.marketing-pricing-grid-surface .marketing-pricing-billing-option:disabled { cursor: not-allowed; opacity: 0.4; }
+.marketing-pricing-grid-surface .marketing-pricing-billing-option:focus-visible { outline: 2px solid var(--marketing-accent); outline-offset: 2px; }
+.marketing-pricing-grid-surface .marketing-pricing-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.85rem; margin-top: 0; align-items: stretch; }
+.marketing-pricing-grid-surface .marketing-price-card { min-width: 0; border: 1px solid var(--marketing-line); border-radius: 1.25rem; background: color-mix(in srgb, var(--marketing-paper) 94%, var(--marketing-accent-wash)); padding: 1.35rem; box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--marketing-ink-deep) 6%, transparent); }
+.marketing-pricing-grid-surface .marketing-price-card-pro { border-color: var(--marketing-accent); background: linear-gradient(180deg, color-mix(in srgb, var(--marketing-accent-wash) 60%, white), var(--marketing-paper) 42%); box-shadow: 0 1.3rem 3.2rem color-mix(in srgb, var(--marketing-accent) 18%, transparent); transform: translateY(-0.45rem); }
+.marketing-pricing-grid-surface .marketing-price-card-top { min-height: 5rem; }
+.marketing-pricing-grid-surface .marketing-price-name { color: var(--marketing-ink); font-family: inherit; font-size: 1.18rem; font-weight: 850; letter-spacing: -0.045em; }
+.marketing-pricing-grid-surface .marketing-price-target { color: var(--marketing-muted); }
+.marketing-pricing-grid-surface .marketing-price-note { background: var(--marketing-accent); color: var(--marketing-paper); }
+.marketing-pricing-grid-surface .marketing-price-value { margin-top: 1rem; }
+.marketing-pricing-grid-surface .marketing-price-value strong { color: var(--marketing-ink); font-family: inherit; font-size: clamp(2.5rem, 4vw, 3.15rem); font-weight: 850; letter-spacing: -0.075em; }
+.marketing-pricing-grid-surface .marketing-price-value span { color: var(--marketing-muted); }
+.marketing-pricing-grid-surface .marketing-price-value-annual { align-items: flex-start; flex-direction: column; gap: 0.18rem; }
+.marketing-pricing-grid-surface .marketing-price-current { display: flex; align-items: baseline; gap: 0.35rem; }
+.marketing-pricing-grid-surface .marketing-price-compare { display: inline-flex; align-items: baseline; gap: 0.25rem; font-size: 0.68rem; font-weight: 700; }
+.marketing-pricing-grid-surface .marketing-price-compare del { color: color-mix(in srgb, var(--marketing-muted) 80%, white); text-decoration-color: var(--marketing-accent); text-decoration-thickness: 1px; }
+.marketing-pricing-grid-surface .marketing-price-compare small { color: var(--marketing-muted); font-size: 0.58rem; font-weight: 650; }
+.marketing-pricing-grid-surface .marketing-price-savings { display: inline-flex; width: fit-content; align-items: center; margin-top: 0.55rem; border: 1px solid color-mix(in srgb, var(--marketing-accent) 24%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--marketing-accent-wash) 72%, white); padding: 0.3rem 0.52rem; color: var(--marketing-accent); font-size: 0.6rem; font-weight: 850; line-height: 1; }
+.marketing-pricing-grid-surface .marketing-price-description { min-height: 5.1rem; color: var(--marketing-muted); }
+.marketing-pricing-grid-surface .marketing-price-card .marketing-button { min-height: 2.9rem; border-radius: 0.75rem; }
+.marketing-pricing-grid-surface .marketing-price-card .marketing-button-light { border-color: var(--marketing-line); background: var(--marketing-paper); color: var(--marketing-ink); }
+.marketing-pricing-grid-surface .marketing-price-card .marketing-button-light:hover { border-color: var(--marketing-accent); background: var(--marketing-accent-wash); color: var(--marketing-ink); }
+.marketing-pricing-grid-surface .marketing-price-card .marketing-button-dark { background: var(--marketing-ink); color: var(--marketing-paper); }
+.marketing-pricing-grid-surface .marketing-price-card .marketing-button-dark:hover { background: var(--marketing-ink-deep); color: var(--marketing-paper); }
+.marketing-pricing-grid-surface .marketing-price-limits { border-top-color: var(--marketing-line); }
+.marketing-pricing-grid-surface .marketing-price-limits li { color: var(--marketing-ink-deep); }
+.marketing-pricing-grid-surface .marketing-price-limits svg { color: var(--marketing-accent); }
+.marketing-pricing-grid-surface .marketing-price-features li { color: var(--marketing-muted); }
+.marketing-pricing-grid-surface .marketing-price-footnote { color: color-mix(in srgb, var(--marketing-muted) 72%, white); }
+.marketing-pricing-modern .marketing-pricing-note { display: flex; align-items: center; justify-content: center; gap: 0.4rem; color: var(--marketing-muted); }
+.marketing-pricing-modern .marketing-pricing-note span { color: var(--marketing-accent); font-size: 1rem; }
+
+.marketing-pricing-modern .marketing-pricing-modern-comparison { background: var(--marketing-accent-wash); padding-block: clamp(3.75rem, 8vw, 6.5rem); }
+.marketing-pricing-modern .marketing-comparison-heading { max-width: 40rem; }
+.marketing-pricing-modern .marketing-comparison-heading h2 { margin-top: 0.8rem; color: var(--marketing-ink); font-size: clamp(2.2rem, 5vw, 3.7rem); font-weight: 850; letter-spacing: -0.07em; line-height: 0.98; }
+.marketing-pricing-modern .marketing-comparison-heading > p:not(.marketing-eyebrow) { max-width: 29rem; margin: 1rem auto 0; color: var(--marketing-muted); font-size: 0.9rem; line-height: 1.65; }
+.marketing-pricing-modern .marketing-comparison-shell { overflow-x: auto; margin-top: 2.25rem; border: 1px solid var(--marketing-line); border-radius: 1.25rem; background: var(--marketing-paper); box-shadow: 0 1rem 2.5rem color-mix(in srgb, var(--marketing-ink-deep) 6%, transparent); }
+.marketing-pricing-modern .marketing-comparison-grid { min-width: 760px; overflow: visible; margin-top: 0; border: 0; border-radius: 1.25rem; background: transparent; }
+.marketing-pricing-modern .marketing-comparison-grid span, .marketing-pricing-modern .marketing-comparison-grid strong { min-height: 2.8rem; border-color: var(--marketing-line); padding: 0.62rem 0.7rem; font-size: 0.66rem; }
+.marketing-pricing-modern .marketing-comparison-labels { background: color-mix(in srgb, var(--marketing-accent-wash) 44%, white); }
+.marketing-pricing-modern .marketing-comparison-labels span { color: var(--marketing-ink-deep); font-weight: 750; }
+.marketing-pricing-modern .marketing-comparison-column strong { min-height: 3.5rem; color: var(--marketing-ink); font-family: inherit; font-size: 0.85rem; font-weight: 850; }
+.marketing-pricing-modern .marketing-comparison-column span { color: var(--marketing-muted); }
+.marketing-pricing-modern .marketing-comparison-column:nth-child(4) { background: color-mix(in srgb, var(--marketing-accent-wash) 48%, white); }
+.marketing-pricing-modern .marketing-comparison-column:nth-child(4) strong { color: var(--marketing-accent); }
+
+.marketing-pricing-modern .marketing-pricing-modern-bottom { background: linear-gradient(135deg, var(--marketing-accent), var(--marketing-ink-deep)); padding-block: clamp(3.5rem, 7vw, 5.5rem); color: var(--marketing-paper); }
+.marketing-pricing-modern .marketing-pricing-bottom-inner { display: flex; align-items: end; justify-content: space-between; gap: 2rem; }
+.marketing-pricing-modern .marketing-pricing-bottom h2 { max-width: 12ch; margin-top: 0.8rem; color: var(--marketing-paper); font-family: inherit; font-size: clamp(2.6rem, 5.5vw, 4.7rem); font-weight: 850; letter-spacing: -0.075em; line-height: 0.96; }
+.marketing-pricing-modern .marketing-pricing-bottom p:not(.marketing-eyebrow) { max-width: 28rem; margin-top: 1rem; color: color-mix(in srgb, var(--marketing-accent-pale) 75%, white); font-size: 0.9rem; line-height: 1.6; }
+.marketing-pricing-modern .marketing-pricing-bottom .marketing-button { flex: 0 0 auto; background: var(--marketing-paper); color: var(--marketing-ink); }
+.marketing-pricing-modern .marketing-pricing-bottom .marketing-button:hover { background: var(--marketing-accent-wash); color: var(--marketing-ink); }
+
+@media (max-width: 899px) {
+  .marketing-pricing-grid-surface .marketing-pricing-grid-controls { justify-content: center; }
+  .marketing-pricing-grid-surface .marketing-pricing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .marketing-pricing-grid-surface .marketing-price-card-pro { transform: none; }
+  .marketing-pricing-modern .marketing-pricing-bottom-inner { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 639px) {
+  .marketing-pricing-modern .marketing-pricing-modern-hero { padding-top: 3rem; }
+  .marketing-pricing-modern .marketing-pricing-modern-heading h1 { max-width: 100%; font-size: clamp(2.5rem, 11.5vw, 4.3rem); }
+  .marketing-pricing-modern .marketing-pricing-trustline { align-items: center; flex-direction: column; gap: 0.7rem; }
+  .marketing-pricing-modern .marketing-pricing-grid-heading { display: block; }
+  .marketing-pricing-modern .marketing-pricing-grid-heading > p { max-width: 27rem; margin-top: 1rem; }
+  .marketing-pricing-grid-surface .marketing-pricing-grid { grid-template-columns: 1fr; gap: 0.75rem; }
+  .marketing-pricing-grid-surface .marketing-price-card, .marketing-pricing-grid-surface .marketing-price-card-pro { padding: 1.2rem; }
+  .marketing-pricing-grid-surface .marketing-price-description { min-height: 0; }
+  .marketing-pricing-modern .marketing-pricing-bottom .marketing-button { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-pricing-grid-surface .marketing-pricing-billing-toggle::before,
+  .marketing-pricing-grid-surface .marketing-pricing-billing-option { transition: none; }
+  .marketing-pricing-grid-surface .marketing-price-card-pro { transform: none; }
+}
+
+/* Homepage pricing is a decision aid; the pricing page owns the full detail. */
+.marketing-pricing-grid-compact .marketing-pricing-grid { margin-top: 1.7rem; }
+.marketing-pricing-grid-compact .marketing-price-card { min-height: 25rem; padding: 1.15rem; }
+.marketing-pricing-grid-compact .marketing-price-card-top { min-height: 4.25rem; }
+.marketing-pricing-grid-compact .marketing-price-name { font-size: 1.1rem; }
+.marketing-pricing-grid-compact .marketing-price-target { max-width: 15rem; }
+.marketing-pricing-grid-compact .marketing-price-value { margin-top: 0.8rem; }
+.marketing-pricing-grid-compact .marketing-price-value strong { font-size: clamp(2.35rem, 3.5vw, 2.9rem); }
+.marketing-pricing-grid-compact .marketing-price-description { min-height: 3.45rem; margin-bottom: 0.9rem; }
+.marketing-pricing-grid-compact .marketing-price-highlights { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+.marketing-pricing-grid-compact .marketing-price-highlights li { display: flex; align-items: flex-start; gap: 0.45rem; color: var(--marketing-ink-deep); font-size: 0.69rem; font-weight: 700; line-height: 1.35; }
+.marketing-pricing-grid-compact .marketing-price-highlights svg { width: 0.85rem; height: 0.85rem; flex: 0 0 auto; margin-top: 0.05rem; color: var(--marketing-accent); }
+.marketing-pricing-grid-compact .marketing-price-compact-cta { width: 100%; margin-top: auto; }
+.marketing-pricing-grid-compact .marketing-price-card-pro { border-color: color-mix(in srgb, var(--marketing-accent) 72%, var(--marketing-line)); background: linear-gradient(180deg, color-mix(in srgb, var(--marketing-accent-wash) 58%, white), var(--marketing-paper) 38%); box-shadow: 0 1.25rem 3rem color-mix(in srgb, var(--marketing-accent) 15%, transparent); }
+.marketing-pricing-compare-link { display: inline-flex; align-items: center; gap: 0.35rem; margin-top: 1.7rem; font-weight: 800; }
+
+.marketing-comparison-desktop { display: grid; gap: 1rem; margin-top: 2.4rem; }
+.marketing-comparison-category { overflow: hidden; border: 1px solid var(--marketing-line); border-radius: 1.1rem; background: var(--marketing-paper); box-shadow: 0 0.8rem 2rem color-mix(in srgb, var(--marketing-ink-deep) 4%, transparent); }
+.marketing-comparison-category-inner { min-width: 760px; }
+.marketing-comparison-category-heading,
+.marketing-comparison-row { display: grid; grid-template-columns: minmax(13rem, 1.55fr) repeat(4, minmax(7.2rem, 1fr)); }
+.marketing-comparison-category-heading { background: color-mix(in srgb, var(--marketing-accent-wash) 38%, white); }
+.marketing-comparison-category-heading h3,
+.marketing-comparison-category-heading strong,
+.marketing-comparison-row > span { min-height: 2.85rem; display: flex; align-items: center; border-right: 1px solid var(--marketing-line); border-bottom: 1px solid var(--marketing-line); padding: 0.7rem 0.8rem; font-size: 0.72rem; }
+.marketing-comparison-category-heading h3 { margin: 0; color: var(--marketing-ink); font-size: 0.77rem; font-weight: 850; }
+.marketing-comparison-category-heading strong { justify-content: center; color: var(--marketing-muted); font-size: 0.7rem; text-align: center; }
+.marketing-comparison-category-heading strong:last-child,
+.marketing-comparison-row > span:last-child { border-right: 0; }
+.marketing-comparison-category-heading strong.marketing-comparison-pro { color: var(--marketing-accent); }
+.marketing-comparison-row:last-child > span { border-bottom: 0; }
+.marketing-comparison-row-label { color: var(--marketing-ink-deep); font-weight: 700; }
+.marketing-comparison-value { justify-content: center; color: var(--marketing-muted); text-align: center; }
+.marketing-comparison-value-included { color: var(--marketing-ink-deep); font-weight: 750; }
+.marketing-comparison-value-not-included { color: color-mix(in srgb, var(--marketing-muted) 58%, white); }
+.marketing-comparison-mobile { display: none; }
+
+@media (max-width: 899px) {
+  .marketing-pricing-grid-compact .marketing-price-card { min-height: 24rem; }
+}
+
+@media (max-width: 639px) {
+  .marketing-pricing-grid-compact .marketing-pricing-grid { margin-top: 1.35rem; }
+  .marketing-pricing-grid-compact .marketing-price-card { min-height: 0; padding: 1.05rem; }
+  .marketing-pricing-grid-compact .marketing-price-description { min-height: 0; }
+  .marketing-pricing-grid-compact .marketing-price-compact-cta { margin-top: 1.15rem; }
+  .marketing-comparison-desktop { display: none; }
+  .marketing-comparison-mobile { display: block; margin-top: 2rem; }
+  .marketing-comparison-plan-selector { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.25rem; border-radius: 0.85rem; background: color-mix(in srgb, var(--marketing-paper) 78%, var(--marketing-accent-wash)); padding: 0.25rem; }
+  .marketing-comparison-plan-selector button { min-height: 2.55rem; border: 0; border-radius: 0.65rem; background: transparent; color: var(--marketing-muted); font: inherit; font-size: 0.68rem; font-weight: 800; }
+  .marketing-comparison-plan-selector button:focus-visible { outline: 2px solid var(--marketing-accent); outline-offset: 2px; }
+  .marketing-comparison-plan-selector .marketing-comparison-plan-selected { background: var(--marketing-ink); color: var(--marketing-paper); }
+  .marketing-comparison-selected-plan { margin: 0.85rem 0 0; color: var(--marketing-muted); font-size: 0.72rem; font-weight: 750; text-align: center; }
+  .marketing-comparison-accordions { display: grid; gap: 0.55rem; margin-top: 1rem; }
+  .marketing-comparison-accordions details { border: 1px solid var(--marketing-line); border-radius: 0.9rem; background: var(--marketing-paper); }
+  .marketing-comparison-accordions summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; cursor: pointer; list-style: none; padding: 0.9rem 0.95rem; color: var(--marketing-ink); font-size: 0.8rem; font-weight: 850; }
+  .marketing-comparison-accordions summary::-webkit-details-marker { display: none; }
+  .marketing-comparison-accordions summary::after { content: "+"; color: var(--marketing-accent); font-size: 1.1rem; font-weight: 500; }
+  .marketing-comparison-accordions details[open] summary::after { content: "−"; }
+  .marketing-comparison-accordions summary small { display: none; }
+  .marketing-comparison-mobile-rows { border-top: 1px solid var(--marketing-line); padding: 0.2rem 0.95rem 0.45rem; }
+  .marketing-comparison-mobile-row { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; border-bottom: 1px solid color-mix(in srgb, var(--marketing-line) 72%, transparent); padding: 0.75rem 0; }
+  .marketing-comparison-mobile-row:last-child { border-bottom: 0; }
+  .marketing-comparison-mobile-row span { color: var(--marketing-muted); font-size: 0.72rem; line-height: 1.4; }
+  .marketing-comparison-mobile-row strong { flex: 0 0 auto; color: var(--marketing-ink-deep); font-size: 0.72rem; text-align: right; }
+}

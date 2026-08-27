@@ -1,0 +1,6 @@
+export const RESERVEVIA_LOGO_DARK = "/assets/logo/reservevia-mark-dark.png"
+export const RESERVEVIA_LOGO_LIGHT = "/assets/logo/reservevia-mark-light.png"
+export const RESERVEVIA_OG_HERO = "/assets/og/reservevia-og-hero.png"
+export const RESERVEVIA_PWA_ICON = "/icon-512.png"
+export const RESERVEVIA_APPLE_TOUCH_ICON = "/apple-touch-icon.png"
+export const RESERVEVIA_FAVICON = "/favicon.ico"

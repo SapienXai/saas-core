@@ -1,0 +1,392 @@
+.consumer-state-page {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-height: min(100svh, 48rem);
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 5rem 1.5rem;
+  background:
+    radial-gradient(circle at 15% 15%, rgba(245, 182, 130, 0.2), transparent 30%),
+    radial-gradient(circle at 86% 78%, rgba(177, 161, 237, 0.23), transparent 34%),
+    linear-gradient(135deg, #fffdf9 0%, #f9f6ff 52%, #fffaf7 100%);
+  color: #24202a;
+}
+
+.consumer-state-page-compact {
+  min-height: 25rem;
+  padding: 2.5rem 1rem;
+  background: transparent;
+}
+
+.consumer-state-shell {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 35rem);
+  padding: 3.5rem 3rem 3rem;
+  border: 1px solid rgba(61, 48, 79, 0.09);
+  border-radius: 2rem;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 2rem 5rem rgba(78, 62, 105, 0.12), 0 0.35rem 1.5rem rgba(78, 62, 105, 0.06);
+  text-align: center;
+  backdrop-filter: blur(22px);
+}
+
+.consumer-state-page-compact .consumer-state-shell {
+  padding: 2.5rem 1.5rem 2rem;
+  border-radius: 1.5rem;
+}
+
+.consumer-state-mark {
+  position: relative;
+  width: 6rem;
+  height: 6rem;
+  margin: 0 auto 1.65rem;
+}
+
+.consumer-state-mark-ring,
+.consumer-state-mark-orbit,
+.consumer-state-mark-icon {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+}
+
+.consumer-state-mark-ring {
+  border: 1px solid rgba(116, 91, 154, 0.14);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(242, 235, 255, 0.74));
+  box-shadow: inset 0 0 0 0.55rem rgba(255, 255, 255, 0.56), 0 0.8rem 1.75rem rgba(111, 85, 153, 0.13);
+}
+
+.consumer-state-mark-orbit {
+  inset: -0.45rem;
+  border: 1px dashed rgba(238, 160, 115, 0.48);
+  transform: rotate(-20deg);
+  animation: consumer-state-orbit 9s linear infinite;
+}
+
+.consumer-state-mark-icon {
+  display: grid;
+  place-items: center;
+  color: #745b9a;
+}
+
+.consumer-state-mark-icon svg {
+  width: 1.7rem;
+  height: 1.7rem;
+  stroke-width: 1.65;
+}
+
+.consumer-state-eyebrow {
+  margin: 0 0 0.7rem;
+  color: #a77b69;
+  font-size: 0.71rem;
+  font-weight: 750;
+  letter-spacing: 0.18em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.consumer-state-shell h1 {
+  max-width: 28rem;
+  margin: 0 auto;
+  color: #25202b;
+  font-size: clamp(2rem, 5vw, 3.35rem);
+  font-weight: 650;
+  letter-spacing: -0.055em;
+  line-height: 1.02;
+}
+
+.consumer-state-page-compact .consumer-state-shell h1 {
+  font-size: clamp(1.65rem, 4vw, 2.35rem);
+}
+
+.consumer-state-description {
+  max-width: 29rem;
+  margin: 1rem auto 0;
+  color: #736a7e;
+  font-size: 0.98rem;
+  line-height: 1.7;
+}
+
+.consumer-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  margin-top: 1.8rem;
+}
+
+.consumer-state-button {
+  display: inline-flex;
+  min-height: 2.8rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border-radius: 999px;
+  padding: 0.72rem 1.15rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.consumer-state-button:hover {
+  transform: translateY(-2px);
+}
+
+.consumer-state-button-loading,
+.consumer-state-button-loading:hover {
+  cursor: wait;
+  opacity: 0.88;
+  transform: none;
+}
+
+.consumer-state-button svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.consumer-state-button-primary {
+  border: 1px solid #6f5992;
+  background: #6f5992;
+  color: #fff;
+  box-shadow: 0 0.65rem 1.1rem rgba(111, 89, 146, 0.22);
+}
+
+.consumer-state-button-primary:hover {
+  background: #604b82;
+  box-shadow: 0 0.85rem 1.35rem rgba(111, 89, 146, 0.27);
+}
+
+.consumer-state-button-secondary {
+  border: 1px solid rgba(111, 89, 146, 0.16);
+  background: rgba(255, 255, 255, 0.72);
+  color: #604b82;
+}
+
+.consumer-state-button-secondary:hover {
+  background: #fff;
+}
+
+.consumer-state-glow {
+  position: absolute;
+  z-index: -1;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 50%;
+  filter: blur(2px);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.consumer-state-glow-one {
+  top: 7%;
+  left: 3%;
+  background: radial-gradient(circle, rgba(242, 186, 137, 0.35), transparent 68%);
+  animation: consumer-state-float 8s ease-in-out infinite;
+}
+
+.consumer-state-glow-two {
+  right: 4%;
+  bottom: 5%;
+  background: radial-gradient(circle, rgba(173, 156, 235, 0.3), transparent 68%);
+  animation: consumer-state-float 10s ease-in-out -2s infinite reverse;
+}
+
+@keyframes consumer-state-orbit {
+  from { transform: rotate(-20deg); }
+  to { transform: rotate(340deg); }
+}
+
+@keyframes consumer-state-float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -0.8rem, 0) scale(1.05); }
+}
+
+@media (max-width: 520px) {
+  .consumer-state-page {
+    min-height: min(100svh, 42rem);
+    padding: 2rem 1rem;
+  }
+
+  .consumer-state-shell {
+    padding: 2.75rem 1.3rem 2.25rem;
+    border-radius: 1.5rem;
+  }
+
+  .consumer-state-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .consumer-state-button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .consumer-state-mark-orbit,
+  .consumer-state-glow-one,
+  .consumer-state-glow-two {
+    animation: none;
+  }
+
+  .consumer-state-button {
+    transition: none;
+  }
+}
+
+.reservation-confirmation-card {
+  width: min(100% - 1.25rem, 34rem);
+  margin: 1.25rem auto;
+  padding: 2rem 1.5rem 1.5rem;
+  border: 1px solid rgba(61, 48, 79, 0.09);
+  border-radius: 1.6rem;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 2rem 5rem rgba(78, 62, 105, 0.12), 0 0.35rem 1.5rem rgba(78, 62, 105, 0.06);
+  text-align: center;
+}
+
+.reservation-confirmation-badge {
+  display: grid;
+  width: 3.8rem;
+  height: 3.8rem;
+  place-items: center;
+  margin: 0 auto 0.9rem;
+  border: 1px solid rgba(180, 132, 42, 0.2);
+  border-radius: 1.2rem;
+  background: linear-gradient(145deg, #fff8e8, #ffedc2);
+  color: #a46b18;
+  box-shadow: 0 0.85rem 1.8rem rgba(164, 107, 24, 0.13);
+}
+
+.reservation-confirmation-badge svg {
+  width: 1.8rem;
+  height: 1.8rem;
+  stroke-width: 1.6;
+}
+
+.reservation-confirmation-card h1 {
+  margin: 0;
+  color: #25202b;
+  font-size: clamp(1.8rem, 5vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.055em;
+  line-height: 1.04;
+}
+
+.reservation-confirmation-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 auto 0.7rem;
+  border: 1px solid rgba(180, 132, 42, 0.2);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  background: #fff8e8;
+  color: #936019;
+  font-size: 0.7rem;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+.reservation-confirmation-status svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.reservation-confirmation-subtitle {
+  margin: 0.55rem auto 0;
+  color: #50465c;
+  font-size: 0.9rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.reservation-confirmation-note {
+  max-width: 28rem;
+  margin: 0.65rem auto 0;
+  color: #736a7e;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.reservation-confirmation-details {
+  display: grid;
+  gap: 0.2rem;
+  margin-top: 1.2rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid rgba(111, 89, 146, 0.1);
+  border-radius: 1.1rem;
+  background: rgba(249, 247, 255, 0.78);
+  text-align: left;
+}
+
+.reservation-confirmation-details > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0.35rem;
+}
+
+.reservation-confirmation-details span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+  color: #82788b;
+  font-size: 0.75rem;
+}
+
+.reservation-confirmation-details span svg {
+  width: 1rem;
+  height: 1rem;
+  color: #846ba9;
+}
+
+.reservation-confirmation-details strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #30283a;
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.reservation-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.55rem;
+  margin-top: 1.1rem;
+}
+
+@media (max-width: 520px) {
+  .reservation-confirmation-card {
+    width: calc(100% - 1.25rem);
+    margin: 0.75rem auto;
+    padding: 1.5rem 0.9rem 1rem;
+    border-radius: 1.35rem;
+  }
+
+  .reservation-confirmation-details > div {
+    gap: 0.65rem;
+    padding-inline: 0.25rem;
+  }
+
+  .reservation-confirmation-details strong {
+    text-align: right;
+  }
+
+  .reservation-confirmation-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

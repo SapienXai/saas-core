@@ -1,0 +1,52 @@
+import { NextResponse } from "next/server"
+import { sendEmail } from "@/lib/email-service"
+import { getCurrentUserAccess } from "@/lib/auth-utils"
+
+export async function POST(request: Request) {
+  try {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 })
+    }
+
+    const access = await getCurrentUserAccess()
+    if (!access || access.platformRole !== "platform_owner") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    }
+
+    const { email } = await request.json()
+
+    if (!email) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 })
+    }
+
+    const { success, data, error } = await sendEmail({
+      to: email,
+      subject: "Test Email from Reservevia",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #0d6efd;">Email Test Successful!</h1>
+          <p>This is a test email from the Reservevia reservation system.</p>
+          <p>If you're receiving this email, it means your email configuration is working correctly.</p>
+          <p>You can now use the reservation system with confidence that email notifications will be delivered.</p>
+          <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666;">
+            <p>This is an automated message, please do not reply to this email.</p>
+          </div>
+        </div>
+      `,
+    })
+
+    if (!success) {
+      console.error("Error sending test email:", error)
+      const errorMessage =
+        typeof error === "object" && error && "message" in error
+          ? String((error as { message?: unknown }).message || "Failed to send email")
+          : "Failed to send email"
+      return NextResponse.json({ error: errorMessage }, { status: 500 })
+    }
+
+    return NextResponse.json({ message: "Email sent successfully", id: data?.id || null })
+  } catch (error) {
+    console.error("Error in test-email API route:", error)
+    return NextResponse.json({ error: "An unexpected error occurred" }, { status: 500 })
+  }
+}

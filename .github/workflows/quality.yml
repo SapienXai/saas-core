@@ -1,0 +1,147 @@
+name: Reservevia quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "30 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reservevia-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SUPABASE_URL: https://ci.invalid.supabase.co
+  SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
+  SUPABASE_ANON_KEY: ci-placeholder-anon-key
+  NEXT_PUBLIC_SUPABASE_URL: https://ci.invalid.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+  NEXT_PUBLIC_SITE_URL: https://reservevia.com
+  NEXT_PUBLIC_APP_URL: https://app.reservevia.com
+  RESERVEVIA_ROOT_DOMAIN: reservevia.com
+  RESERVEVIA_APP_DOMAIN: app.reservevia.com
+  RESERVEVIA_APP_URL: https://app.reservevia.com
+  RESERVEVIA_RATE_LIMIT_SECRET: ci-only-rate-limit-secret
+  RESERVEVIA_API_CREDENTIAL_PEPPER: ci-only-api-credential-pepper
+  CRON_SECRET: ci-only-cron-secret
+  PADDLE_ENVIRONMENT: sandbox
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test:run
+      - run: pnpm run build
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run db:start:ci
+      - run: pnpm run db:test:clean
+      - run: pnpm run db:test:migrations
+      - run: pnpm run db:types
+      - run: git diff --exit-code -- types/supabase.ts
+
+  e2e-critical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    needs: [quality, database]
+    env:
+      NODE_ENV: development
+      RESERVEVIA_APP_URL: http://127.0.0.1:3000
+      RESERVEVIA_MAIL_URL: http://127.0.0.1:54524
+      RESERVEVIA_SCENARIOS_ENABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run db:start:ci
+      - run: pnpm run db:reset
+      - name: Start app for protocol auth E2E
+        run: |
+          pnpm run dev:local -- --port 3001 > /tmp/reservevia-auth-e2e-next.log 2>&1 &
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3001/login > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/reservevia-auth-e2e-next.log
+          exit 1
+      - run: pnpm run auth:e2e
+        env:
+          RESERVEVIA_APP_URL: http://127.0.0.1:3001
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run e2e:critical
+        env:
+          PADDLE_ENVIRONMENT: sandbox
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reservevia-playwright-critical
+          path: output/playwright
+          if-no-files-found: ignore
+
+  e2e-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: [quality, database, e2e-critical]
+    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
+    env:
+      NODE_ENV: development
+      RESERVEVIA_APP_URL: http://127.0.0.1:3000
+      RESERVEVIA_MAIL_URL: http://127.0.0.1:54524
+      RESERVEVIA_SCENARIOS_ENABLED: "1"
+      RESERVEVIA_FULL_E2E: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run db:start:ci
+      - run: pnpm run db:reset
+      - run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm run e2e:full
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reservevia-playwright-full
+          path: output/playwright
+          if-no-files-found: ignore

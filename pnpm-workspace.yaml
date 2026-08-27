@@ -1,5 +1,2 @@
-packages:
-  - apps/*
-  - packages/*
-  - examples/*
-
+allowBuilds:
+  unrs-resolver: true

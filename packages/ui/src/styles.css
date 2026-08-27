@@ -1,4 +1,0 @@
-/* Package entrypoint: component styles are split by ownership and concern. */
-@import "./styles/tokens.css";
-@import "./styles/components.css";
-@import "./styles/shell.css";

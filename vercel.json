@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/billing/lifecycle",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/internal/cron/email-outbox",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

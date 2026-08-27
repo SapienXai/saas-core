@@ -1,0 +1,22 @@
+import { Badge } from "@/components/ui/badge"
+import { PlatformPlanEditor, RevokeOverrideButton, SubscriptionOverrideForm } from "@/components/platform/platform-billing-controls"
+import { listPlatformPlans, listPlatformWorkspaces } from "@/lib/platform-admin"
+import { getPlatformBillingSnapshot } from "@/lib/platform-operations"
+import { canManageBilling, requirePlatformRole } from "@/lib/platform-authorization"
+
+export const dynamic = "force-dynamic"
+
+export default async function PlatformBillingPage() {
+  const [{ role }, plans, workspaces, snapshot] = await Promise.all([requirePlatformRole(), listPlatformPlans(), listPlatformWorkspaces(), getPlatformBillingSnapshot()])
+  const canEdit = canManageBilling(role)
+  const activeOverrides = workspaces.filter((workspace) => workspace.override)
+  return <div className="space-y-8">
+    <div><p className="text-sm font-semibold text-violet-300">Commercial controls</p><h2 className="mt-2 text-3xl font-bold text-white">Billing &amp; plans</h2><p className="mt-2 max-w-2xl text-sm text-slate-400">Operate local entitlements and inspect provider synchronization without exposing payment secrets or changing Paddle from this control plane.</p></div>
+    <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[["Paid workspaces", snapshot.paid], ["Active subscriptions", snapshot.active], ["Past due", snapshot.pastDue], ["Provider mismatches", snapshot.providerMismatches]].map(([label, value]) => <div key={String(label)} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.13em] text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold text-white">{value}</p></div>)}</section>
+    <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-xs font-semibold text-slate-400">Manual overrides</p><p className="mt-1 text-xl font-semibold text-white">{snapshot.overrides}</p><p className="mt-1 text-xs text-slate-500">{snapshot.overridesExpiringSoon} expiring within 14 days</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-xs font-semibold text-slate-400">Failed webhooks</p><p className="mt-1 text-xl font-semibold text-white">{snapshot.failedWebhooksLast7d}</p><p className="mt-1 text-xs text-slate-500">Last 7 days</p></div><div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"><p className="text-xs font-semibold text-slate-400">Provider</p><p className="mt-1 text-xl font-semibold text-white">{snapshot.billingConfigured ? "Configured" : "Not configured"}</p><p className="mt-1 text-xs text-slate-500">Credentials only; no secret values shown</p></div></div>
+    <section className="grid gap-5 xl:grid-cols-2">{plans.map((plan: any) => <PlatformPlanEditor key={plan.key} plan={plan} canEdit={canEdit} />)}</section>
+    <SubscriptionOverrideForm workspaces={workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name, planKey: workspace.planKey }))} plans={plans.map((plan: any) => ({ key: plan.key, name: plan.name }))} canEdit={canEdit} />
+    <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5"><div className="flex items-center justify-between"><div><h3 className="font-semibold text-white">Active manual overrides</h3><p className="mt-1 text-xs text-slate-500">Overrides are resolved by effective date and can be revoked without touching Paddle.</p></div><Badge variant="outline" className="border-amber-400/25 text-amber-200">{activeOverrides.length}</Badge></div>{activeOverrides.length === 0 ? <p className="mt-5 text-sm text-slate-500">No active overrides.</p> : <div className="mt-4 divide-y divide-white/10">{activeOverrides.map((workspace) => <div key={workspace.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="font-medium text-white">{workspace.name} <span className="text-slate-500">→</span> <span className="text-amber-200">{workspace.override?.planKey}</span></p><p className="mt-1 text-xs text-slate-500">{workspace.override?.reason}{workspace.override?.effectiveUntil ? ` · until ${new Date(workspace.override.effectiveUntil).toLocaleDateString()}` : " · no expiry"}</p></div><RevokeOverrideButton overrideId={workspace.override!.id} canEdit={canEdit} /></div>)}</div>}</section>
+    {!canEdit && <p className="text-xs text-slate-500">Your role has billing read access only. Only the platform owner and billing admin can change the catalog or overrides.</p>}
+  </div>
+}
