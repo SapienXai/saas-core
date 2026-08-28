@@ -22,6 +22,8 @@ export function PasswordField({ label, className, id, ...props }: PasswordFieldP
         id={id}
         type={visible ? "text" : "password"}
         aria-label={props["aria-label"] || label}
+        aria-errormessage={props["aria-errormessage"]}
+        data-password-visibility={visible ? "visible" : "hidden"}
         className={cn("auth-input", className)}
       />
       <button
@@ -30,6 +32,7 @@ export function PasswordField({ label, className, id, ...props }: PasswordFieldP
         className="auth-password-toggle"
         aria-label={visible ? getTranslation("auth.hidePassword") : getTranslation("auth.showPassword")}
         aria-pressed={visible}
+        aria-controls={id}
       >
         {visible ? <EyeOff aria-hidden="true" strokeWidth={1.75} /> : <Eye aria-hidden="true" strokeWidth={1.75} />}
       </button>

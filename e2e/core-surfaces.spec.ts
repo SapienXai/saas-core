@@ -86,6 +86,12 @@ test("@critical public and auth surfaces remain available", async ({ page }) => 
   await expect(page.locator("#signup-email")).toBeVisible()
   await page.goto("/forgot-password")
   await expect(page.locator("#forgot-email")).toBeVisible()
+  await page.goto("/reset-password")
+  await expect(page.locator("#new-password")).toBeVisible()
+  await expect(page.locator("#new-password-confirmation")).toBeVisible()
+  await page.locator("#new-password").fill(password)
+  await page.locator("#new-password").locator("xpath=following-sibling::button").click()
+  await expect(page.locator("#new-password")).toHaveAttribute("type", "text")
 })
 
 test("@critical signup confirmation identifies the destination and exposes Mailpit only in development", async ({ page }, testInfo) => {

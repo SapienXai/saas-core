@@ -282,6 +282,10 @@
 
 .auth-page .auth-input { padding-inline: 48px 16px; }
 .auth-page .auth-card input::placeholder { color: rgba(190, 201, 199, 0.52); }
+.auth-page .auth-input[data-password-visibility="visible"] {
+  -webkit-text-security: none !important;
+  text-security: none;
+}
 
 .auth-page .auth-card input:focus-visible {
   border-color: color-mix(in srgb, var(--saas-core-auth-accent) 78%, white 22%);
@@ -419,6 +423,12 @@
   color: #ffd9de;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.auth-success-alert {
+  border-color: color-mix(in srgb, var(--saas-core-auth-accent) 30%, transparent);
+  background: rgba(23, 61, 54, 0.42);
+  color: #e0fff4;
 }
 
 .auth-form-card form:not(.auth-form) { display: flex; flex-direction: column; gap: 14px; }
