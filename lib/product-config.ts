@@ -1,3 +1,5 @@
+import productCatalog from "@/product.catalog.json"
+
 export type ProductPlanDefinition = {
   key: string
   name: string
@@ -15,7 +17,7 @@ export type ProductUsageMetricDefinition = {
 }
 
 export type ProductCatalog = {
-  defaultPlanKey?: string
+  defaultPlanKey: string
   plans: readonly ProductPlanDefinition[]
   usageMetrics?: readonly ProductUsageMetricDefinition[]
 }
@@ -51,8 +53,5 @@ export const PRODUCT_CONFIG: ProductConfig = {
     pushNotifications: true,
     pwa: true,
   },
-  catalog: {
-    plans: [],
-    usageMetrics: [],
-  },
+  catalog: productCatalog as ProductCatalog,
 }

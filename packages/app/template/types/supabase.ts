@@ -1172,6 +1172,13 @@ export type Database = {
           invitation_id: string
         }[]
       }
+      get_core_schema_metadata: {
+        Args: never
+        Returns: {
+          runtime_major: number
+          schema_version: string
+        }[]
+      }
       has_workspace_role: {
         Args: {
           allowed_roles: string[]
@@ -1187,6 +1194,18 @@ export type Database = {
       is_workspace_member: {
         Args: { target_user_id?: string; target_workspace_id: string }
         Returns: boolean
+      }
+      sync_core_catalog: {
+        Args: {
+          target_deactivate_missing?: boolean
+          target_default_plan_key: string
+          target_plans: Json
+        }
+        Returns: {
+          configured_default_plan_key: string
+          deactivated_count: number
+          synchronized_count: number
+        }[]
       }
       update_workspace_member: {
         Args: {

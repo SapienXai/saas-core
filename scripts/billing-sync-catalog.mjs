@@ -62,7 +62,9 @@ function normalizeCatalog(value) {
     if (!isObject(metric) || !isPlanKey(metric.key) || typeof metric.name !== "string" || !metric.name.trim()) fail(`Invalid product usage metric: ${metric?.key || "missing"}`)
     return { key: metric.key, name: metric.name.trim(), unit: typeof metric.unit === "string" ? metric.unit : null }
   })
-  if (value.defaultPlanKey !== undefined && value.defaultPlanKey !== null && !keys.has(value.defaultPlanKey)) fail(`defaultPlanKey ${value.defaultPlanKey} is not present in plans.`)
+  if (!isPlanKey(value.defaultPlanKey) || !keys.has(value.defaultPlanKey)) fail(`defaultPlanKey must name an existing active product plan.`)
+  const defaultPlan = plans.find((plan) => plan.key === value.defaultPlanKey)
+  if (!defaultPlan?.active) fail(`defaultPlanKey ${value.defaultPlanKey} must name an active product plan.`)
   return { plans, usageMetrics, defaultPlanKey: value.defaultPlanKey || null }
 }
 
@@ -85,13 +87,16 @@ for (const plan of catalog.plans) {
 }
 
 const missingExisting = [...existing.keys()].filter((key) => !catalog.plans.some((plan) => plan.key === key))
-if (deactivateMissing) {
-  for (const key of missingExisting) writes.push({ key, active: false })
-}
 
 if (!dryRun) {
-  const { error } = await supabase.from("plans").upsert(writes, { onConflict: "key" })
+  const { data, error } = await supabase.rpc("sync_core_catalog", {
+    target_plans: writes,
+    target_default_plan_key: catalog.defaultPlanKey,
+    target_deactivate_missing: deactivateMissing,
+  })
   if (error) fail(`Could not synchronize the Core plan catalog: ${error.message}`)
+  const result = Array.isArray(data) ? data[0] : data
+  if (!result || result.configured_default_plan_key !== catalog.defaultPlanKey) fail("Core catalog sync did not persist the configured default plan.")
 }
 
 console.log(JSON.stringify({

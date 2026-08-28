@@ -14,7 +14,7 @@ export function defineProductConfig(config: SaaSCoreProductConfig): SaaSCoreProd
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(config.identity.slug)) throw new Error("Product identity slug must be kebab-case.")
   const planKeys = config.catalog.plans.map((plan) => plan.key)
   if (new Set(planKeys).size !== planKeys.length) throw new Error("Product plan keys must be unique.")
-  if (config.catalog.defaultPlanKey && !planKeys.includes(config.catalog.defaultPlanKey)) throw new Error("The default plan key must exist in the product catalog.")
+  if (!config.catalog.defaultPlanKey || !planKeys.includes(config.catalog.defaultPlanKey)) throw new Error("The product catalog must define an existing default plan key.")
   return config
 }
 

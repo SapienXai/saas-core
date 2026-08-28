@@ -23,4 +23,16 @@ const productVocabulary = ["rest" + "aurant", "reserv" + "ation", "seat" + "ing"
 if (productVocabulary.some((term) => migration.includes(term))) {
   throw new Error("The clean Core migration contains product-domain vocabulary.")
 }
+if (!migration.includes("create table private.core_schema_metadata") || !migration.includes("schema_version, runtime_major") || !migration.includes("values (true, '2.0', 2)")) {
+  throw new Error("The Core 2.0 baseline does not initialize private schema metadata.")
+}
+if (!migration.includes("create table private.core_settings") || !migration.includes("default_plan_key text references public.plans(key)")) {
+  throw new Error("The Core 2.0 baseline does not define the server-controlled default plan setting.")
+}
+if (migration.includes("unique (created_by)") || migration.includes("unique(created_by)")) {
+  throw new Error("The Core tenancy model must not impose a one-workspace-per-creator database constraint.")
+}
+if (!migration.includes("private.core_default_plan_key()") || !migration.includes("public.sync_core_catalog")) {
+  throw new Error("Workspace bootstrap is not wired to the explicit product catalog/default-plan contract.")
+}
 console.log(`Core schema verified: ${tables.length} generic tables, RLS enabled on every table, no product tables.`)

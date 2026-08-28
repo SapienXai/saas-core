@@ -1,0 +1,15 @@
+{
+  "defaultPlanKey": "default",
+  "plans": [
+    {
+      "key": "default",
+      "name": "Default",
+      "features": {},
+      "limits": {},
+      "metadata": {
+        "development": true
+      }
+    }
+  ],
+  "usageMetrics": []
+}

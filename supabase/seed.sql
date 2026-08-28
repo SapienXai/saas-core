@@ -18,6 +18,10 @@ on conflict (key) do update set
   active = true,
   updated_at = now();
 
+insert into private.core_settings (singleton, default_plan_key)
+values (true, 'core-test')
+on conflict (singleton) do update set default_plan_key = excluded.default_plan_key, updated_at = now();
+
 insert into public.workspaces (id, name, slug, status)
 values ('00000000-0000-4000-8000-000000000010', 'Example Workspace', 'example-workspace', 'active')
 on conflict (id) do nothing;

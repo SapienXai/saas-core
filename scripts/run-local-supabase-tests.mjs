@@ -27,7 +27,7 @@ const environment = {
   SUPABASE_JWT_SECRET: status.JWT_SECRET,
 }
 
-const result = spawnSync("./node_modules/.bin/vitest", ["run", "test/core-rls.integration.test.ts"], {
+const result = spawnSync("./node_modules/.bin/vitest", ["run", "--no-file-parallelism", "test/core-rls.integration.test.ts", "test/default-plan.integration.test.ts"], {
   stdio: "inherit",
   env: environment,
 })

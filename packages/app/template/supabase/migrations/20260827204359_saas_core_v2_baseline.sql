@@ -32,6 +32,30 @@ create table public.plans (
 
 create index plans_active_sort_idx on public.plans (active, sort_order);
 
+create table private.core_schema_metadata (
+  singleton boolean primary key default true check (singleton),
+  schema_version text not null,
+  runtime_major integer not null check (runtime_major > 0),
+  updated_at timestamptz not null default now()
+);
+
+insert into private.core_schema_metadata (singleton, schema_version, runtime_major)
+values (true, '2.0', 2);
+
+create table private.core_settings (
+  singleton boolean primary key default true check (singleton),
+  default_plan_key text references public.plans(key),
+  updated_at timestamptz not null default now()
+);
+
+insert into private.core_settings (singleton, default_plan_key)
+values (true, null);
+
+alter table private.core_schema_metadata enable row level security;
+alter table private.core_settings enable row level security;
+revoke all on table private.core_schema_metadata, private.core_settings from public, anon, authenticated;
+grant all on table private.core_schema_metadata, private.core_settings to service_role;
+
 create table public.workspaces (
   id uuid primary key default gen_random_uuid(),
   name text not null check (length(btrim(name)) between 1 and 120),
@@ -480,6 +504,139 @@ as $$
   where subscription.workspace_id = target_workspace_id;
 $$;
 
+create or replace function private.core_default_plan_key()
+returns text
+language plpgsql stable security definer set search_path = public, private
+as $$
+declare
+  configured_plan_key text;
+begin
+  select default_plan_key into configured_plan_key
+  from private.core_settings
+  where singleton;
+
+  if configured_plan_key is null or not exists (
+    select 1 from public.plans where key = configured_plan_key and active = true
+  ) then
+    raise exception using message = 'PLAN_NOT_CONFIGURED';
+  end if;
+
+  return configured_plan_key;
+end;
+$$;
+
+create or replace function public.sync_core_catalog(
+  target_plans jsonb,
+  target_default_plan_key text,
+  target_deactivate_missing boolean default false
+)
+returns table (synchronized_count integer, deactivated_count integer, configured_default_plan_key text)
+language plpgsql security definer set search_path = public, private
+as $$
+declare
+  plan_item jsonb;
+  plan_position integer;
+  synchronized integer := 0;
+  deactivated integer := 0;
+begin
+  if target_plans is null or jsonb_typeof(target_plans) <> 'array' or jsonb_array_length(target_plans) = 0 then
+    raise exception using message = 'CATALOG_INVALID';
+  end if;
+
+  if target_default_plan_key is null or target_default_plan_key !~ '^[a-z][a-z0-9_-]{0,63}$' then
+    raise exception using message = 'DEFAULT_PLAN_INVALID';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(target_plans) as entries(item)
+    group by entries.item ->> 'key'
+    having count(*) > 1
+  ) then
+    raise exception using message = 'CATALOG_INVALID';
+  end if;
+
+  for plan_item, plan_position in
+    select entries.item, entries.ordinality::integer
+    from jsonb_array_elements(target_plans) with ordinality as entries(item, ordinality)
+  loop
+    if plan_item ->> 'key' is null or plan_item ->> 'key' !~ '^[a-z][a-z0-9_-]{0,63}$'
+      or nullif(btrim(plan_item ->> 'name'), '') is null
+      or (plan_item ? 'active' and jsonb_typeof(plan_item -> 'active') <> 'boolean')
+      or (plan_item ? 'features' and jsonb_typeof(plan_item -> 'features') <> 'object')
+      or (plan_item ? 'limits' and jsonb_typeof(plan_item -> 'limits') <> 'object')
+      or (plan_item ? 'metadata' and jsonb_typeof(plan_item -> 'metadata') <> 'object') then
+      raise exception using message = 'CATALOG_INVALID';
+    end if;
+
+    insert into public.plans (key, name, sort_order, active, features, limits, metadata)
+    values (
+      plan_item ->> 'key',
+      btrim(plan_item ->> 'name'),
+      coalesce(nullif(plan_item ->> 'sort_order', '')::integer, plan_position - 1),
+      coalesce((plan_item ->> 'active')::boolean, true),
+      coalesce(plan_item -> 'features', '{}'::jsonb),
+      coalesce(plan_item -> 'limits', '{}'::jsonb),
+      coalesce(plan_item -> 'metadata', '{}'::jsonb)
+    )
+    on conflict (key) do update set
+      name = excluded.name,
+      sort_order = excluded.sort_order,
+      active = excluded.active,
+      features = excluded.features,
+      limits = excluded.limits,
+      metadata = excluded.metadata,
+      updated_at = now();
+
+    synchronized := synchronized + 1;
+  end loop;
+
+  if not exists (
+    select 1
+    from jsonb_array_elements(target_plans) as entries(item)
+    where entries.item ->> 'key' = target_default_plan_key
+      and coalesce((entries.item ->> 'active')::boolean, true)
+  ) then
+    raise exception using message = 'DEFAULT_PLAN_INVALID';
+  end if;
+
+  if target_deactivate_missing then
+    update public.plans
+    set active = false, updated_at = now()
+    where key not in (
+      select entries.item ->> 'key'
+      from jsonb_array_elements(target_plans) as entries(item)
+    )
+      and active = true;
+    get diagnostics deactivated = row_count;
+  end if;
+
+  insert into private.core_settings (singleton, default_plan_key)
+  values (true, target_default_plan_key)
+  on conflict (singleton) do update set
+    default_plan_key = excluded.default_plan_key,
+    updated_at = now();
+
+  return query select synchronized, deactivated, target_default_plan_key;
+end;
+$$;
+
+create or replace function public.get_core_schema_metadata()
+returns table (schema_version text, runtime_major integer)
+language plpgsql stable security definer set search_path = public, private
+as $$
+begin
+  return query
+  select metadata.schema_version, metadata.runtime_major
+  from private.core_schema_metadata metadata
+  where metadata.singleton;
+
+  if not found then
+    raise exception using message = 'CORE_SCHEMA_METADATA_MISSING';
+  end if;
+end;
+$$;
+
 create or replace function public.bootstrap_initial_workspace(target_workspace_name text, target_workspace_slug text default null)
 returns table (workspace_id uuid, workspace_slug text)
 language plpgsql security definer set search_path = public, private
@@ -487,7 +644,6 @@ as $$
 declare
   actor uuid := auth.uid();
   workspace public.workspaces%rowtype;
-  owner_workspace_id uuid;
   owner_count integer;
   workspace_limit integer;
   default_plan_key text;
@@ -501,24 +657,13 @@ begin
   select count(*)::integer into owner_count
     from public.workspace_members
     where user_id = actor and role = 'owner';
-  select member.workspace_id into owner_workspace_id
-    from public.workspace_members member
-    join public.workspace_subscriptions subscription on subscription.workspace_id = member.workspace_id
-    where member.user_id = actor and member.role = 'owner'
-    order by member.created_at, member.workspace_id
-    limit 1;
-  if owner_workspace_id is not null then
-    workspace_limit := private.workspace_plan_limit(owner_workspace_id, 'core.workspaces');
-  else
-    select key into default_plan_key from public.plans where active order by sort_order, key limit 1;
-    if default_plan_key is null then raise exception using message = 'PLAN_NOT_CONFIGURED'; end if;
-    select case
-      when limits ? 'core.workspaces' and limits ->> 'core.workspaces' = 'null' then null
-      when limits ? 'core.workspaces' then nullif(limits ->> 'core.workspaces', '')::integer
-      else null
-    end into workspace_limit
-    from public.plans where key = default_plan_key;
-  end if;
+  default_plan_key := private.core_default_plan_key();
+  select case
+    when limits ? 'core.workspaces' and limits ->> 'core.workspaces' = 'null' then null
+    when limits ? 'core.workspaces' then nullif(limits ->> 'core.workspaces', '')::integer
+    else null
+  end into workspace_limit
+  from public.plans where key = default_plan_key;
   if workspace_limit is not null and owner_count >= workspace_limit then
     raise exception using message = 'WORKSPACE_LIMIT_REACHED';
   end if;
@@ -643,8 +788,7 @@ as $$
 declare
   default_plan_key text;
 begin
-  select key into default_plan_key from public.plans where active order by sort_order, key limit 1;
-  if default_plan_key is null then raise exception using message = 'PLAN_NOT_CONFIGURED'; end if;
+  default_plan_key := private.core_default_plan_key();
   insert into public.workspace_subscriptions (workspace_id, plan_key, status, source, current_period_start, current_period_end)
   values (new.id, default_plan_key, 'active', 'system', date_trunc('month', current_date)::date, (date_trunc('month', current_date) + interval '1 month')::date)
   on conflict (workspace_id) do nothing;
@@ -718,6 +862,9 @@ grant execute on function public.has_workspace_role(uuid, text[], uuid) to authe
 grant execute on function public.claim_email_delivery_event(uuid, uuid) to service_role;
 grant execute on function public.apply_email_delivery_webhook(text, text, text, timestamptz, text, boolean, jsonb) to service_role;
 grant execute on function private.workspace_feature_enabled(uuid, text) to authenticated;
+revoke all on function private.core_default_plan_key() from public, anon, authenticated;
+revoke all on function public.sync_core_catalog(jsonb, text, boolean), public.get_core_schema_metadata() from public, anon, authenticated;
+grant execute on function public.sync_core_catalog(jsonb, text, boolean), public.get_core_schema_metadata() to service_role;
 
 create policy workspace_assets_public_read on storage.objects for select using (bucket_id = 'workspace-assets');
 create policy workspace_assets_member_insert on storage.objects for insert to authenticated with check (bucket_id = 'workspace-assets' and public.has_workspace_role((split_part(name, '/', 1))::uuid, array['owner', 'admin']));

@@ -28,7 +28,7 @@ export type ProductUsageMetric = {
 }
 
 export type ProductCatalog = {
-  defaultPlanKey?: string
+  defaultPlanKey: string
   plans: readonly ProductPlan[]
   usageMetrics?: readonly ProductUsageMetric[]
 }
@@ -72,6 +72,7 @@ export function defineProductConfig<T extends { identity: ProductIdentity; catal
     if (!/^[a-z][a-z0-9_-]{0,63}$/.test(plan.key) || keys.has(plan.key)) throw new Error(`Invalid or duplicate product plan key: ${plan.key}`)
     keys.add(plan.key)
   }
+  if (!config.catalog.defaultPlanKey || !keys.has(config.catalog.defaultPlanKey)) throw new Error("The product catalog must define an existing default plan key.")
   return config
 }
 

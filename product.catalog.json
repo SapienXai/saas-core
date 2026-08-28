@@ -1,0 +1,26 @@
+{
+  "defaultPlanKey": "core-test",
+  "plans": [
+    {
+      "key": "core-test",
+      "name": "Core test",
+      "sort_order": 10,
+      "active": true,
+      "features": {
+        "team": true,
+        "domains": true,
+        "pwa": true,
+        "push": true
+      },
+      "limits": {
+        "core.workspaces": 2,
+        "core.members": 10,
+        "projects": 100
+      },
+      "metadata": {
+        "fixture": true
+      }
+    }
+  ],
+  "usageMetrics": []
+}
