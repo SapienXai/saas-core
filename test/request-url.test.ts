@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { getRequestHostname, getTrustedRequestHost } from "../lib/domains/hostname"
-import { getRequestUrl } from "../lib/request-url"
+import { classifyHostname, getRequestHostname, getTrustedRequestHost } from "../lib/domains/hostname"
+import { getAuthRedirectOrigin, getRequestUrl } from "../lib/request-url"
 
 describe("trusted request hostname boundary", () => {
   it("uses the first forwarded host and preserves its port for development URLs", () => {
@@ -26,6 +26,21 @@ describe("trusted request hostname boundary", () => {
     })
 
     expect(getRequestHostname(request)).toBe("alpha.example.com")
+  })
+
+  it("preserves a private LAN host and the active development port", () => {
+    const request = new Request("http://0.0.0.0:3000/auth/signup", {
+      headers: { host: "192.168.1.108:3100" },
+    })
+
+    expect(getTrustedRequestHost(request)).toEqual({ hostname: "192.168.1.108", host: "192.168.1.108:3100" })
+    expect(getRequestUrl(request).origin).toBe("http://192.168.1.108:3100")
+  })
+
+  it("uses a same-machine hostname alias for Auth redirects from a LAN host", () => {
+    expect(getAuthRedirectOrigin("http://192.168.1.108:3100")).toBe("http://192.168.1.108.nip.io:3100")
+    expect(getAuthRedirectOrigin("http://localhost:3100")).toBe("http://localhost:3100")
+    expect(classifyHostname("192.168.1.108.nip.io").kind).toBe("LOCAL_DEVELOPMENT")
   })
 
   it("does not accept credentials, paths, or a scheme as a trusted host", () => {

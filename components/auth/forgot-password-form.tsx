@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AuthField, AuthShell } from "@/components/auth/auth-shell"
 import { useLanguage } from "@/context/language-context"
+import { getBrowserAuthOrigin } from "@/lib/request-url"
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("")
@@ -21,7 +22,7 @@ export function ForgotPasswordForm() {
     event.preventDefault()
     if (loading) return
     setLoading(true)
-    await getSupabaseBrowserClient().auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/auth/confirm?next=/reset-password` })
+    await getSupabaseBrowserClient().auth.resetPasswordForEmail(email.trim(), { redirectTo: `${getBrowserAuthOrigin()}/auth/confirm?next=/reset-password` })
     setLoading(false)
     setSent(true)
   }

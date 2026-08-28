@@ -1,4 +1,22 @@
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"])
+
+function isPrivateIpv4(hostname: string) {
+  const parts = hostname.split(".")
+  if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part))) return false
+  const [first, second] = parts.map(Number)
+  return first === 10 || (first === 192 && second === 168) || (first === 172 && second >= 16 && second <= 31)
+}
+
+function isLocalDevelopmentHost(hostname?: string | null) {
+  const normalized = hostname?.trim().toLowerCase().replace(/^\[|\]$/g, "") || ""
+  return LOCAL_HOSTS.has(normalized) || normalized.endsWith(".localhost") || isPrivateIpv4(normalized)
+}
+
+function localMailpitOrigin(hostname: string) {
+  const normalized = hostname.replace(/^\[|\]$/g, "")
+  const host = normalized.includes(":") ? `[${normalized}]` : normalized
+  return `http://${host}:55624`
+}
 
 /**
  * Mailpit is a local development aid, never a production integration.
@@ -8,12 +26,23 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
 export function getDevMailpitUrl(hostname?: string | null) {
   if (process.env.NODE_ENV === "production") return null
   const configured = process.env.NEXT_PUBLIC_DEV_MAILPIT_URL?.trim()
-  const fallback = LOCAL_HOSTS.has(hostname || "") ? "http://localhost:55624" : null
+  const currentHost = hostname?.trim() || ""
+  const fallback = isLocalDevelopmentHost(currentHost) ? localMailpitOrigin(currentHost) : null
   const candidate = configured || fallback
   if (!candidate) return null
   try {
     const url = new URL(candidate)
-    if (!['http:', 'https:'].includes(url.protocol)) return null
+    if (!["http:", "https:"].includes(url.protocol)) return null
+
+    // A copied .env.example commonly leaves Mailpit on localhost. When the
+    // app is opened through a private LAN address, that loopback URL points
+    // back to the phone/browser instead of the development machine.
+    const configuredHost = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")
+    const currentHostNormalized = currentHost.toLowerCase().replace(/^\[|\]$/g, "")
+    if (configured && fallback && LOCAL_HOSTS.has(configuredHost) && !LOCAL_HOSTS.has(currentHostNormalized)) {
+      return new URL(fallback).toString().replace(/\/$/, "")
+    }
+
     return url.toString().replace(/\/$/, "")
   } catch {
     return null

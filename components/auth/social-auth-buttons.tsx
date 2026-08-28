@@ -4,6 +4,7 @@ import { useState } from "react"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/context/language-context"
+import { getBrowserAuthOrigin } from "@/lib/request-url"
 
 type SocialProvider = "google"
 
@@ -33,7 +34,7 @@ export function SocialAuthButtons({ redirectPath, onError }: SocialAuthButtonsPr
 
     try {
       const supabase = getSupabaseBrowserClient()
-      const callbackUrl = new URL("/auth/callback", window.location.origin)
+      const callbackUrl = new URL("/auth/callback", getBrowserAuthOrigin())
       callbackUrl.searchParams.set("next", redirectPath)
 
       const { error } = await supabase.auth.signInWithOAuth({

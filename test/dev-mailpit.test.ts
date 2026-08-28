@@ -16,6 +16,7 @@ describe("development Mailpit boundary", () => {
     environment.NODE_ENV = "test"
     delete process.env.NEXT_PUBLIC_DEV_MAILPIT_URL
     expect(getDevMailpitUrl("localhost")).toBe("http://localhost:55624")
+    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108:55624")
     expect(getDevMailpitUrl("product.example.com")).toBeNull()
   })
 
@@ -29,5 +30,11 @@ describe("development Mailpit boundary", () => {
     environment.NODE_ENV = "test"
     process.env.NEXT_PUBLIC_DEV_MAILPIT_URL = "https://mail.example.test/inbox/"
     expect(getDevMailpitUrl("product.example.com")).toBe("https://mail.example.test/inbox")
+  })
+
+  it("moves a loopback override to the current private host", () => {
+    environment.NODE_ENV = "test"
+    process.env.NEXT_PUBLIC_DEV_MAILPIT_URL = "http://localhost:55624"
+    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108:55624")
   })
 })

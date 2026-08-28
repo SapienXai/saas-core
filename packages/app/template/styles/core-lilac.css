@@ -375,7 +375,12 @@
   transition: background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
 }
 
-.auth-social-button:hover { border-color: rgba(235, 244, 242, 0.58); background: rgba(255, 255, 255, 0.055); }
+.auth-social-button:hover,
+.auth-social-button:focus-visible {
+  border-color: rgba(235, 244, 242, 0.58);
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--saas-core-auth-text);
+}
 .auth-social-button:active { transform: scale(0.99); }
 .auth-google-icon { height: 20px; width: 20px; flex: none; }
 
@@ -427,8 +432,8 @@
 
 .auth-success-alert {
   border-color: color-mix(in srgb, var(--saas-core-auth-accent) 30%, transparent);
-  background: rgba(23, 61, 54, 0.42);
-  color: #e0fff4;
+  background: rgba(18, 22, 29, 0.66);
+  color: var(--saas-core-auth-text);
 }
 
 .auth-form-card form:not(.auth-form) { display: flex; flex-direction: column; gap: 14px; }
@@ -443,14 +448,86 @@
 }
 
 .auth-confirmation {
-  border: 1px solid color-mix(in srgb, var(--saas-core-auth-accent) 30%, transparent) !important;
-  border-radius: 16px !important;
-  background: rgba(23, 61, 54, 0.42) !important;
-  color: #e0fff4 !important;
+  border: 1px solid var(--saas-core-auth-line);
+  border-radius: 18px;
+  background: rgba(18, 22, 29, 0.66);
+  padding: 20px;
+  color: var(--saas-core-auth-text);
 }
 
-.auth-confirmation p,
-.auth-confirmation h2 { color: inherit !important; }
+.auth-confirmation-intro { display: flex; align-items: flex-start; gap: 14px; }
+.auth-confirmation-mark {
+  display: inline-flex;
+  height: 34px;
+  width: 34px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--saas-core-auth-accent) 60%, transparent);
+  border-radius: 50%;
+  color: var(--saas-core-auth-accent);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.auth-confirmation-copy { min-width: 0; }
+.auth-confirmation h2 { color: var(--saas-core-auth-text); font-size: 20px; font-weight: 700; line-height: 1.15; }
+.auth-confirmation-copy p { margin-top: 8px; color: var(--saas-core-auth-muted); font-size: 13px; line-height: 1.5; }
+.auth-confirmation-address {
+  margin-top: 16px;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(235, 244, 242, 0.13);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.045);
+  padding: 12px 13px;
+  color: var(--saas-core-auth-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.auth-confirmation-inbox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+  border: 1px dashed rgba(235, 244, 242, 0.2);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 13px;
+}
+
+.auth-confirmation-inbox-copy { min-width: 0; }
+.auth-confirmation-inbox-title { color: var(--saas-core-auth-text) !important; font-size: 12px !important; font-weight: 700; }
+.auth-confirmation-inbox-copy p + p { margin-top: 4px; color: var(--saas-core-auth-muted); font-size: 11px; line-height: 1.45; }
+.auth-confirmation-mailpit { color: var(--saas-core-auth-text); font-size: 12px; font-weight: 700; white-space: nowrap; text-decoration: underline; text-decoration-color: var(--saas-core-auth-accent); text-underline-offset: 4px; }
+.auth-confirmation-mailpit:hover { color: var(--saas-core-auth-accent); }
+
+.auth-confirmation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.auth-confirmation-actions a,
+.auth-confirmation-actions button {
+  display: inline-flex;
+  min-height: 50px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
+}
+.auth-confirmation-actions a:active,
+.auth-confirmation-actions button:active { transform: scale(0.99); }
+.auth-confirmation-secondary { border: 1px solid rgba(235, 244, 242, 0.26); background: transparent; color: var(--saas-core-auth-text); }
+.auth-confirmation-secondary:hover { border-color: rgba(235, 244, 242, 0.58); background: rgba(255, 255, 255, 0.055); }
+.auth-confirmation-primary { background: #f4f8f6; color: #10171a; box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18); }
+.auth-confirmation-primary:hover { background: #ffffff; }
+
+.auth-confirmation-links { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; font-size: 11px; }
+.auth-confirmation-links a,
+.auth-confirmation-links button { border: 0; background: transparent; color: var(--saas-core-auth-accent); font: inherit; cursor: pointer; text-decoration: none; }
+.auth-confirmation-links a:hover,
+.auth-confirmation-links button:hover { text-decoration: underline; text-underline-offset: 4px; }
 
 .auth-confirmation a,
 .auth-confirmation button { min-height: 44px; }

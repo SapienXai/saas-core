@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
-import { getRequestUrl } from "@/lib/request-url"
+import { getAuthRedirectUrl } from "@/lib/request-url"
 
 type SignUpBody = {
   email?: unknown
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_request" }, { status: 400 })
   }
 
-  const origin = getRequestUrl(request).origin
+  const origin = getAuthRedirectUrl(request).origin
   const supabase = await createSupabaseServerClient()
   const { error } = await supabase.auth.signUp({
     email,

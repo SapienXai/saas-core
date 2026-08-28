@@ -99,26 +99,26 @@ export function SignupForm() {
   }
 
   return (
-    <AuthShell title={getTranslation("auth.signUpTitle")} description={getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })} footer={<span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
+    <AuthShell title={getTranslation("auth.signUpTitle")} description={getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })} footer={!confirmationMessage && <span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
       {error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>}
       {confirmationMessage ? (
-        <section className="auth-confirmation rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-emerald-950" aria-live="polite">
-          <div className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white">✓</span>
-            <div className="min-w-0">
-              <h2 className="text-sm font-bold">{getTranslation("auth.confirmEmail")}</h2>
-              <p className="mt-1 text-[13px] leading-5 text-emerald-900">{getTranslation("auth.confirmEmailDescription")}</p>
-              <p className="mt-2 break-all rounded-xl border border-emerald-200 bg-white/70 px-3 py-2 text-[13px] font-bold text-emerald-950" aria-label={getTranslation("auth.confirmEmailDestination")}>{email || getTranslation("auth.email")}</p>
+        <section className="auth-confirmation" aria-live="polite">
+          <div className="auth-confirmation-intro">
+            <span className="auth-confirmation-mark" aria-hidden="true">✓</span>
+            <div className="auth-confirmation-copy">
+              <h2>{getTranslation("auth.confirmEmail")}</h2>
+              <p>{getTranslation("auth.confirmEmailDescription")}</p>
             </div>
           </div>
-          {devMailpitUrl && <div className="mt-3 rounded-2xl border border-dashed border-emerald-300 bg-white/60 p-3 text-emerald-950"><p className="text-xs font-bold">{getTranslation("auth.developmentInbox")}</p><p className="mt-1 text-[11px] leading-5 text-emerald-800">{getTranslation("auth.developmentInboxDescription")}</p><a className="mt-2 inline-flex h-9 items-center rounded-xl bg-emerald-900 px-3 text-xs font-bold text-white transition-colors hover:bg-emerald-800" href={devMailpitUrl} target="_blank" rel="noreferrer">{getTranslation("auth.openDevelopmentInbox")}</a></div>}
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <button type="button" onClick={resend} disabled={resending} className="h-10 rounded-xl border border-emerald-300 bg-white px-3 text-xs font-bold text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60">{resending ? getTranslation("auth.sending") : getTranslation("auth.resendEmail")}</button>
-            <Link className="inline-flex h-10 items-center justify-center rounded-xl bg-emerald-900 px-3 text-xs font-bold text-white transition-colors hover:bg-emerald-800" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signIn")}</Link>
+          <p className="auth-confirmation-address" aria-label={getTranslation("auth.confirmEmailDestination")}>{email || getTranslation("auth.email")}</p>
+          {devMailpitUrl && <div className="auth-confirmation-inbox"><div className="auth-confirmation-inbox-copy"><p className="auth-confirmation-inbox-title">{getTranslation("auth.developmentInbox")}</p><p>{getTranslation("auth.developmentInboxDescription")}</p></div><a className="auth-confirmation-mailpit" href={devMailpitUrl} target="_blank" rel="noreferrer">{getTranslation("auth.openDevelopmentInbox")}</a></div>}
+          <div className="auth-confirmation-actions">
+            <button type="button" onClick={resend} disabled={resending} className="auth-confirmation-secondary">{resending ? getTranslation("auth.sending") : getTranslation("auth.resendEmail")}</button>
+            <Link className="auth-confirmation-primary" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signIn")}</Link>
           </div>
-          <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-emerald-800">
-            <Link className="font-semibold underline underline-offset-4" href="/forgot-password">{getTranslation("auth.forgotPassword")}</Link>
-            <button type="button" onClick={useDifferentEmail} className="font-semibold underline underline-offset-4">{getTranslation("auth.useAnotherEmail")}</button>
+          <div className="auth-confirmation-links">
+            <Link href="/forgot-password">{getTranslation("auth.forgotPassword")}</Link>
+            <button type="button" onClick={useDifferentEmail}>{getTranslation("auth.useAnotherEmail")}</button>
           </div>
         </section>
       ) : (

@@ -27,7 +27,7 @@ function configuredRootDomain() {
 function configuredAppDomain() {
   return (process.env.SAAS_CORE_APP_DOMAIN || `app.${configuredRootDomain()}`).trim().toLowerCase().replace(/^\.+|\.+$/g, "")
 }
-function isDevelopmentTunnel(hostname: string) { return process.env.NODE_ENV !== "production" && [".ngrok-free.dev", ".ngrok.app", ".ngrok.io"].some((suffix) => hostname.endsWith(suffix)) }
+function isDevelopmentTunnel(hostname: string) { return process.env.NODE_ENV !== "production" && [".ngrok-free.dev", ".ngrok.app", ".ngrok.io", ".nip.io"].some((suffix) => hostname.endsWith(suffix)) }
 function isIPv4(value: string) {
   const parts = value.split(".")
   return parts.length === 4 && parts.every((part) => /^(?:0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)

@@ -18,6 +18,34 @@ export function getRequestUrl(request: Request) {
   return url
 }
 
+/**
+ * GoTrue rejects decimal non-loopback IPs as redirect targets, even when they
+ * are present in the URI allow-list. In local development, use the equivalent
+ * nip.io hostname so a phone or another device still reaches this machine.
+ */
+export function getAuthRedirectOrigin(origin: string) {
+  const url = new URL(origin)
+  if (process.env.NODE_ENV === "production") return url.origin
+
+  const parts = url.hostname.split(".")
+  const isPrivateIpv4 = parts.length === 4 && parts.every((part) => /^\d+$/.test(part)) && (() => {
+    const [first, second] = parts.map(Number)
+    return first === 10 || (first === 192 && second === 168) || (first === 172 && second >= 16 && second <= 31)
+  })()
+  if (isPrivateIpv4) url.hostname = `${url.hostname}.nip.io`
+  return url.origin
+}
+
+export function getAuthRedirectUrl(request: Request) {
+  const url = getRequestUrl(request)
+  const origin = getAuthRedirectOrigin(url.origin)
+  return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)
+}
+
+export function getBrowserAuthOrigin() {
+  return getAuthRedirectOrigin(window.location.origin)
+}
+
 function firstHeaderValue(request: Request, name: string) {
   return request.headers.get(name)?.split(",")[0]?.trim() || null
 }
