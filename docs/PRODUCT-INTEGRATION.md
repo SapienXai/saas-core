@@ -117,7 +117,12 @@ the result in its own domain code:
 
 ```ts
 const result = await resolvePublicWorkspaceRequest(request)
-if (result.status !== "resolved") notFound()
+if (result.status === "not_found" || result.status === "not_public_workspace") {
+  notFound()
+}
+if (result.status === "unavailable") {
+  throw new Error("Public Workspace routing is temporarily unavailable")
+}
 
 const { workspaceId, workspaceSlug, pathname } = result.context
 // Product-owned: resolve (workspaceId, pathname) in the product domain.
