@@ -96,7 +96,11 @@ Read the implementation contract in:
 `supabase/migrations/20260827204359_saas_core_v2_baseline.sql` is a clean
 SaaS Core 2.0 baseline. It is independent of the ReserveVia migration stream
 and contains only workspace, membership, invitation, plan, subscription,
-usage, domain, PWA, push, platform, audit, and email infrastructure.
+usage, domain, PWA, push, platform, audit, and email infrastructure. The
+baseline also owns private schema metadata and a server-controlled product
+default-plan setting. `bootstrap_initial_workspace` never guesses a plan from
+sort order; catalog synchronization must first persist an explicit active
+`defaultPlanKey`.
 
 Every public Core table has RLS enabled. Workspace access is expressed through
 membership predicates; platform and delivery tables are server-only. Product
@@ -121,6 +125,8 @@ pnpm lint
 pnpm typecheck
 pnpm test:run
 pnpm db:test:schema
+pnpm core:doctor-schema
+pnpm core:catalog
 pnpm core:scan
 pnpm build
 pnpm dev:local
@@ -137,10 +143,17 @@ silently replaced with fixtures.
 A product config is the identity and commercial boundary for the default
 surface: `lib/product-config.ts` provides name, slug, mark, theme, metadata,
 navigation, enabled Core capabilities, product plan catalog, and usage metric
-definitions. Core owns the billing lifecycle and keyed entitlement engine;
-products own plan names, prices, feature catalog, limits, and marketing copy.
-Synchronize a catalog server-side with `pnpm billing:sync-catalog --
-product.catalog.json`.
+definitions. The generated `product.catalog.json` is the canonical
+product-owned catalog source; the TypeScript boundary imports it rather than
+duplicating plan data. Core owns the billing lifecycle and keyed entitlement
+engine; products own plan names, prices, feature catalog, limits, and
+marketing copy. Synchronize a catalog server-side with `pnpm
+billing:sync-catalog -- product.catalog.json`; the command validates and
+persists the explicit active default plan atomically.
+
+Fresh products receive a neutral, zero-price development catalog with one
+`default` plan. It is deliberately product-owned and may be replaced without
+a Core migration.
 
 The lifecycle commands are deliberately portable and manifest-based:
 
@@ -155,6 +168,11 @@ pnpm update -- ./my-product
 They do not write `file:` dependencies, absolute checkout paths, temporary
 tarball paths, or local registry URLs into generated products. The generated
 consumer proof uses a clearly non-domain-specific Projects fixture.
+
+Generated consumers use `@sapienx/saas-core`, `@sapienx/saas-core-config`, and
+`@sapienx/saas-core-ui` at runtime. The CLI is a devDependency, and
+`@sapienx/saas-core-app` is the package-only template carrier used while
+materializing the canonical app.
 
 ## Security posture
 

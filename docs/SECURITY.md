@@ -59,6 +59,13 @@ The service worker caches only safe static/application-shell resources. It does
 not persist session, billing, membership, or product-domain data. Logout asks
 the worker to clear its cache and revokes the current push subscription.
 
+The Core schema version is stored in `private.core_schema_metadata`. Normal
+clients have no table access and no execute permission for the metadata RPC;
+the tooling doctor uses the service-role key only from its server-side process.
+The product default plan is likewise stored in the private Core settings table
+and can only be changed through the service-role-only catalog synchronization
+RPC. A public or anonymous key is rejected.
+
 ## Verification
 
 Run the clean database and security checks locally:

@@ -25,9 +25,14 @@ its manifest and reports Core, version, package, schema, and ignored product
 changes separately. `saas-core update --dry-run` plans additions,
 replacements, removals, package changes, and conflicts without mutation.
 Untouched managed files are backed up and replaced; locally modified managed
-files are preserved and reported as conflicts. A real update writes a backup
-under `.saas-core-backups/` before changing files and updates the manifest only
-when no conflicts remain.
+files block the entire update and are reported as conflicts. A real update
+preflights every source and destination, creates a complete independent backup
+under `.saas-core-backups/`, applies the plan, validates the result, and
+automatically restores the prior Core state if any post-mutation step fails.
+The report includes the backup path and rollback result. Package versions are
+updated in `package.json`; the CLI does not rewrite a consumer lockfile, so
+run the consumer package manager without frozen-lockfile mode after an update
+before committing a lockfile change.
 
 Review the generated manifest and run the product’s install, typecheck, test,
 and build commands. Do not copy local `.env` files, `.next`, `node_modules`,
@@ -51,8 +56,11 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and Core schema version are separate compatibility
-coordinates. The 2.0 baseline is runtime `2.0.0`, schema `2.0`; changing a
-product catalog or usage metric does not require a Core migration.
+coordinates. The 2.0 baseline is runtime `2.0.0`, schema `2.0`; `doctor`
+verifies the actual database metadata when `SUPABASE_URL` and a server-only
+`SUPABASE_SERVICE_ROLE_KEY` are available, and reports a warning when those
+credentials are absent. Changing a product catalog or usage metric does not
+require a Core migration.
 
 ## UI changes
 

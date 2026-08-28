@@ -29,9 +29,16 @@ pnpm billing:sync-catalog -- ./product.catalog.json
 pnpm billing:sync-catalog -- ./product.catalog.json --dry-run
 ```
 
-Catalog sync updates plan metadata and keyed limits, preserves existing
-provider price IDs, and only deactivates plans when
-`--deactivate-missing` is explicit.
+`product.catalog.json` is the single catalog source at the application
+boundary. Catalog sync updates plan metadata and keyed limits, persists the
+explicit active `defaultPlanKey` in Core configuration, preserves existing
+provider price IDs, and only deactivates plans when `--deactivate-missing` is
+explicit. It is atomic and safe to rerun. Changing the default affects future
+workspace bootstrap only; existing subscriptions are unchanged.
+
+`saas-core init` creates a neutral product-owned starter catalog so a new local
+product can bootstrap a Workspace immediately after its catalog is seeded. It
+does not add Core pricing assumptions or require a schema migration.
 
 ## Adding a domain
 

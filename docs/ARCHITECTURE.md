@@ -34,11 +34,12 @@ source.
 
 Signup and confirmation end at resumable `/onboarding`. The transactional
 `bootstrap_initial_workspace` RPC derives the user from `auth.uid()`, creates
-the Workspace and owner membership, and lets the database select the first
-active product-configured plan. It counts owner memberships for an explicit
-`core.workspaces` entitlement; `created_by` is audit metadata, not an
-authorization or one-workspace constraint. Invitation creation and acceptance
-use one-use token hashes, email matching, expiry, and role validation.
+the Workspace and owner membership, and resolves the active default plan from
+the private Core setting written by catalog synchronization. It counts owner
+memberships against that configured plan's `core.workspaces` entitlement;
+`created_by` is audit metadata, not an authorization or one-workspace
+constraint. Invitation creation and acceptance use one-use token hashes, email
+matching, expiry, and role validation.
 
 ## Management composition
 
@@ -93,8 +94,15 @@ URLs into a consumer.
 
 The controlled namespace is `@sapienx`: `@sapienx/saas-core`,
 `@sapienx/saas-core-config`, `@sapienx/saas-core-ui`,
-`@sapienx/saas-core-app`, and `@sapienx/saas-core-cli`. A generated Projects
-consumer receives the actual auth, Workspace, Team, Plan, Setup, Settings,
-PWA, domains, Platform Control, and source-derived interaction surfaces. It
-has a generic Workspace plus Projects model and does not require
-industry-specific concepts to boot.
+`@sapienx/saas-core-app`, and `@sapienx/saas-core-cli`. The app package is a
+template carrier; generated consumers run with Core, config, and UI as
+runtime dependencies and the CLI as tooling. A generated Projects consumer
+receives the actual auth, Workspace, Team, Plan, Setup, Settings, PWA,
+domains, Platform Control, and source-derived interaction surfaces. It has a
+generic Workspace plus Projects model and does not require industry-specific
+concepts to boot.
+
+The baseline is runtime `2.0.0` and Core schema `2.0`. Schema metadata lives in
+`private.core_schema_metadata` and is readable by the CLI only through a
+service-role-only RPC; product catalog changes do not change the schema
+version.
