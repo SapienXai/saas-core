@@ -1,0 +1,29 @@
+{
+  "defaultPlanKey": "hobby",
+  "plans": [
+    {
+      "key": "hobby",
+      "name": "Hobby",
+      "prices": { "month": { "amount": 7, "currency": "EUR" } },
+      "features": { "projects": true },
+      "limits": { "projects": 25 }
+    },
+    {
+      "key": "team",
+      "name": "Team",
+      "prices": { "month": { "amount": 39, "currency": "EUR" } },
+      "features": { "projects": true, "exports": true },
+      "limits": { "projects": 500 }
+    },
+    {
+      "key": "scale",
+      "name": "Scale",
+      "prices": { "year": { "amount": 1200, "currency": "EUR" } },
+      "features": { "projects": true, "exports": true, "customDomain": true },
+      "limits": { "projects": null }
+    }
+  ],
+  "usageMetrics": [
+    { "key": "projects", "name": "Projects", "unit": "records" }
+  ]
+}

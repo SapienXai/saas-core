@@ -5,7 +5,12 @@ import path from "node:path"
 const destination = path.resolve(process.cwd(), process.argv.find((value) => value !== "--" && value !== process.argv[0] && value !== process.argv[1]) || "artifacts")
 await mkdir(destination, { recursive: true })
 
-for (const packageName of ["@saas-core/core", "@saas-core/config", "@saas-core/ui", "@saas-core/app", "@saas-core/cli"]) {
+const packageNames = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui", "@sapienx/saas-core-app", "@sapienx/saas-core-cli"]
+for (const packageName of packageNames) {
+  if (packageName !== "@sapienx/saas-core-app" && packageName !== "@sapienx/saas-core-cli") {
+    const build = spawnSync("pnpm", ["--filter", packageName, "build"], { stdio: "inherit" })
+    if (build.status !== 0) process.exit(build.status ?? 1)
+  }
   const result = spawnSync("pnpm", ["--filter", packageName, "pack", "--pack-destination", destination], { stdio: "inherit" })
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
