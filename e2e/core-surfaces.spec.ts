@@ -12,6 +12,26 @@ let service: SupabaseClient | null = null
 let userId = ""
 let workspaceId = ""
 
+async function waitForAuthReady() {
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
+  if (!anonKey) throw new Error("The browser proof needs the local Supabase anon key.")
+
+  const client = createClient(url!, anonKey, { auth: { persistSession: false, autoRefreshToken: false } })
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const result = await client.auth.signInWithPassword({ email, password })
+    if (!result.error && result.data.user) {
+      await client.auth.signOut()
+      return
+    }
+    lastError = result.error
+      ? new Error(`Local browser proof account is not ready: ${result.error.message}`)
+      : new Error("Local browser proof account did not return a user.")
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  throw lastError || new Error("Local browser proof account was not ready in time.")
+}
+
 async function signInAndCreateWorkspace(page: Page) {
   await page.goto("/login")
   await page.locator("#login-email").fill(email)
@@ -37,6 +57,7 @@ test.beforeAll(async () => {
   const result = await service.auth.admin.createUser({ email, password, email_confirm: true })
   if (result.error || !result.data.user) throw result.error || new Error("Could not create the browser proof account.")
   userId = result.data.user.id
+  await waitForAuthReady()
 })
 
 test.afterAll(async () => {
