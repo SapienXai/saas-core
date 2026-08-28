@@ -77,8 +77,9 @@ and require `workspaces.status = 'active'` plus
 `provider_environment = 'production'`, `verification_state = 'verified'`,
 `provider_verified = true`, `dns_configured = true`, and a non-null
 `verified_at`, followed by the same active Workspace check. An ordinary miss
-returns `not_found`; platform, local, preview, canonical-app, and reserved
-system surfaces return `not_public_workspace`.
+returns `not_found`; a database or service failure returns `unavailable`
+without exposing internal error details. Platform, local, preview,
+canonical-app, and reserved system surfaces return `not_public_workspace`.
 
 `resolvePublicWorkspaceRequest()` is server-only and shares the trusted host
 extraction boundary with `proxy.ts`. It performs no Vercel API, DNS, provider

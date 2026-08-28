@@ -134,9 +134,13 @@ Hosted resolution requires the exact Workspace slug and an active public
 Workspace. Custom resolution requires the exact persisted `workspace_domains`
 record to be active, production-configured, verified, provider-verified,
 DNS-configured, and stamped with `verified_at`, plus the same active Workspace
-check. Expected misses fail closed without a 500. Public rendering does not
-call Vercel, DNS, or any domain provider; the domain-management workflow is
-responsible for reconciliation.
+check. A successful lookup with no eligible Workspace or domain returns
+`not_found`, which the product can render as a normal public 404. A persistence
+or service failure returns `unavailable`; it must flow through application
+error handling rather than being presented as a missing Workspace. The public
+result is still generic and fail-closed, with no database details exposed.
+Public rendering does not call Vercel, DNS, or any domain provider; the
+domain-management workflow is responsible for reconciliation.
 
 Core canonical app paths (`/app/*`, `/manage`, `/platform`, `/login`,
 `/signup`, `/onboarding`, `/auth`, `/invite`, `/setup`, and related descendants)
@@ -155,9 +159,10 @@ do not assume `workspace.localhost` is a production hosted Workspace.
 
 Product routes can live beside `/app` and use the same `ManageShell`, or a
 product can compose a shell extension inside the main scroll-owned surface.
-The default sidebar is configured in `components/manage/manage-sidebar.tsx`;
-future packaging should make its navigation input replaceable without
-changing collapse, Sheet, tooltip, persistence, or mobile behavior.
+The shared `ManageShell` consumes the product-owned `PRODUCT_CONFIG.shell`
+contract for the product home and first-level navigation. Its expanded
+sidebar, collapsed rail, and mobile Sheet share that input while preserving
+collapse, Sheet, tooltip, persistence, and mobile behavior.
 
 Use the existing `components/ui` primitives and `sonner` feedback patterns.
 Do not replace Radix overlays, pending buttons, focus-visible styles, theme

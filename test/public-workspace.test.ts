@@ -70,6 +70,31 @@ describe("public Workspace resolution", () => {
     expect(await resolvePublicWorkspace({ hostname: "acme.example.com", pathname: "/example" })).toEqual({ status: "not_found" })
   })
 
+  it("distinguishes hosted Workspace misses from database failures", async () => {
+    useResponses({ data: null, error: { message: "database unavailable" } })
+    expect(await resolvePublicWorkspace({ hostname: "acme.example.com", pathname: "/example" })).toEqual({ status: "unavailable" })
+
+    createServiceRoleClient.mockImplementationOnce(() => {
+      throw new Error("service role unavailable")
+    })
+    expect(await resolvePublicWorkspace({ hostname: "acme.example.com", pathname: "/example" })).toEqual({ status: "unavailable" })
+  })
+
+  it("returns unavailable when the hosted Workspace query throws", async () => {
+    const service = {
+      from: vi.fn(() => {
+        const chain = builder({ data: null, error: null })
+        chain.maybeSingle = vi.fn(async () => {
+          throw new Error("query transport failure")
+        })
+        return chain
+      }),
+    }
+    createServiceRoleClient.mockReturnValue(service)
+
+    expect(await resolvePublicWorkspace({ hostname: "acme.example.com", pathname: "/example" })).toEqual({ status: "unavailable" })
+  })
+
   it("requires a persisted active, verified, configured custom domain and active Workspace", async () => {
     const domain = {
       workspace_id: workspace.id,
@@ -89,6 +114,37 @@ describe("public Workspace resolution", () => {
 
     useResponses({ data: { ...domain, verification_state: "pending" }, error: null })
     expect(await resolvePublicWorkspace({ hostname: "custom.customer.com", pathname: "/example" })).toEqual({ status: "not_found" })
+  })
+
+  it("distinguishes custom-domain misses from domain and Workspace database failures", async () => {
+    useResponses({ data: null, error: { message: "domain database unavailable" } })
+    expect(await resolvePublicWorkspace({ hostname: "custom.customer.com", pathname: "/example" })).toEqual({ status: "unavailable" })
+
+    useResponses({ data: { workspace_id: workspace.id }, error: null }, { data: null, error: { message: "Workspace database unavailable" } })
+    expect(await resolvePublicWorkspace({ hostname: "custom.customer.com", pathname: "/example" })).toEqual({ status: "unavailable" })
+
+    createServiceRoleClient.mockImplementationOnce(() => {
+      throw new Error("custom-domain service unavailable")
+    })
+    expect(await resolvePublicWorkspace({ hostname: "custom.customer.com", pathname: "/example" })).toEqual({ status: "unavailable" })
+
+    useResponses({ data: { workspace_id: workspace.id }, error: null }, { data: { ...workspace, status: "suspended" }, error: null })
+    expect(await resolvePublicWorkspace({ hostname: "custom.customer.com", pathname: "/example" })).toEqual({ status: "not_found" })
+  })
+
+  it("returns unavailable when the custom-domain query throws", async () => {
+    const service = {
+      from: vi.fn(() => {
+        const chain = builder({ data: null, error: null })
+        chain.maybeSingle = vi.fn(async () => {
+          throw new Error("domain query transport failure")
+        })
+        return chain
+      }),
+    }
+    createServiceRoleClient.mockReturnValue(service)
+
+    expect(await resolvePublicWorkspace({ hostname: "custom.customer.com", pathname: "/example" })).toEqual({ status: "unavailable" })
   })
 
   it("returns the same logical context for hosted and custom hostnames", async () => {
@@ -126,5 +182,14 @@ describe("public Workspace resolution", () => {
     })
     const result = await resolvePublicWorkspaceRequest(request)
     expect(result).toMatchObject({ status: "resolved", context: { workspaceId: workspace.id, pathname: "/beach" } })
+  })
+
+  it("propagates operational failures through the request wrapper without exposing details", async () => {
+    useResponses({ data: null, error: { message: "private database detail" } })
+    const request = new Request("https://0.0.0.0:3000/beach", {
+      headers: { host: "acme.example.com" },
+    })
+
+    await expect(resolvePublicWorkspaceRequest(request)).resolves.toEqual({ status: "unavailable" })
   })
 })

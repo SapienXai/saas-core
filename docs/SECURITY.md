@@ -38,9 +38,13 @@ Hosted hosts resolve an exact slug under the configured root domain. Custom
 hosts resolve an exact persisted `workspace_domains` mapping only when the
 domain is active, production-configured, verified, provider-verified,
 DNS-configured, and has `verified_at`, and the mapped Workspace is active. Any
-unknown or non-public mapping fails closed. The resolver returns only a small
-Workspace context and normalized pathname; it never interprets product paths.
-It performs no provider or DNS calls during public page resolution.
+unknown or non-public mapping returns `not_found` and fails closed. A
+persistence or service failure returns the generic `unavailable` result
+instead of being misreported as tenant absence; raw database/provider details
+are never sent to the public client. Fail closed means no tenant context is
+exposed on either path. The resolver returns only a small Workspace context
+and normalized pathname; it never interprets product paths. It performs no
+provider or DNS calls during public page resolution.
 
 Canonical app ownership is separate from reserved public/system ownership.
 Tenant/custom hosts redirect `/app/*`, `/manage`, `/platform`, and Core auth or

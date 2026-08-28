@@ -19,6 +19,7 @@ export type PublicWorkspaceResolution =
   | { status: "resolved"; context: PublicWorkspaceContext }
   | { status: "not_found" }
   | { status: "not_public_workspace" }
+  | { status: "unavailable" }
 
 type PublicWorkspaceRecord = {
   id: string
@@ -29,6 +30,8 @@ type PublicWorkspaceRecord = {
 }
 
 function notFound(): PublicWorkspaceResolution { return { status: "not_found" } }
+
+function unavailable(): PublicWorkspaceResolution { return { status: "unavailable" } }
 
 function isPublicWorkspace(workspace: Pick<PublicWorkspaceRecord, "status" | "platform_status">) {
   return workspace.status === "active" && workspace.platform_status === "active"
@@ -58,10 +61,11 @@ async function resolveHostedWorkspace(hostname: string, workspaceSlug: string, p
       .eq("status", "active")
       .eq("platform_status", "active")
       .maybeSingle()
-    if (error || !data) return notFound()
+    if (error) return unavailable()
+    if (!data) return notFound()
     return context(data as PublicWorkspaceRecord, hostname, "HOSTED_WORKSPACE", pathname)
   } catch {
-    return notFound()
+    return unavailable()
   }
 }
 
@@ -78,7 +82,8 @@ async function resolveCustomWorkspace(hostname: string, pathname: string) {
       .eq("dns_configured", true)
       .not("verified_at", "is", null)
       .maybeSingle()
-    if (domainError || !domain) return notFound()
+    if (domainError) return unavailable()
+    if (!domain) return notFound()
 
     const { data: workspace, error: workspaceError } = await createServiceRoleClient()
       .from("workspaces")
@@ -87,10 +92,11 @@ async function resolveCustomWorkspace(hostname: string, pathname: string) {
       .eq("status", "active")
       .eq("platform_status", "active")
       .maybeSingle()
-    if (workspaceError || !workspace) return notFound()
+    if (workspaceError) return unavailable()
+    if (!workspace) return notFound()
     return context(workspace as PublicWorkspaceRecord, hostname, "CUSTOM_WORKSPACE", pathname)
   } catch {
-    return notFound()
+    return unavailable()
   }
 }
 
