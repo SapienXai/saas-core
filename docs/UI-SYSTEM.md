@@ -48,6 +48,14 @@ switching, account controls, notification entry, online state, and install
 prompt behavior. Navigation active states and pending transitions remain
 visible during route changes.
 
+Products may provide an optional workspace home and first-level navigation in
+`PRODUCT_CONFIG.shell`. The resolver supplies that one model to expanded,
+collapsed, and mobile Sheet navigation, so a product extension does not need
+three implementations. Core-reserved workspace routes remain owned by Core;
+role/feature filters affect visibility only and never replace server
+authorization. A missing shell field preserves the existing translated Core
+Workspace entry and dashboard.
+
 Do not add document-level scrolling to a management page. Tables and dense
 data surfaces own horizontal scrolling on narrow screens, while the page keeps
 safe-area padding and prevents accidental right-edge overflow.

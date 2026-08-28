@@ -149,8 +149,8 @@ silently replaced with fixtures.
 
 A product config is the identity and commercial boundary for the default
 surface: `lib/product-config.ts` provides name, slug, mark, theme, metadata,
-navigation, enabled Core capabilities, product plan catalog, and usage metric
-definitions. The generated `product.catalog.json` is the canonical
+optional shell extensions, enabled Core capabilities, product plan catalog,
+and usage metric definitions. The generated `product.catalog.json` is the canonical
 product-owned catalog source; the TypeScript boundary imports it rather than
 duplicating plan data. Core owns the billing lifecycle and keyed entitlement
 engine; products own plan names, prices, feature catalog, limits, and
@@ -172,6 +172,23 @@ After Core onboarding, a product may hand off to an internal product route with
 Core does not know the product’s domain or commercial plan names. Account,
 Workspace, Platform, and Product concerns remain separate, and Workspace roles
 do not imply Platform roles.
+
+The optional shell extension keeps the application presentation product-owned
+without forking the management shell:
+
+```ts
+shell: {
+  homePath: "/app/projects",
+  homeLabel: "Projects",
+  navigation: [{ key: "projects", label: "Projects", href: "/app/projects", icon: "folder", match: "prefix" }],
+}
+```
+
+`/app` redirects to that safe internal home when configured; without it, the
+existing Core Workspace dashboard remains unchanged. Navigation is shared by
+the desktop sidebar, collapsed rail, and mobile Sheet. Core reserves `/app`,
+`/app/team`, `/app/plan`, `/app/domains`, `/app/pwa`, `/app/settings`, and
+`/app/setup`; product navigation never replaces authorization.
 
 The lifecycle commands are deliberately portable and manifest-based:
 

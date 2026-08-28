@@ -62,7 +62,7 @@ ManageShell
 └── scroll-owned main surface
     ├── workspace dashboard
     ├── Team / Plan / Setup / Settings / Domains / PWA
-    └── product-owned domain extension points
+    └── product-owned home and first-level navigation extension points
 ```
 
 `components/manage/manage-shell.tsx` and `manage-sidebar.tsx` retain the
@@ -70,6 +70,14 @@ source behavior for persistence, collapse, active navigation, keyboard and
 focus semantics, mobile drawer, safe areas, theme, document locking, refresh,
 and PWA installation. `components/ui` retains the Radix-backed primitives;
 Core code does not replace them with native approximations.
+
+The product shell contract is deliberately small. `lib/product-shell.ts`
+normalizes an optional `PRODUCT_CONFIG.shell` into a safe home path and
+first-level navigation model. The same model is rendered by all three sidebar
+states and the header title. `/app` remains the Core dashboard by default or
+redirects to a configured product-owned `/app/*` route. Core-reserved routes
+cannot be claimed by products, and visibility filters are UX-only; route
+authorization remains in Core/product server boundaries.
 
 ## Infrastructure boundaries
 

@@ -8,7 +8,7 @@ surface. A product supplies the domain that lives inside a Workspace.
 Every product should provide:
 
 1. a product configuration with name, slug, mark/icon, theme, metadata,
-   navigation, and enabled Core capabilities;
+   optional shell extensions, and enabled Core capabilities;
 2. product migrations whose tenant-owned tables include `workspace_id`;
 3. server actions and route handlers that call Core authorization before any
    product read or write;
@@ -49,6 +49,38 @@ contains one unpriced `default` plan with an explicit
 unlimited value. It does not add Core pricing assumptions or require a schema
 migration. Catalog synchronization persists the configured default server-side
 and leaves existing subscriptions unchanged when a product changes it.
+
+## Product shell extensions
+
+The optional `PRODUCT_CONFIG.shell` field is the small presentation boundary
+for a product-owned workspace home and first-level navigation. It does not
+replace `ManageShell`, change its desktop/collapsed/mobile composition, or
+grant access to a route. A product page remains responsible for server-side
+authorization and its own RLS policies.
+
+```ts
+shell: {
+  homePath: "/app/projects",
+  homeLabel: "Projects",
+  navigation: [
+    { key: "projects", label: "Projects", href: "/app/projects", icon: "folder", match: "prefix" },
+    { key: "reports", label: "Reports", href: "/app/reports", icon: "bar-chart", requiredFeature: "reports" },
+  ],
+}
+```
+
+Product routes can be placed under `app/(product)/app/*`. When `homePath` is
+configured, `/app` redirects to it; when omitted, `/app` continues to render
+the Core Workspace dashboard. Navigation entries are normalized in one Core
+resolver and feed the expanded sidebar, collapsed rail, and mobile Sheet.
+Unknown icons safely use the generic layers icon. Optional role and feature
+filters only hide navigation affordances; they are never authorization.
+
+Core reserves `/app`, `/app/team`, `/app/plan`, `/app/domains`, `/app/pwa`,
+`/app/settings`, and `/app/setup` (including descendants). Product home and
+navigation paths must be safe internal `/app/*` paths and cannot claim these
+reserved areas. The shell field is optional so products generated before this
+extension continue to compile, update, and retain their product config.
 
 ## Adding a domain
 

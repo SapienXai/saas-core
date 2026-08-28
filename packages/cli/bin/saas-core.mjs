@@ -111,7 +111,24 @@ export type ProductConfig = {
   description: string
   capabilities: Readonly<Record<string, boolean>>
   onboarding?: { productSetupPath?: string | null }
+  shell?: ProductShellConfig
   catalog: ProductCatalog
+}
+
+export type ProductShellNavigationItem = {
+  key: string
+  label: string
+  href: string
+  icon?: string
+  match?: "exact" | "prefix"
+  workspaceRoles?: readonly ("owner" | "admin" | "manager" | "staff" | "readonly")[]
+  requiredFeature?: string
+}
+
+export type ProductShellConfig = {
+  homePath?: string | null
+  homeLabel?: string | null
+  navigation?: readonly ProductShellNavigationItem[]
 }
 
 export type ProductPlanDefinition = {

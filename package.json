@@ -48,7 +48,7 @@
     "update": "pnpm run core:update",
     "dev:local": "node scripts/run-with-local-supabase-env.mjs pnpm run dev",
     "build:local": "node scripts/run-with-local-supabase-env.mjs pnpm run build",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "pnpm --filter @sapienx/saas-core build && pnpm --filter @sapienx/saas-core-config build && pnpm --filter @sapienx/saas-core-ui build && tsc --noEmit",
     "start": "next start"
   },
   "dependencies": {

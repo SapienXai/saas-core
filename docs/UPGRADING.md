@@ -40,6 +40,12 @@ failure path restores replaced and removed managed files, `package.json`, and
 failure is reported as critical with both error messages and the independent
 backup path; the CLI does not claim a healthy consumer in that case.
 
+The `PRODUCT_CONFIG.shell` field is optional and product-owned. Consumers that
+predate the shell extension continue using the Core Workspace dashboard;
+updates add the managed resolver without overwriting `lib/product-config.ts`.
+If a product adopts the extension, keep its routes under the product-owned
+route boundary and do not claim Core-reserved `/app` paths.
+
 Review the generated manifest and run the product’s install, typecheck, test,
 and build commands. Do not copy local `.env` files, `.next`, `node_modules`,
 screenshots, or provider credentials between checkouts.

@@ -10,11 +10,20 @@ import { useManageContext } from "@/context/manage-context"
 import { useManagePushNotifications } from "@/context/manage-push-notifications-context"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { getActiveProductNavigationKey, isProductNavigationVisible, resolveProductShell } from "@/lib/product-shell"
 
 export function ManageHeader({ user, toggleSidebar }: { user: { id: string; email: string; name: string }; toggleSidebar: () => void }) {
-  const pathname = usePathname(); const router = useRouter(); const { currentWorkspace } = useManageContext(); useManagePushNotifications(); const [isOnline, setIsOnline] = useState(true); const [showNotifications, setShowNotifications] = useState(false); const [isSigningOut, setIsSigningOut] = useState(false)
+  const pathname = usePathname(); const router = useRouter(); const { role, currentWorkspace } = useManageContext(); useManagePushNotifications(); const [isOnline, setIsOnline] = useState(true); const [showNotifications, setShowNotifications] = useState(false); const [isSigningOut, setIsSigningOut] = useState(false)
   useEffect(() => { const update = () => setIsOnline(navigator.onLine); update(); window.addEventListener("online", update); window.addEventListener("offline", update); return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update) } }, [])
-  const pageTitle = useMemo(() => pathname === "/app" || pathname === "/manage" ? "Workspace" : pathname.includes("/team") ? "Team" : pathname.includes("/plan") ? "Plan & usage" : pathname.includes("/domains") ? "Domains" : pathname.includes("/pwa") ? "Management app" : pathname.includes("/settings") ? "Settings" : pathname.includes("/platform") ? "Platform" : PRODUCT_CONFIG.name, [pathname])
+  const productShell = useMemo(() => resolveProductShell(), [])
+  const visibleProductNavigation = useMemo(() => productShell.navigation.filter((item) => isProductNavigationVisible(item, currentWorkspace?.role || role, currentWorkspace?.plan?.features)), [currentWorkspace?.plan?.features, currentWorkspace?.role, productShell, role])
+  const activeProductNavigationKey = getActiveProductNavigationKey(pathname, visibleProductNavigation)
+  const pageTitle = useMemo(() => {
+    const activeProductItem = visibleProductNavigation.find((item) => item.key === activeProductNavigationKey)
+    if (pathname === productShell.homePath && productShell.homePath !== "/app") return productShell.homeLabel || PRODUCT_CONFIG.name
+    if (activeProductItem) return activeProductItem.label
+    return pathname === "/app" || pathname === "/manage" ? "Workspace" : pathname.includes("/team") ? "Team" : pathname.includes("/plan") ? "Plan & usage" : pathname.includes("/domains") ? "Domains" : pathname.includes("/pwa") ? "Management app" : pathname.includes("/settings") ? "Settings" : pathname.includes("/platform") ? "Platform" : PRODUCT_CONFIG.name
+  }, [activeProductNavigationKey, pathname, productShell, visibleProductNavigation])
   useEffect(() => { document.title = `${pageTitle} | ${PRODUCT_CONFIG.name}` }, [pageTitle])
   const handleSignOut = useCallback(async () => {
     setIsSigningOut(true)

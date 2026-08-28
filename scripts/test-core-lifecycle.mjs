@@ -13,6 +13,7 @@ const coreB = path.join(fixture, "core-b")
 const cleanProduct = path.join(fixture, "clean-product")
 const conflictProduct = path.join(fixture, "conflict-product")
 const rollbackProduct = path.join(fixture, "rollback-product")
+const legacyProduct = path.join(fixture, "legacy-product")
 
 async function fsTemp(prefix) {
   const directory = await import("node:fs/promises").then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), prefix)))
@@ -36,7 +37,26 @@ try {
   await writeFile(path.join(coreB, "app/core-lifecycle-fixture.ts"), "export const lifecycleFixture = true\n", "utf8")
   await rm(path.join(coreB, "app/robots.ts"))
 
-  let result = run(coreA, ["init", "Lifecycle Clean", cleanProduct])
+  // Simulate a consumer generated before the product shell contract existed.
+  // Its product-owned config must survive the update byte-for-byte while the
+  // new managed resolver is added from the canonical template.
+  await rm(path.join(coreA, "lib/product-shell.ts"))
+  let result = run(coreA, ["init", "Legacy Shell Consumer", legacyProduct])
+  assert(result.status === 0, result.stderr || "legacy init failed")
+  const legacyConfigFile = path.join(legacyProduct, "lib/product-config.ts")
+  const legacyConfig = (await readFile(legacyConfigFile, "utf8"))
+    .replace(/export type ProductShellNavigationItem = \{[\s\S]*?\n\}\n\nexport type ProductShellConfig = \{[\s\S]*?\n\}\n\n/, "")
+    .replace("  shell?: ProductShellConfig\n", "")
+  await writeFile(legacyConfigFile, legacyConfig, "utf8")
+  const legacyConfigBeforeUpdate = await readFile(legacyConfigFile, "utf8")
+  result = run(coreB, ["update", legacyProduct, "--json"])
+  assert(result.status === 0, result.stderr || result.stdout || "legacy consumer update failed")
+  assert(existsSync(path.join(legacyProduct, "lib/product-shell.ts")), "legacy update did not add the product shell resolver")
+  assert((await readFile(legacyConfigFile, "utf8")) === legacyConfigBeforeUpdate, "legacy product config was overwritten during update")
+  result = run(coreB, ["doctor", legacyProduct, "--json"])
+  assert(result.status === 0, result.stderr || "legacy consumer doctor failed")
+
+  result = run(coreA, ["init", "Lifecycle Clean", cleanProduct])
   assert(result.status === 0, result.stderr || "clean init failed")
   await writeFile(path.join(cleanProduct, "app/page.tsx"), `${await readFile(path.join(cleanProduct, "app/page.tsx"), "utf8")}\n// product-owned customization\n`, "utf8")
   await writeFile(path.join(cleanProduct, "product.catalog.json"), JSON.stringify({ defaultPlanKey: "hobby", plans: [{ key: "hobby", name: "Hobby", prices: { month: { amount: 7, currency: "EUR" } }, limits: { "core.workspaces": 2 } }], usageMetrics: [{ key: "projects", name: "Projects" }] }, null, 2) + "\n", "utf8")

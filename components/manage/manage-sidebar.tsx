@@ -8,7 +8,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { ArrowUpRight, Check, ChevronDown, ChevronRight, Crown, Globe2, Layers3, LayoutDashboard, LogOut, Moon, PanelLeftClose, PanelLeftOpen, Plus, Shield, Smartphone, Sun, Users, X, WalletCards, type LucideIcon } from "lucide-react"
+import { Activity, Archive, ArrowUpRight, BarChart3, Briefcase, CalendarDays, Check, ChevronDown, ChevronRight, Crown, FileText, Folder, Globe2, Layers3, LayoutDashboard, List, LogOut, Moon, Package, PanelLeftClose, PanelLeftOpen, Plus, Settings2, Shield, Smartphone, Sun, Users, X, WalletCards, type LucideIcon } from "lucide-react"
 import { useLanguage } from "@/context/language-context"
 import { useManageContext } from "@/context/manage-context"
 import { cn } from "@/lib/utils"
@@ -18,10 +18,12 @@ import { WorkspaceUpgradeModal } from "@/components/manage/workspace-upgrade-mod
 import { localeConfig, type SupportedLanguage } from "@/i18n"
 import { getPlanNavigationHref } from "@/lib/plan-navigation"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { getActiveProductNavigationKey, isProductHomeActive, isProductNavigationVisible, resolveProductShell } from "@/lib/product-shell"
 
 const SETTINGS_GROUP_STORAGE_KEY = "saas-core:manage:sidebar-settings-open"
 const LEGACY_TOOLS_GROUP_STORAGE_KEY = "saas-core:manage:sidebar-tools-open"
 type SidebarNavigationItem = {
+  key: string
   name: string
   href: string
   icon: LucideIcon
@@ -33,6 +35,21 @@ type SidebarUsageItem = {
   label: string
   used: number
   limit: number | null
+}
+
+const PRODUCT_NAVIGATION_ICONS: Record<string, LucideIcon> = {
+  activity: Activity,
+  archive: Archive,
+  "bar-chart": BarChart3,
+  briefcase: Briefcase,
+  calendar: CalendarDays,
+  file: FileText,
+  folder: Folder,
+  layers: Layers3,
+  list: List,
+  package: Package,
+  settings: Settings2,
+  users: Users,
 }
 
 function workspaceRoleLabel(role: string | null, getTranslation: ReturnType<typeof useLanguage>["getTranslation"]) {
@@ -111,15 +128,19 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const mobileSettingsListRef = useRef<HTMLDivElement>(null)
 
   const isActive = (path: string) => pathname === path || pathname.startsWith(`${path}/`)
+  const productShell = resolveProductShell()
+  const visibleProductNavigation = productShell.navigation.filter((item) => isProductNavigationVisible(item, currentWorkspace?.role || role, currentWorkspace?.plan?.features))
+  const activeProductNavigationKey = getActiveProductNavigationKey(pathname, visibleProductNavigation)
   const navigation: SidebarNavigationItem[] = [
-    { name: getTranslation("manage.sidebar.dashboard"), href: "/app", icon: LayoutDashboard, current: isActive("/app") && !["/app/team", "/app/plan", "/app/domains", "/app/pwa", "/app/settings"].some(isActive), disabled: false },
+    { key: "home", name: productShell.homeLabel || getTranslation("manage.sidebar.dashboard"), href: productShell.homePath, icon: LayoutDashboard, current: isProductHomeActive(pathname, productShell.homePath) && !activeProductNavigationKey, disabled: false },
+    ...visibleProductNavigation.map((item) => ({ key: item.key, name: item.label, href: item.href, icon: PRODUCT_NAVIGATION_ICONS[item.icon] || Layers3, current: activeProductNavigationKey === item.key, disabled: false })),
   ]
   const settingsNavigation: SidebarNavigationItem[] = [
-    { name: getTranslation("manage.sidebar.team"), href: "/app/team", icon: Users, current: isActive("/app/team"), disabled: !isDomainAdmin },
-    { name: getTranslation("manage.sidebar.planUsage"), href: "/app/plan", icon: WalletCards, current: isActive("/app/plan"), disabled: isStaff },
-    { name: getTranslation("manage.sidebar.domains"), href: "/app/domains", icon: Globe2, current: isActive("/app/domains"), disabled: !isDomainAdmin },
-    { name: getTranslation("manage.sidebar.managementApp"), href: "/app/pwa", icon: Smartphone, current: isActive("/app/pwa"), disabled: false },
-    ...(platformRole ? [{ name: getTranslation("manage.sidebar.platformControl"), href: "/platform", icon: Shield, current: isActive("/platform"), disabled: false }] : []),
+    { key: "team", name: getTranslation("manage.sidebar.team"), href: "/app/team", icon: Users, current: isActive("/app/team"), disabled: !isDomainAdmin },
+    { key: "plan", name: getTranslation("manage.sidebar.planUsage"), href: "/app/plan", icon: WalletCards, current: isActive("/app/plan"), disabled: isStaff },
+    { key: "domains", name: getTranslation("manage.sidebar.domains"), href: "/app/domains", icon: Globe2, current: isActive("/app/domains"), disabled: !isDomainAdmin },
+    { key: "pwa", name: getTranslation("manage.sidebar.managementApp"), href: "/app/pwa", icon: Smartphone, current: isActive("/app/pwa"), disabled: false },
+    ...(platformRole ? [{ key: "platform", name: getTranslation("manage.sidebar.platformControl"), href: "/platform", icon: Shield, current: isActive("/platform"), disabled: false }] : []),
   ]
   const availableSettingsNavigation = settingsNavigation.filter((item) => !item.disabled)
   const hasActiveSetting = availableSettingsNavigation.some((item) => item.current)
@@ -238,13 +259,13 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
 
               const itemContent = <><span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", item.current ? "bg-white/15" : "bg-slate-100 text-slate-500 group-hover:bg-white dark:bg-white/5 dark:text-slate-400")}><Icon className="h-4 w-4" /></span>{!compact && <span className="min-w-0 flex-1 truncate">{item.name}</span>}{!compact && item.current && <ChevronRight className="h-4 w-4 shrink-0 opacity-70" />}</>
               const itemElement = item.disabled
-                ? <div key={item.name} className={itemClass} aria-disabled title={getTranslation("manage.common.administratorRequired")}>{itemContent}</div>
-                : <Link key={item.name} href={`${item.href}?lang=${currentLang}`} className={itemClass} aria-current={item.current ? "page" : undefined} onClick={mobile ? onClose : undefined}>{itemContent}</Link>
+                ? <div key={item.key} className={itemClass} aria-disabled title={getTranslation("manage.common.administratorRequired")}>{itemContent}</div>
+                : <Link key={item.key} href={`${item.href}?lang=${currentLang}`} className={itemClass} aria-current={item.current ? "page" : undefined} onClick={mobile ? onClose : undefined}>{itemContent}</Link>
 
               if (!compact) return itemElement
 
               return (
-                <Tooltip key={item.name}>
+                <Tooltip key={item.key}>
                   <TooltipTrigger asChild>{itemElement}</TooltipTrigger>
                   <TooltipContent side="right" sideOffset={10} className="manage-sidebar-tooltip">{item.name}</TooltipContent>
                 </Tooltip>
@@ -302,7 +323,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
                       : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/[0.07] dark:hover:text-white",
                   )
                   const itemContent = <><span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", item.current ? "bg-white/15" : "bg-slate-100 text-slate-500 group-hover:bg-white dark:bg-white/5 dark:text-slate-400")}><Icon className="h-4 w-4" /></span><span className="min-w-0 flex-1 truncate">{item.name}</span>{item.current && <ChevronRight className="h-4 w-4 shrink-0 opacity-70" />}</>
-                  return <Link key={item.name} href={`${item.href}?lang=${currentLang}`} className={itemClass} aria-current={item.current ? "page" : undefined} onClick={mobile ? onClose : undefined}>{itemContent}</Link>
+                  return <Link key={item.key} href={`${item.href}?lang=${currentLang}`} className={itemClass} aria-current={item.current ? "page" : undefined} onClick={mobile ? onClose : undefined}>{itemContent}</Link>
                 })}
               </div>
             )}

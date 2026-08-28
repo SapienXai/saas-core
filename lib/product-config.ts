@@ -27,6 +27,22 @@ export type ProductOnboardingConfig = {
   productSetupPath?: string | null
 }
 
+export type ProductShellNavigationItem = {
+  key: string
+  label: string
+  href: string
+  icon?: string
+  match?: "exact" | "prefix"
+  workspaceRoles?: readonly ("owner" | "admin" | "manager" | "staff" | "readonly")[]
+  requiredFeature?: string
+}
+
+export type ProductShellConfig = {
+  homePath?: string | null
+  homeLabel?: string | null
+  navigation?: readonly ProductShellNavigationItem[]
+}
+
 export type ProductConfig = {
   name: string
   slug: string
@@ -36,6 +52,7 @@ export type ProductConfig = {
   description: string
   capabilities: Readonly<Record<string, boolean>>
   onboarding?: ProductOnboardingConfig
+  shell?: ProductShellConfig
   /** Product-owned commercial catalog. Core only evaluates its stable keys. */
   catalog: ProductCatalog
 }

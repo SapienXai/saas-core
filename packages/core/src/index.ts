@@ -46,10 +46,29 @@ export type ProductOnboarding = {
   productSetupPath?: string | null
 }
 
+export type CoreWorkspaceRole = "owner" | "admin" | "manager" | "staff" | "readonly"
+
+export type ProductShellNavigationItem = {
+  key: string
+  label: string
+  href: string
+  icon?: string
+  match?: "exact" | "prefix"
+  workspaceRoles?: readonly CoreWorkspaceRole[]
+  requiredFeature?: string
+}
+
+export type ProductShellConfig = {
+  homePath?: string | null
+  homeLabel?: string | null
+  navigation?: readonly ProductShellNavigationItem[]
+}
+
 export type ProductConfigContract = {
   identity: ProductIdentity
   catalog: ProductCatalog
   onboarding?: ProductOnboarding
+  shell?: ProductShellConfig
 }
 
 export type CoreManifest = {

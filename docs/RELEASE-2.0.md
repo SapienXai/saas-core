@@ -18,6 +18,8 @@ repository-backed checks. No external package publication or push is implied.
 - Schema verification: private metadata plus service-role-only doctor check
 - Lifecycle: manifest-aware diff, conflict-blocking update, independent backup,
   validation, rollback, and dry-run
+- Product shell: optional safe `/app/*` home and first-level navigation,
+  shared by expanded, collapsed, and mobile navigation with Core route guards
 - Portability: packed registry consumer, relocation, frozen reinstall
 - Security: RLS, membership tenancy, platform separation, and secret boundary
   checks remain part of the release suite
