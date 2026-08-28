@@ -75,6 +75,24 @@ credentials are absent. It reports an error when metadata is missing or
 mismatched. Changing a product catalog, default plan, or usage metric does not
 require a Core migration.
 
+## Public Workspace routing
+
+Public Workspace routing is a Core runtime boundary, not a product entity
+router. Products may use `resolvePublicWorkspaceRequest()` from server code to
+receive a resolved Workspace plus normalized pathname, then resolve their own
+domain entity. Keep product route meaning and data in product-owned files.
+
+The canonical request-host extractor and `classifyHostname()` are shared by
+proxy and public resolution. Do not add a second tenant-host parser, query
+parameter override, or provider lookup to a page request. A future Core update
+must preserve `lib/domains/hostname.ts`, `lib/route-ownership.ts`, and
+`lib/public-workspace.ts` as managed files. If a product customizes public
+paths, it must not claim Core canonical app paths or system/static paths.
+
+The schema remains Core `2.0`; this capability uses the existing `workspaces`
+and `workspace_domains` tables and adds no migration or product-entity table.
+Domain provider reconciliation remains in the existing management workflow.
+
 ## UI changes
 
 Preserve source-derived implementations when moving shared components. A

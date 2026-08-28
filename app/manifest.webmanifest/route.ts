@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server"
-import { classifyHostname } from "@/lib/domains/hostname"
+import { classifyHostname, getRequestHostname } from "@/lib/domains/hostname"
 import { getManagementContext } from "@/lib/management-context"
 import { getEffectivePwaBranding, getGenericPwaBranding, getPwaIconAssetUrl, getPublicPwaBranding, PWA_FALLBACK_ICON } from "@/lib/pwa"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
-function requestHostname(request: Request) {
-  return request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host") || ""
-}
-
 export async function GET(request: Request) {
-  const classification = classifyHostname(requestHostname(request))
+  const classification = classifyHostname(getRequestHostname(request) || "")
   if (!["PLATFORM_APP", "LOCAL_DEVELOPMENT", "VERCEL_PREVIEW"].includes(classification.kind)) {
     return new NextResponse("Not Found", { status: 404 })
   }

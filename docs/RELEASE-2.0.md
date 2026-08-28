@@ -23,6 +23,9 @@ repository-backed checks. No external package publication or push is implied.
 - Portability: packed registry consumer, relocation, frozen reinstall
 - Security: RLS, membership tenancy, platform separation, and secret boundary
   checks remain part of the release suite
+- Public Workspace routing: shared trusted hostname extraction, hosted/custom
+  resolution, canonical app ownership, reserved system paths, and fail-closed
+  normalized pathname handling
 - Auth/onboarding: root entry, destination-aware confirmation, atomic initial
   Workspace setup, invited-member bypass, platform-owner readiness, and safe
   product setup handoff are covered by source and browser checks

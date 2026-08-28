@@ -24,6 +24,32 @@ Product records must reference `workspaces(id)` and use their own policies.
 Cross-Workspace reads, writes, invitation acceptance, and domain changes must
 be denied even if a caller knows another Workspace UUID.
 
+## Public Workspace routing
+
+Public tenancy is selected only from the server request hostname. A single
+trusted extractor validates the first `x-forwarded-host` value and falls back
+to `Host` when the forwarded value is malformed; it rejects schemes,
+credentials, paths, queries, invalid labels, and unsafe IP forms. `proxy.ts`
+and the server-only public resolver consume that same boundary. Query
+parameters, cookies, form fields, and client-supplied Workspace IDs/slugs have
+no authority over public tenant selection.
+
+Hosted hosts resolve an exact slug under the configured root domain. Custom
+hosts resolve an exact persisted `workspace_domains` mapping only when the
+domain is active, production-configured, verified, provider-verified,
+DNS-configured, and has `verified_at`, and the mapped Workspace is active. Any
+unknown or non-public mapping fails closed. The resolver returns only a small
+Workspace context and normalized pathname; it never interprets product paths.
+It performs no provider or DNS calls during public page resolution.
+
+Canonical app ownership is separate from reserved public/system ownership.
+Tenant/custom hosts redirect `/app/*`, `/manage`, `/platform`, and Core auth or
+onboarding paths to the canonical app domain; product-owned public paths stay
+on their public hostname. Standard URL pathname normalization is performed
+before route ownership checks, preventing dot-segment bypasses. `/api`,
+`/_next`, manifest, PWA, and static asset paths remain protected system
+surfaces.
+
 ## Platform and service roles
 
 Platform Control is a separate membership plane. Platform tables revoke access

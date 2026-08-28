@@ -15,6 +15,7 @@ export type HostnameKind =
 
 export type HostnameClassification = { kind: HostnameKind; hostname: string | null; workspaceSlug: string | null; reason?: string }
 export type CustomerHostnameParts = { hostname: string; isApex: boolean; dnsHost: string }
+export type TrustedRequestHost = { hostname: string; host: string }
 
 export class HostnameValidationError extends Error {
   constructor(message: string) { super(message); this.name = "HostnameValidationError" }
@@ -53,6 +54,44 @@ function parseHostname(value: string, allowLocalhost: boolean, allowPrivateNetwo
   if (isIpAddress(hostname) && !((allowLocalhost && hostname === "127.0.0.1") || (allowPrivateNetwork && isPrivateIPv4(hostname)))) return null
   if (!allowLocalhost && (hostname === "localhost" || hostname.endsWith(".localhost"))) return null
   return hostname
+}
+
+function firstHeaderValue(headers: Pick<Headers, "get">, name: string) {
+  return headers.get(name)?.split(",")[0]?.trim() || null
+}
+
+function parseTrustedRequestHost(value: string | null): TrustedRequestHost | null {
+  const raw = value?.trim() || ""
+  if (!raw || /^[a-z][a-z\d+.-]*:\/\//i.test(raw) || /[\\/\s?#]/.test(raw)) return null
+
+  let parsed: URL
+  try { parsed = new URL(`http://${raw}`) } catch { return null }
+  if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null
+
+  const hostname = parseHostname(raw, true, process.env.NODE_ENV !== "production")
+  if (!hostname || parsed.hostname.toLowerCase().replace(/\.$/, "") !== hostname) return null
+  return { hostname, host: parsed.host }
+}
+
+/**
+ * Resolve the request host once at the server boundary. Proxies may provide a
+ * comma-separated forwarded chain; only its first value is considered, and a
+ * malformed forwarded value falls back to the ordinary Host header.
+ */
+export function getTrustedHostFromHeaders(headers: Pick<Headers, "get">): TrustedRequestHost | null {
+  for (const header of ["x-forwarded-host", "host"]) {
+    const candidate = parseTrustedRequestHost(firstHeaderValue(headers, header))
+    if (candidate) return candidate
+  }
+  return null
+}
+
+export function getTrustedRequestHost(request: Request) {
+  return getTrustedHostFromHeaders(request.headers)
+}
+
+export function getRequestHostname(request: Request) {
+  return getTrustedRequestHost(request)?.hostname || null
 }
 
 export function normalizeHostname(value: string) {

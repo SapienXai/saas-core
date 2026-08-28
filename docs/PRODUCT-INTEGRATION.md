@@ -103,6 +103,54 @@ The example is intentionally unrelated to any specific industry. Product
 tables must not rely on UI filtering as tenancy protection. Add insert,
 update, delete, role, and service-role policies deliberately for each domain.
 
+## Public Workspace Routing
+
+The public product boundary is intentionally small:
+
+```text
+SaaS Core: hostname → Workspace
+Product:   Workspace + pathname → product entity
+```
+
+A product can resolve a server request with the Core helper and then interpret
+the result in its own domain code:
+
+```ts
+const result = await resolvePublicWorkspaceRequest(request)
+if (result.status !== "resolved") notFound()
+
+const { workspaceId, workspaceSlug, pathname } = result.context
+// Product-owned: resolve (workspaceId, pathname) in the product domain.
+```
+
+The same context contract supports a hosted Workspace URL such as
+`felix.placedj.com/beach` and a verified custom domain such as
+`music.felixrestaurants.com/beach`. “Beach” is an example only; Core does not
+know what it represents. The hostname is the only public tenant authority.
+Neither a query parameter (`?workspace=...`) nor a path segment can switch the
+Workspace, and the query string is not included in `pathname`.
+
+Hosted resolution requires the exact Workspace slug and an active public
+Workspace. Custom resolution requires the exact persisted `workspace_domains`
+record to be active, production-configured, verified, provider-verified,
+DNS-configured, and stamped with `verified_at`, plus the same active Workspace
+check. Expected misses fail closed without a 500. Public rendering does not
+call Vercel, DNS, or any domain provider; the domain-management workflow is
+responsible for reconciliation.
+
+Core canonical app paths (`/app/*`, `/manage`, `/platform`, `/login`,
+`/signup`, `/onboarding`, `/auth`, `/invite`, `/setup`, and related descendants)
+cannot be product public paths on a tenant/custom host. They redirect to the
+configured app origin with their query preserved. Core reserved public/system
+paths (`/api`, `/_next`, manifest, PWA, sitemap, robots, OpenAPI, service
+worker, and static assets) are protected but are not treated as app-origin
+redirects. All other paths are product-owned, including `/`.
+
+For local development, `*.localhost` retains Core’s existing
+`LOCAL_DEVELOPMENT` classification. Use a controlled configured root domain in
+unit/integration or host-header tests when testing hosted Workspace routing;
+do not assume `workspace.localhost` is a production hosted Workspace.
+
 ## Extending the application
 
 Product routes can live beside `/app` and use the same `ManageShell`, or a

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import sharp from "sharp"
-import { classifyHostname } from "@/lib/domains/hostname"
+import { classifyHostname, getRequestHostname } from "@/lib/domains/hostname"
 import { getPublicPwaBranding, PWA_FALLBACK_ICON, storagePathFromPublicUrl } from "@/lib/pwa"
 import { createServiceRoleClient } from "@/lib/supabase"
 
@@ -9,10 +9,6 @@ export const revalidate = 0
 export const runtime = "nodejs"
 
 const ICON_SIZES = new Set([180, 192, 512])
-
-function requestHostname(request: Request) {
-  return request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host") || ""
-}
 
 function fallbackResponse(request: Request) {
   return NextResponse.redirect(new URL(PWA_FALLBACK_ICON, request.url))
@@ -63,7 +59,7 @@ async function renderInstallIcon(input: ArrayBuffer, size: number, backgroundCol
 }
 
 export async function GET(request: Request) {
-  const classification = classifyHostname(requestHostname(request))
+  const classification = classifyHostname(getRequestHostname(request) || "")
   if (!["PLATFORM_APP", "LOCAL_DEVELOPMENT", "VERCEL_PREVIEW"].includes(classification.kind)) {
     return new NextResponse("Not Found", { status: 404 })
   }

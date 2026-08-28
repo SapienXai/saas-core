@@ -81,6 +81,36 @@ no Workspace is routed to Platform Control. Signup confirmation names the
 destination email. A local-only Mailpit link appears after signup in
 development and is never rendered in production.
 
+## Public Workspace Routing
+
+Core provides one product-neutral public routing boundary:
+
+```text
+request
+  → trusted hostname
+  → Core hostname classification
+  → public Workspace
+  → normalized pathname
+  → product-owned entity/page
+```
+
+Both `felix.placedj.com/beach` and a verified custom domain such as
+`music.felixrestaurants.com/beach` can resolve the same Workspace. Core returns
+the Workspace context and `/beach` as a pathname; it does not know what
+“beach” represents. The hostname is the tenant authority. Query parameters and
+path segments cannot select another Workspace.
+
+Tenant and custom-domain requests to canonical Core paths such as `/app/*`,
+`/manage`, `/platform`, `/login`, and `/onboarding` redirect to the configured
+canonical app origin. Core/system paths such as `/api`, `/_next`, the manifest,
+PWA endpoints, and static assets are reserved. Other paths remain product-owned
+public paths. Public resolution reads persisted Workspace/domain state only; it
+does not call Vercel, DNS, or another provider during page rendering.
+
+Local `*.localhost` hosts retain their existing `LOCAL_DEVELOPMENT` semantics.
+Public-host routing tests use a controlled configured root domain rather than
+claiming that localhost subdomains are production Workspace hosts.
+
 ## Source boundary
 
 The extraction record in [docs/RESERVEVIA-EXTRACTION.md](docs/RESERVEVIA-EXTRACTION.md)

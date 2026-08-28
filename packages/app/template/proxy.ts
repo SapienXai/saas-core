@@ -1,46 +1,34 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
-import { classifyHostname, getTrustedPlatformOrigin } from "@/lib/domains/hostname"
+import { classifyHostname, getRequestHostname, getTrustedPlatformOrigin } from "@/lib/domains/hostname"
 import { getRequestUrl } from "@/lib/request-url"
-
-function requestHostname(request: NextRequest) {
-  return request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host") || ""
-}
-
-function isLocalTenantHost(hostname: string | null) {
-  return Boolean(hostname && hostname.endsWith(".localhost"))
-}
+import { isCanonicalAppPath, normalizeRequestPathname } from "@/lib/route-ownership"
 
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
+  const pathname = normalizeRequestPathname(request.nextUrl.pathname) || "/"
   const requestUrl = getRequestUrl(request)
-  const classification = classifyHostname(requestHostname(request))
+  const classification = classifyHostname(getRequestHostname(request) || "")
   const isTenantHost = classification.kind === "HOSTED_WORKSPACE" || classification.kind === "CUSTOM_WORKSPACE"
-  const keepLocalHostBehavior = isLocalTenantHost(classification.hostname)
 
   if (classification.kind === "PLATFORM_WWW") {
-    const redirectUrl = new URL(request.nextUrl.pathname + request.nextUrl.search, getTrustedPlatformOrigin("root"))
+    const redirectUrl = new URL(pathname + request.nextUrl.search, getTrustedPlatformOrigin("root"))
     return NextResponse.redirect(redirectUrl, 308)
   }
 
   // Management and authentication have one canonical origin. Local *.localhost testing keeps the direct route.
-  if (isTenantHost && !keepLocalHostBehavior) {
-    const isManagementOrAuthRoute = pathname.startsWith("/manage") || pathname.startsWith("/platform") ||
-      ["/login", "/signup", "/forgot-password", "/reset-password", "/onboarding", "/auth", "/invite"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
-    if (isManagementOrAuthRoute) {
-      const redirectUrl = new URL(pathname + request.nextUrl.search, getTrustedPlatformOrigin("app"))
-      return NextResponse.redirect(redirectUrl, 307)
-    }
+  if (isTenantHost && isCanonicalAppPath(pathname)) {
+    const redirectUrl = new URL(pathname + request.nextUrl.search, getTrustedPlatformOrigin("app"))
+    return NextResponse.redirect(redirectUrl, 307)
   }
 
   const isManageRoute =
-    (pathname.startsWith("/app") || pathname.startsWith("/manage")) &&
+    ((pathname === "/app" || pathname.startsWith("/app/")) || (pathname === "/manage" || pathname.startsWith("/manage/"))) &&
     !pathname.startsWith("/manage/login") &&
     !pathname.startsWith("/manage/reset-password") &&
     !pathname.startsWith("/manage/update-password")
   const isOnboardingRoute = pathname === "/onboarding"
-  const isPlatformRoute = pathname.startsWith("/platform")
+  const isPlatformRoute = pathname === "/platform" || pathname.startsWith("/platform/")
   // Login must stay reachable even when the browser has a stale or expired
   // Supabase cookie. The form can replace that session; forcing a getUser()
   // round-trip here can leave the entry screen stuck behind auth redirects.

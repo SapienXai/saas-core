@@ -51,6 +51,50 @@ platform membership/readiness state; the configured identity is not exposed to
 ordinary production users. Product setup is an internal handoff configured by
 `PRODUCT_CONFIG.onboarding.productSetupPath`, defaulting safely to `/app`.
 
+## Public Workspace Routing
+
+Public routing stops at the Core tenancy boundary:
+
+```text
+HTTP request
+  → trusted x-forwarded-host/Host boundary
+  → classifyHostname()
+  → Workspace lookup by hosted slug or verified custom-domain mapping
+  → PublicWorkspaceContext { Workspace, normalized pathname }
+  → product-owned pathname interpretation
+```
+
+SaaS Core owns `hostname → Workspace`. The product owns
+`Workspace + pathname → product entity`. For example, `/beach` is only a
+normalized product pathname; Core does not define whether it is a page or any
+other product entity. Query parameters are not part of pathname identity and
+cannot override the hostname-selected Workspace.
+
+Hosted Workspace requests use an exact slug under the configured root domain
+and require `workspaces.status = 'active'` plus
+`workspaces.platform_status = 'active'`. Custom requests use an exact
+`workspace_domains.hostname` mapping and require `status = 'active'`,
+`provider_environment = 'production'`, `verification_state = 'verified'`,
+`provider_verified = true`, `dns_configured = true`, and a non-null
+`verified_at`, followed by the same active Workspace check. An ordinary miss
+returns `not_found`; platform, local, preview, canonical-app, and reserved
+system surfaces return `not_public_workspace`.
+
+`resolvePublicWorkspaceRequest()` is server-only and shares the trusted host
+extraction boundary with `proxy.ts`. It performs no Vercel API, DNS, provider
+refresh, or reconciliation call during page resolution. Domain management
+continues to own provider reconciliation and only its persisted result is
+consumed by the public resolver. `*.localhost` remains
+`LOCAL_DEVELOPMENT`; controlled root domains are used for deterministic tests.
+
+Core route ownership distinguishes canonical app paths from reserved public
+paths. A tenant/custom host requesting `/app`, `/app/team`, `/manage`,
+`/platform`, `/login`, or another canonical app descendant is redirected to
+`SAAS_CORE_APP_DOMAIN`, preserving the query string. Product-owned public paths
+such as `/beach` are not redirected. Dot-segment normalization uses the
+standard URL parser before these checks, so encoded/dot-segment traversal
+cannot bypass `/app` ownership.
+
 ## Management composition
 
 The default `/app` surface is composed from the extracted management shell:

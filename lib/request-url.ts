@@ -1,3 +1,5 @@
+import { getTrustedRequestHost } from "@/lib/domains/hostname"
+
 /**
  * Next's development server can build request.url from its bind address
  * (0.0.0.0) instead of the hostname used by a device on the local network.
@@ -9,16 +11,9 @@ export function getRequestUrl(request: Request) {
   if (process.env.NODE_ENV === "production") return url
 
   const protocol = firstHeaderValue(request, "x-forwarded-proto") || url.protocol.replace(":", "")
-  const candidateHosts = [
-    firstHeaderValue(request, "x-forwarded-host"),
-    firstHeaderValue(request, "host"),
-  ]
-
-  for (const candidate of candidateHosts) {
-    const origin = originFromHost(candidate, protocol)
-    if (!origin) continue
-    return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)
-  }
+  const trustedHost = getTrustedRequestHost(request)
+  const origin = originFromHost(trustedHost?.host || null, protocol)
+  if (origin) return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)
 
   return url
 }
