@@ -14,6 +14,13 @@ tabs, accordions, collapsibles, scroll areas, resizable panels, calendars,
 carousels, command menus, tooltips, hover cards, dropdown/context menus,
 dialogs, alert dialogs, sheets, drawers, toasts, and Sonner integration.
 
+The same primitive source is published from `@sapienx/saas-core-ui` with
+declarations and stable subpath exports such as `/button`, `/dialog`,
+`/shell`, and `/theme`. The integrated management shell stays in the app
+template because it adapts server-backed Workspace context, navigation, auth,
+and PWA data; moving that adapter would require changing its source contract.
+That boundary does not alter its source-derived behavior.
+
 Use these primitives as composed. They carry keyboard semantics, focus
 restoration, portal behavior, data-state transitions, and disabled/loading
 states that are easy to lose in a visual rewrite.

@@ -19,6 +19,20 @@ Every product should provide:
 replace this module at its application boundary. It must not scatter identity
 constants through Core components or server modules.
 
+The commercial catalog is product-owned too. A product can define any plan
+keys, prices, feature keys, and usage metric keys; Core does not require a
+particular catalog or a universal business metric. Synchronize it through the
+server-only, idempotent bootstrap command:
+
+```bash
+pnpm billing:sync-catalog -- ./product.catalog.json
+pnpm billing:sync-catalog -- ./product.catalog.json --dry-run
+```
+
+Catalog sync updates plan metadata and keyed limits, preserves existing
+provider price IDs, and only deactivates plans when
+`--deactivate-missing` is explicit.
+
 ## Adding a domain
 
 ```sql
@@ -66,6 +80,11 @@ Products may customize:
 Core continues to own authentication, Workspace membership, billing
 enforcement, platform operator access, outbox delivery, PWA safety, and the
 generic interaction foundation.
+
+For example, a Projects product can define a `projects` table with
+`workspace_id`, its own RLS policy, a `projects` navigation entry, a product
+page, and a `projects` usage meter. None of those require a Core migration;
+they are product-owned extensions of the Workspace boundary.
 
 ## ReserveVia recomposition
 

@@ -38,10 +38,11 @@ billing validation, email delivery, or service-role boundaries.
   drawer, workspace switcher, account controls, theme persistence, Radix
   overlays, keyboard/focus behavior, loading states, toasts, and feedback.
 
-The portable package boundary is intentionally small: `@saas-core/app` carries
-the source-derived application template, while `@saas-core/core`,
-`@saas-core/config`, `@saas-core/ui`, and `@saas-core/cli` carry stable
-contracts and lifecycle tooling. `saas-core init` materializes the full
+The portable package boundary is intentionally small: `@sapienx/saas-core-app`
+carries the canonical source-derived application template, while
+`@sapienx/saas-core`, `@sapienx/saas-core-config`, `@sapienx/saas-core-ui`, and
+`@sapienx/saas-core-cli` carry real contracts, source-derived UI
+implementation, and lifecycle tooling. `saas-core init` materializes the full
 template, not a placeholder shell.
 
 ## Routes
@@ -133,11 +134,13 @@ silently replaced with fixtures.
 
 ## Product integration
 
-A product config is the only identity boundary for the default surface:
-`lib/product-config.ts` provides name, slug, mark, theme, metadata, navigation,
-and enabled Core capabilities. Product-owned navigation and dashboard
-extensions should be composed at this boundary; Core backend and security
-modules stay unchanged.
+A product config is the identity and commercial boundary for the default
+surface: `lib/product-config.ts` provides name, slug, mark, theme, metadata,
+navigation, enabled Core capabilities, product plan catalog, and usage metric
+definitions. Core owns the billing lifecycle and keyed entitlement engine;
+products own plan names, prices, feature catalog, limits, and marketing copy.
+Synchronize a catalog server-side with `pnpm billing:sync-catalog --
+product.catalog.json`.
 
 The lifecycle commands are deliberately portable and manifest-based:
 

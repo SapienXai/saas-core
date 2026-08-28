@@ -1,6 +1,8 @@
 # ReserveVia extraction inventory
 
-Status: Phase A inventory for SaaS Core 2.0. This file records the source-preserving baseline before product removal.
+Status: Final extraction record for SaaS Core 2.0. This file records the
+source-preserving ReserveVia baseline, surgical product removal, and the
+resulting ownership boundaries.
 
 ## Source boundary
 
@@ -10,7 +12,9 @@ Status: Phase A inventory for SaaS Core 2.0. This file records the source-preser
 - Import rule: readable source/configuration was copied into this checkout. `.git`, `node_modules`, `.next`, `.next-e2e`, `output`, `.env.local`, `.pnpm-store`, `tsconfig.tsbuildinfo`, and `supabase/.temp` were excluded.
 - The ReserveVia checkout was not edited. The source checkout was clean when inspected.
 
-The baseline intentionally contains product code. Domain removal begins only after this inventory and the baseline checks have been captured.
+The baseline was captured before domain removal. The current Core template has
+no product-domain route or business module; empty directory names from the
+source layout are not shipped as files.
 
 ## Classification legend
 
@@ -124,6 +128,15 @@ diffs. They are not replacements for the shell: their removed majority is
 traceable to product realtime/domain surfaces. The sidebar, shell, overlays,
 and primitives remain close to the production source because they are the
 platform’s interaction language.
+
+## Final extraction and recomposition note
+
+The generic catalog, keyed usage model, and workspace limit enforcement are
+now product-neutral. A future ReserveVia consumer can add its removed
+restaurant/reservation tables and RLS under `workspace_id`, register its own
+plan/metric catalog, and compose product navigation/pages without changing
+Core auth, membership, billing lifecycle, PWA, Platform Control, or UI
+primitives. The source ReserveVia repository remains read-only and untouched.
 
 ## Extraction proof obligations
 

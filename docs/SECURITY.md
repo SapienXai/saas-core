@@ -33,6 +33,9 @@ the same server-only pattern.
 
 The repository has no `NEXT_PUBLIC_*` service-role value. `SUPABASE_SERVICE_ROLE_KEY`
 is read only from server-only modules and never imported by client components.
+The catalog synchronization command is a server-only Node process and rejects
+public/anonymous keys; provider price mappings are not changed by plan catalog
+upserts.
 Environment diagnostics expose presence/length metadata only to an authorized
 development operator and never return secret values.
 

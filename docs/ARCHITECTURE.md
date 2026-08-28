@@ -1,9 +1,9 @@
 # Architecture
 
 SaaS Core 2.0 is a source-preserving extraction of the production ReserveVia
-platform boundary. The monolith stays intentionally understandable while the
-boundaries settle. Packaging is a lifecycle concern, not a reason to split
-working server behavior into a plugin framework.
+platform boundary. The working application remains understandable, while
+stable package and ownership boundaries make it updateable without turning the
+product layer into a plugin framework.
 
 ## Ownership
 
@@ -11,7 +11,8 @@ Core owns:
 
 - authenticated identity, SSR cookies, redirects, recovery, and invitations;
 - Workspace, membership, roles, permissions, selection, and settings;
-- plans, subscriptions, usage, entitlements, billing webhooks, and limits;
+- plan/subscription lifecycle, keyed usage, entitlements, billing webhooks, and
+  limits;
 - email delivery/outbox, Web Push subscriptions, PWA shell behavior;
 - custom Workspace domains, Platform Control, audit, setup, and health;
 - the default responsive shell and its interaction primitives.
@@ -33,9 +34,11 @@ source.
 
 Signup and confirmation end at resumable `/onboarding`. The transactional
 `bootstrap_initial_workspace` RPC derives the user from `auth.uid()`, creates
-the Workspace and owner membership, and lets the database create the default
-Free subscription. Invitation creation and acceptance use one-use token
-hashes, email matching, expiry, and role validation.
+the Workspace and owner membership, and lets the database select the first
+active product-configured plan. It counts owner memberships for an explicit
+`core.workspaces` entitlement; `created_by` is audit metadata, not an
+authorization or one-workspace constraint. Invitation creation and acceptance
+use one-use token hashes, email matching, expiry, and role validation.
 
 ## Management composition
 
@@ -61,8 +64,11 @@ Core code does not replace them with native approximations.
 
 Paddle is a billing provider, not an entitlement authority. Signed webhook
 events are stored idempotently and update local subscription state only after
-validation. `lib/entitlements.ts` reads the database-backed plan and exposes
-generic limits such as workspaces, users, activity, and history.
+validation. `lib/entitlements.ts` reads keyed `features`, `limits`, and
+`workspace_usage_periods.usage`; Core never requires Free/Starter/Pro/Business,
+prices, or an `activity` metric. Products synchronize their own plan catalog
+with `pnpm billing:sync-catalog`, which is idempotent and never mutates
+provider-price mappings.
 
 Resend delivery is isolated behind `lib/email-delivery.ts` and the outbox
 routes. Invitations and account communication are generic Core messages.
@@ -76,16 +82,19 @@ product configuration and authorized Workspace settings.
 
 ## Lifecycle and packaging
 
-The working application remains a monolith. `packages/core`, `packages/ui`,
-`packages/config`, and `packages/cli` are the stable packaging direction, while
-the root runtime remains the executable reference. `scripts/core-*` provide
+The root runtime is the executable reference and `packages/app/template` is
+the single canonical application template. `packages/core` contains real
+generic contracts; `packages/config` contains product identity/catalog
+contracts; `packages/ui` contains the source-derived reusable primitives; and
+`packages/cli` ships the template at pack time. `scripts/core-*` provide
 portable `pack`, `init`, `doctor`, `diff`, and `update` behavior based on a
-manifest. They do not write checkout paths or local dependency URLs into a
-consumer.
+managed-file manifest. They do not write checkout paths or local dependency
+URLs into a consumer.
 
-`@saas-core/app` carries the materialized application template used by
-`saas-core init`; `@saas-core/cli` includes the same template when distributed
-as a standalone package. A generated Projects consumer therefore receives the
-actual auth, Workspace, Team, Plan, Setup, Settings, PWA, domains, Platform
-Control, and source-derived interaction surfaces. It has a generic Workspace
-plus Projects model and does not require industry-specific concepts to boot.
+The controlled namespace is `@sapienx`: `@sapienx/saas-core`,
+`@sapienx/saas-core-config`, `@sapienx/saas-core-ui`,
+`@sapienx/saas-core-app`, and `@sapienx/saas-core-cli`. A generated Projects
+consumer receives the actual auth, Workspace, Team, Plan, Setup, Settings,
+PWA, domains, Platform Control, and source-derived interaction surfaces. It
+has a generic Workspace plus Projects model and does not require
+industry-specific concepts to boot.
