@@ -4,7 +4,7 @@
   "description": "Portable source-derived SaaS Core application template",
   "type": "module",
   "files": ["template", "README.md"],
-  "dependencies": {
+  "templateDependencies": {
     "@hookform/resolvers": "^3.9.1",
     "@paddle/paddle-js": "1.6.4",
     "@paddle/paddle-node-sdk": "3.10.0",

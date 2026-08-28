@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto"
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises"
+import { access, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -12,10 +12,12 @@ const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const REPOSITORY_TEMPLATE = path.resolve(CLI_ROOT, "../app/template")
 const PACKED_TEMPLATE = path.join(CLI_ROOT, "template")
 const TEMPLATE_ROOT = process.env.SAAS_CORE_TEMPLATE ? path.resolve(process.env.SAAS_CORE_TEMPLATE) : existsSync(REPOSITORY_TEMPLATE) ? REPOSITORY_TEMPLATE : PACKED_TEMPLATE
-const CORE_PACKAGES = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui", "@sapienx/saas-core-app", "@sapienx/saas-core-cli"]
+const RUNTIME_CORE_PACKAGES = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
+const TOOLING_CORE_PACKAGES = ["@sapienx/saas-core-cli"]
+const CORE_PACKAGES = [...RUNTIME_CORE_PACKAGES, ...TOOLING_CORE_PACKAGES]
 const IGNORED_FILES = new Set(["next-env.d.ts", ".gitignore", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"])
 const PRODUCT_PREFIXES = ["src/product/", "app/(product)/", "app/product/", "components/product/", "supabase/migrations/product/"]
-const PRODUCT_FILES = new Set(["lib/product-config.ts", "product.catalog.json", "styles/product.css", "app/page.tsx", "app/manage/page.tsx", "supabase/config.toml"])
+const PRODUCT_FILES = new Set(["lib/product-config.ts", "product.catalog.json", "styles/product.css", "app/page.tsx", "app/manage/page.tsx", "supabase/config.toml", "supabase/seed.sql"])
 const args = process.argv.slice(2)
 const command = args[0] || "help"
 
@@ -40,7 +42,7 @@ function targetDirectory(value) { return path.resolve(process.cwd(), value || ".
 function hash(value) { return createHash("sha256").update(value).digest("hex") }
 function json(value) { return `${JSON.stringify(value, null, 2)}\n` }
 function isProductOwned(relative) { return PRODUCT_FILES.has(relative) || PRODUCT_PREFIXES.some((prefix) => relative.startsWith(prefix)) || relative.startsWith("public/product-") }
-function isIgnored(relative) { return IGNORED_FILES.has(relative) || relative === ".saas-core-manifest.json" || relative.startsWith(".next/") || relative.startsWith("node_modules/") || relative.startsWith("output/") || relative.startsWith("artifacts/") }
+function isIgnored(relative) { return IGNORED_FILES.has(relative) || relative === ".saas-core-manifest.json" || relative === "supabase/.gitignore" || relative.startsWith(".next/") || relative.startsWith("node_modules/") || relative.startsWith("output/") || relative.startsWith("artifacts/") || relative.startsWith("supabase/.branches/") || relative.startsWith("supabase/.temp/") }
 function managedHash(value) { return typeof value === "string" ? value : value?.hash || "" }
 
 async function walk(root, relative = "") {
@@ -90,6 +92,7 @@ async function appPackageManifest() {
 
 async function copyTree(source, destination) {
   for (const relative of await walk(source)) {
+    if (isIgnored(relative)) continue
     const target = path.join(destination, relative)
     await mkdir(path.dirname(target), { recursive: true })
     await cp(path.join(source, relative), target, { force: true })
@@ -97,17 +100,21 @@ async function copyTree(source, destination) {
 }
 
 async function writeProductConfig(directory, name, slug) {
-  await writeFile(path.join(directory, "lib/product-config.ts"), `export type ProductConfig = {\n  name: string\n  slug: string\n  logoPath: string\n  iconPath: string\n  themeColor: string\n  description: string\n  capabilities: Readonly<Record<string, boolean>>\n  catalog: { plans: readonly unknown[]; usageMetrics: readonly unknown[] }\n}\n\nexport const PRODUCT_CONFIG: ProductConfig = {\n  name: ${JSON.stringify(name)},\n  slug: ${JSON.stringify(slug)},\n  logoPath: "/product-mark.svg",\n  iconPath: "/product-mark.svg",\n  themeColor: "#7c3aed",\n  description: ${JSON.stringify(`${name} workspace management.`)},\n  capabilities: { billing: true, domains: true, platformControl: true, pushNotifications: true, pwa: true },\n  catalog: { plans: [], usageMetrics: [] },\n}\n`, "utf8")
-  await writeFile(path.join(directory, "product.catalog.json"), json({ defaultPlanKey: null, plans: [], usageMetrics: [] }), "utf8")
+  await writeFile(path.join(directory, "lib/product-config.ts"), `import productCatalog from "@/product.catalog.json"\n\nexport type ProductConfig = {\n  name: string\n  slug: string\n  logoPath: string\n  iconPath: string\n  themeColor: string\n  description: string\n  capabilities: Readonly<Record<string, boolean>>\n  catalog: { defaultPlanKey: string; plans: readonly unknown[]; usageMetrics: readonly unknown[] }\n}\n\nexport const PRODUCT_CONFIG: ProductConfig = {\n  name: ${JSON.stringify(name)},\n  slug: ${JSON.stringify(slug)},\n  logoPath: "/product-mark.svg",\n  iconPath: "/product-mark.svg",\n  themeColor: "#7c3aed",\n  description: ${JSON.stringify(`${name} workspace management.`)},\n  capabilities: { billing: true, domains: true, platformControl: true, pushNotifications: true, pwa: true },\n  catalog: productCatalog,\n}\n`, "utf8")
+  await writeFile(path.join(directory, "product.catalog.json"), json({
+    defaultPlanKey: "default",
+    plans: [{ key: "default", name: "Default", features: {}, limits: {}, metadata: { development: true } }],
+    usageMetrics: [],
+  }), "utf8")
   await mkdir(path.join(directory, "src/product"), { recursive: true })
   await writeFile(path.join(directory, "src/product/domain.ts"), `export type ProductDomain = { workspaceId: string }\n\n// Product-owned domain starts at the Core Workspace boundary.\nexport const productDomain: ProductDomain = { workspaceId: "" }\n`, "utf8")
 }
 
 async function writeConsumerPackage(directory, slug) {
   const app = await appPackageManifest()
-  const dependencies = { ...(app.dependencies || {}), ...corePackageVersions() }
+  const dependencies = { ...(app.templateDependencies || app.dependencies || {}), ...Object.fromEntries(RUNTIME_CORE_PACKAGES.map((name) => [name, `^${VERSION}`])) }
   const devDependencies = { ...(app.devDependencies || {}) }
-  delete devDependencies["@sapienx/saas-core-cli"]
+  devDependencies["@sapienx/saas-core-cli"] = `^${VERSION}`
   await writeFile(path.join(directory, "package.json"), json({
     name: slug,
     version: "0.1.0",
@@ -149,18 +156,39 @@ function localPathValues(packageJson) {
 
 function productConfigValid(directory) {
   const file = path.join(directory, "product.catalog.json")
-  if (!existsSync(file)) return { status: "WARNING", detail: "product.catalog.json is not present; product catalog bootstrap is optional." }
+  if (!existsSync(file)) return { status: "ERROR", detail: "product.catalog.json is missing; workspace creation cannot resolve a default plan." }
   try {
     const catalog = JSON.parse(readFileSync(file, "utf8"))
     if (!catalog || !Array.isArray(catalog.plans) || !Array.isArray(catalog.usageMetrics)) return { status: "ERROR", detail: "product.catalog.json must contain plans and usageMetrics arrays." }
+    if (!catalog.plans.length) return { status: "ERROR", detail: "Product catalog has no plans; workspace creation will fail until a catalog is synchronized." }
     const keys = catalog.plans.map((plan) => plan?.key).filter(Boolean)
     if (new Set(keys).size !== keys.length || keys.some((key) => !/^[a-z][a-z0-9_-]{0,63}$/.test(key))) return { status: "ERROR", detail: "Product plan keys must be unique stable keys." }
     const metricKeys = catalog.usageMetrics.map((metric) => metric?.key).filter(Boolean)
     if (new Set(metricKeys).size !== metricKeys.length || metricKeys.some((key) => !/^[a-z][a-z0-9_-]{0,63}$/.test(key))) return { status: "ERROR", detail: "Product usage metric keys must be unique stable keys." }
-    if (catalog.defaultPlanKey !== undefined && catalog.defaultPlanKey !== null && !keys.includes(catalog.defaultPlanKey)) return { status: "ERROR", detail: "defaultPlanKey must refer to a product plan." }
     if (catalog.plans.some((plan) => !plan?.name || (plan.features !== undefined && typeof plan.features !== "object") || (plan.limits !== undefined && typeof plan.limits !== "object"))) return { status: "ERROR", detail: "Each product plan needs a name and object-shaped features/limits." }
-    return { status: "INFO", detail: `${keys.length} product plan(s), ${metricKeys.length} usage metric(s)` }
+    if (typeof catalog.defaultPlanKey !== "string" || !keys.includes(catalog.defaultPlanKey)) return { status: "ERROR", detail: "defaultPlanKey must refer to an existing product plan." }
+    const defaultPlan = catalog.plans.find((plan) => plan.key === catalog.defaultPlanKey)
+    if (defaultPlan?.active === false) return { status: "ERROR", detail: `defaultPlanKey ${catalog.defaultPlanKey} is inactive; workspace creation will fail.` }
+    return { status: "INFO", detail: `${keys.length} product plan(s), ${metricKeys.length} usage metric(s), default ${catalog.defaultPlanKey}` }
   } catch { return { status: "ERROR", detail: "product.catalog.json is not valid JSON." } }
+}
+
+async function databaseSchemaCheck() {
+  const url = process.env.SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !serviceKey || /publishable|anon/i.test(serviceKey)) return { status: "WARNING", detail: "Database schema could not be verified because server credentials are not configured." }
+  try {
+    const endpoint = new URL("/rest/v1/rpc/get_core_schema_metadata", url)
+    const response = await fetch(endpoint, { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } })
+    const body = await response.text()
+    if (!response.ok) return { status: "ERROR", detail: `Database schema metadata could not be read: ${body || response.statusText}` }
+    const value = JSON.parse(body)
+    const metadata = Array.isArray(value) ? value[0] : value
+    if (!metadata || metadata.schema_version !== SCHEMA_VERSION || metadata.runtime_major !== 2) return { status: "ERROR", detail: `Database schema ${metadata?.schema_version || "unknown"} is incompatible with expected Core schema ${SCHEMA_VERSION}.` }
+    return { status: "INFO", detail: `Core schema ${SCHEMA_VERSION} verified.` }
+  } catch (error) {
+    return { status: "ERROR", detail: `Database schema verification failed: ${error instanceof Error ? error.message : String(error)}` }
+  }
 }
 
 async function healthChecks(directory, manifest) {
@@ -183,6 +211,8 @@ async function healthChecks(directory, manifest) {
   else add("PACKAGE", "INFO", "Core package versions are compatible and portable.")
   if (!existsSync(path.join(directory, "supabase/migrations"))) add("SCHEMA", "ERROR", "Supabase migration directory is missing.")
   else add("SCHEMA", "INFO", "Core migration directory is present.")
+  const database = await databaseSchemaCheck()
+  add("DATABASE", database.status, database.detail)
   const catalog = productConfigValid(directory)
   add("PRODUCT", catalog.status, catalog.detail)
   if (manifest?.managedFiles) {
@@ -246,13 +276,105 @@ function mergeCoreDependencies(current, expected) {
   const dependencies = { ...(next.dependencies || {}) }
   const devDependencies = { ...(next.devDependencies || {}) }
   for (const name of CORE_PACKAGES) {
-    dependencies[name] = expected[name]
+    delete dependencies[name]
     delete devDependencies[name]
   }
+  for (const name of RUNTIME_CORE_PACKAGES) dependencies[name] = expected[name]
+  for (const name of TOOLING_CORE_PACKAGES) devDependencies[name] = expected[name]
   next.dependencies = dependencies
   if (Object.keys(devDependencies).length) next.devDependencies = devDependencies
   else delete next.devDependencies
   return next
+}
+
+async function nearestWritableDirectory(target) {
+  let candidate = target
+  while (!existsSync(candidate)) {
+    const parent = path.dirname(candidate)
+    if (parent === candidate) throw new Error(`Could not resolve a writable parent for ${target}.`)
+    candidate = parent
+  }
+  const details = await stat(candidate)
+  if (!details.isDirectory()) throw new Error(`Expected a directory while checking ${target}.`)
+  await access(candidate, 2)
+}
+
+async function verifyUpdatePaths(directory, relatives) {
+  for (const relative of new Set(relatives)) {
+    const target = path.join(directory, relative)
+    if (existsSync(target)) {
+      const details = await stat(target)
+      if (details.isDirectory()) throw new Error(`Cannot update ${relative}: destination is a directory.`)
+      await access(target, 2)
+    } else {
+      await nearestWritableDirectory(path.dirname(target))
+    }
+  }
+}
+
+async function createUpdateBackup(directory, backup, relatives) {
+  await mkdir(path.dirname(backup), { recursive: true })
+  await mkdir(backup)
+  const entries = {}
+  for (const relative of new Set(relatives)) {
+    const current = path.join(directory, relative)
+    if (!existsSync(current)) {
+      entries[relative] = { exists: false }
+      continue
+    }
+    const details = await stat(current)
+    if (!details.isFile()) throw new Error(`Cannot back up ${relative}: it is not a regular file.`)
+    const destination = path.join(backup, relative)
+    await mkdir(path.dirname(destination), { recursive: true })
+    await cp(current, destination)
+    entries[relative] = { exists: true }
+  }
+  await writeFile(path.join(backup, "backup-state.json"), json({ version: 1, entries }), "utf8")
+}
+
+async function restoreUpdateBackup(directory, backup, addedRelatives = []) {
+  for (const relative of addedRelatives) {
+    const target = path.join(directory, relative)
+    if (existsSync(target)) await rm(target, { force: true, recursive: true })
+  }
+  const state = await readJson(path.join(backup, "backup-state.json"))
+  for (const [relative, entry] of Object.entries(state.entries || {})) {
+    const target = path.join(directory, relative)
+    if (existsSync(target)) await rm(target, { force: true, recursive: true })
+    if (entry.exists) {
+      await mkdir(path.dirname(target), { recursive: true })
+      await cp(path.join(backup, relative), target)
+    }
+  }
+}
+
+function updateReportText(report, heading = "Core update") {
+  console.log(heading)
+  console.log(`Updated: ${report.updated.length}`)
+  console.log(`Added: ${report.added.length}`)
+  console.log(`Removed: ${report.removed.length}`)
+  console.log(`Preserved: ${report.preserved.length}`)
+  if (report.backup) console.log(`Backup: ${report.backup}`)
+  for (const item of report.conflicts || []) console.log(`Conflict: ${item}`)
+  for (const item of report.errors || []) console.log(`Error: ${item}`)
+  if (report.rollback) console.log(`Rollback: ${report.rollback}`)
+  if (report.dryRun) for (const item of [...report.updated, ...report.added, ...report.removed]) console.log(`  ${item}`)
+}
+
+async function validateUpdatedConsumer(directory, source, expectedManifest) {
+  const actual = await managedFilesForConsumer(directory, source)
+  const missing = [...source.keys()].filter((relative) => !actual[relative])
+  const changed = [...source.keys()].filter((relative) => actual[relative] && actual[relative].hash !== hash(source.get(relative)))
+  if (missing.length || changed.length) throw new Error(`Post-update managed file validation failed${missing.length ? `; missing: ${missing.join(", ")}` : ""}${changed.length ? `; changed: ${changed.join(", ")}` : ""}.`)
+  const packageJson = await readJson(path.join(directory, "package.json"))
+  const packageDriftItems = packageDrift(packageJson, expectedManifest.packageVersions)
+  if (packageDriftItems.length) throw new Error(`Post-update package validation failed: ${packageDriftItems.map((item) => item.name).join(", ")}.`)
+  const paths = localPathValues(packageJson)
+  if (paths.length) throw new Error(`Post-update portability validation failed: ${paths.map((item) => `${item.name}=${item.value}`).join(", ")}.`)
+  for (const relative of ["product.catalog.json", "lib/product-config.ts", "src/product/domain.ts"]) if (!existsSync(path.join(directory, relative))) throw new Error(`Post-update product-owned file is missing: ${relative}.`)
+  if (productConfigValid(directory).status === "ERROR") throw new Error("Post-update product catalog validation failed.")
+  const manifest = await readJson(path.join(directory, ".saas-core-manifest.json"))
+  if (manifest.coreVersion !== VERSION || manifest.schemaVersion !== SCHEMA_VERSION) throw new Error("Post-update manifest compatibility validation failed.")
 }
 
 async function update(options) {
@@ -271,13 +393,6 @@ async function update(options) {
   const conflicts = []
   const backupName = new Date().toISOString().replace(/[:.]/g, "-")
   const backup = path.join(directory, ".saas-core-backups", backupName)
-  const saveBackup = async (relative) => {
-    const current = path.join(directory, relative)
-    if (!existsSync(current) || options.dryRun) return
-    const destination = path.join(backup, relative)
-    await mkdir(path.dirname(destination), { recursive: true })
-    await cp(current, destination)
-  }
   for (const [relative, content] of source) {
     const current = path.join(directory, relative)
     const record = previous[relative]
@@ -302,39 +417,61 @@ async function update(options) {
     packageChanged = JSON.stringify(currentPackage) !== JSON.stringify(nextPackage)
   }
   const changed = additions.length + replacements.length + removals.length + (packageChanged ? 1 : 0)
-  if (!options.dryRun && !conflicts.length) {
-    for (const relative of additions) {
-      const current = path.join(directory, relative)
-      await mkdir(path.dirname(current), { recursive: true })
-      await writeFile(current, source.get(relative), "utf8")
+  const report = { dryRun: options.dryRun, targetVersion, updated: [...replacements, ...(packageChanged ? ["package.json"] : [])], added: additions, removed: removals, preserved: conflicts, conflicts, backup: null }
+  if (!options.dryRun && conflicts.length) {
+    report.errors = ["Update blocked because locally modified Core-managed files require an explicit merge."]
+  } else if (!options.dryRun && changed > 0) {
+    const backupFiles = [...new Set([...replacements, ...removals, "package.json", ".saas-core-manifest.json"])]
+    await verifyUpdatePaths(directory, [...additions, ...replacements, ...removals, ...backupFiles])
+    let mutationStarted = false
+    let backupCreated = false
+    try {
+      await createUpdateBackup(directory, backup, backupFiles)
+      backupCreated = true
+      let mutationCount = 0
+      const writeApplied = async (relative, content) => {
+        const current = path.join(directory, relative)
+        await mkdir(path.dirname(current), { recursive: true })
+        await writeFile(current, content, "utf8")
+        mutationStarted = true
+        mutationCount += 1
+        if (process.env.SAAS_CORE_TEST_FAIL_AFTER_MUTATION === "1" && mutationCount === 1) throw new Error("Injected update failure after first mutation.")
+      }
+      for (const relative of additions) await writeApplied(relative, source.get(relative))
+      for (const relative of replacements) await writeApplied(relative, source.get(relative))
+      for (const relative of removals) {
+        await rm(path.join(directory, relative))
+        mutationStarted = true
+        mutationCount += 1
+        if (process.env.SAAS_CORE_TEST_FAIL_AFTER_MUTATION === "1" && mutationCount === 1) throw new Error("Injected update failure after first mutation.")
+      }
+      if (packageChanged) {
+        const currentPackage = await readJson(packageFile)
+        await writeApplied("package.json", json(mergeCoreDependencies(currentPackage, corePackageVersions())))
+      }
+      const managedFiles = await managedFilesForConsumer(directory, source)
+      await writeApplied(".saas-core-manifest.json", json({ ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), templateVersion: VERSION, managedFiles, generatedAt: new Date().toISOString() }))
+      await validateUpdatedConsumer(directory, source, { ...manifest, packageVersions: corePackageVersions() })
+      report.backup = backup
+    } catch (error) {
+      report.errors = [`Update failed: ${error instanceof Error ? error.message : String(error)}`]
+      if (backupCreated) report.backup = backup
+      if (mutationStarted && backupCreated) {
+        try {
+          await restoreUpdateBackup(directory, backup, additions)
+          report.rollback = "succeeded"
+        } catch (rollbackError) {
+          report.rollback = `FAILED: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`
+          report.errors.push(`Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`)
+        }
+      } else {
+        report.rollback = "not-needed; no mutation started"
+      }
     }
-    for (const relative of replacements) {
-      const current = path.join(directory, relative)
-      await saveBackup(relative)
-      await writeFile(current, source.get(relative), "utf8")
-    }
-    for (const relative of removals) {
-      await saveBackup(relative)
-      await rm(path.join(directory, relative))
-    }
-    if (packageChanged) {
-      const currentPackage = await readJson(packageFile)
-      await saveBackup("package.json")
-      await writeFile(packageFile, json(mergeCoreDependencies(currentPackage, corePackageVersions())), "utf8")
-    }
-    const managedFiles = await managedFilesForConsumer(directory, source)
-    await writeFile(path.join(directory, ".saas-core-manifest.json"), json({ ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), templateVersion: VERSION, managedFiles, generatedAt: new Date().toISOString() }), "utf8")
   }
-  const report = { dryRun: options.dryRun, targetVersion, updated: [...replacements, ...(packageChanged ? ["package.json"] : [])], added: additions, removed: removals, preserved: conflicts, conflicts, backup: options.dryRun || changed === 0 || conflicts.length ? null : backup }
   if (options.json) console.log(JSON.stringify(report, null, 2))
-  else {
-    console.log(options.dryRun ? "Dry-run update" : conflicts.length ? "Core update completed with conflicts preserved" : "Core update completed")
-    console.log(`Updated: ${report.updated.length}`); console.log(`Added: ${report.added.length}`); console.log(`Removed: ${report.removed.length}`); console.log(`Preserved: ${report.preserved.length}`)
-    if (report.backup) console.log(`Backup: ${report.backup}`)
-    for (const item of conflicts) console.log(`Conflict: ${item}`)
-    if (options.dryRun) for (const item of [...replacements, ...additions, ...removals]) console.log(`  ${item}`)
-  }
-  if (conflicts.length) process.exitCode = 2
+  else updateReportText(report, options.dryRun ? "Dry-run update" : report.errors?.length ? "Core update failed" : conflicts.length ? "Core update blocked by conflicts" : "Core update completed")
+  if (conflicts.length || report.errors?.length) process.exitCode = 2
 }
 
 function help() { console.log("Usage: saas-core <init|doctor|diff|update> [directory] [--dry-run] [--json] [--to <version>]") }

@@ -33,6 +33,8 @@
     "core:commercial-scan": "node scripts/core-commercial-scan.mjs",
     "core:ui-fidelity": "node scripts/test-ui-source-fidelity.mjs",
     "core:lifecycle": "node scripts/test-core-lifecycle.mjs",
+    "core:doctor-schema": "node scripts/test-doctor-schema.mjs",
+    "core:catalog": "node scripts/test-billing-catalog.mjs",
     "core:pack": "node scripts/core-pack.mjs",
     "core:consumer-proof": "node scripts/consumer-proof.mjs",
     "core:init": "node scripts/core-init.mjs",

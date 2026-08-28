@@ -1,4 +1,4 @@
-import { execFileSync, spawn, spawnSync } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -50,6 +50,13 @@ async function bootAndSmoke(cwd, port) {
 
 try {
   run(process.execPath, [packageCli, "init", "Projects Proof", product], root)
+  const generatedCatalog = JSON.parse(readFileSync(path.join(product, "product.catalog.json"), "utf8"))
+  if (generatedCatalog.defaultPlanKey !== "default" || generatedCatalog.plans.length !== 1 || generatedCatalog.plans[0].key !== "default" || generatedCatalog.plans[0].prices) throw new Error("Generated consumer did not receive the neutral product-owned starter catalog.")
+  if (!readFileSync(path.join(product, "supabase/seed.sql"), "utf8").includes("'default'")) throw new Error("Generated consumer seed does not bootstrap the neutral default plan.")
+  const generatedPackage = JSON.parse(readFileSync(path.join(product, "package.json"), "utf8"))
+  if (generatedPackage.dependencies["@sapienx/saas-core-cli"] || generatedPackage.dependencies["@sapienx/saas-core-app"]) throw new Error("Tooling/template-only Core packages were emitted as runtime dependencies.")
+  if (generatedPackage.devDependencies["@sapienx/saas-core-cli"] !== "^2.0.0") throw new Error("Core CLI was not emitted as a tooling dependency.")
+  for (const name of ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]) if (!generatedPackage.dependencies[name]) throw new Error(`Missing runtime Core dependency: ${name}`)
   run(process.execPath, [packageCli, "doctor", product], root)
   writeFileSync(path.join(product, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
   run("npm", ["install", "--ignore-scripts", "--audit=false", "--fund=false"], product)
@@ -63,6 +70,7 @@ try {
 
   const relocatedCli = path.join(relocated, "node_modules/.bin/saas-core")
   run(relocatedCli, ["diff", relocated], relocated)
+  run(relocatedCli, ["update", relocated, "--dry-run"], relocated)
   rmSync(path.join(relocated, "node_modules"), { recursive: true, force: true })
   run("npm", ["ci", "--ignore-scripts", "--audit=false", "--fund=false"], relocated)
   if (!existsSync(relocatedCli)) throw new Error("Packed Core CLI was not restored by frozen install.")
@@ -72,8 +80,9 @@ try {
   await bootAndSmoke(relocated, 3218)
   run(relocatedCli, ["update", relocated], relocated)
   run(relocatedCli, ["doctor", relocated], relocated)
-  const packageJson = JSON.parse(execFileSync("node", ["-e", "console.log(require('fs').readFileSync('package.json','utf8'))"], { cwd: relocated, encoding: "utf8" }))
-  if (JSON.stringify(packageJson).includes("file:") || JSON.stringify(packageJson).includes(root)) throw new Error("Generated consumer contains a local dependency path.")
+  const packageJson = JSON.parse(readFileSync(path.join(relocated, "package.json"), "utf8"))
+  const persistedPackage = JSON.stringify(packageJson)
+  if (/file:|link:|workspace:|registry\.url|\/Users\/|\/private\//.test(persistedPackage) || persistedPackage.includes(root)) throw new Error("Generated consumer contains a local dependency path.")
   console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", relocation: true, frozenInstall: true }))
 } finally {
   registryProcess.kill("SIGTERM")
