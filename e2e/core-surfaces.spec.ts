@@ -6,10 +6,12 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const password = "CoreBrowser!2026-password"
 const stamp = `${Date.now()}-${process.pid}`
 const email = `core-browser-${stamp}@example.test`
+const signupEmail = `core-signup-${stamp}@example.test`
 const workspaceName = `Projects Proof ${stamp}`
 
 let service: SupabaseClient | null = null
 let userId = ""
+let signupUserId = ""
 let workspaceId = ""
 
 async function waitForAuthReady() {
@@ -63,12 +65,20 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!service) return
   if (workspaceId) await service.from("workspaces").delete().eq("id", workspaceId)
+  if (!signupUserId) {
+    const users = await service.auth.admin.listUsers({ page: 1, perPage: 1000 })
+    signupUserId = users.data.users.find((user) => user.email === signupEmail)?.id || ""
+  }
+  if (signupUserId) await service.auth.admin.deleteUser(signupUserId)
   if (userId) await service.auth.admin.deleteUser(userId)
 })
 
 test("@critical public and auth surfaces remain available", async ({ page }) => {
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "Build the product. Keep the platform quality." })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Welcome to SaaS Core" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Create account" })).toBeVisible()
+  await expect(page.getByText("Open workspace")).toHaveCount(0)
   await page.goto("/login")
   await expect(page.locator("#login-email")).toBeVisible()
   await expect(page.getByRole("link", { name: "Create an account" })).toBeVisible()
@@ -78,9 +88,35 @@ test("@critical public and auth surfaces remain available", async ({ page }) => 
   await expect(page.locator("#forgot-email")).toBeVisible()
 })
 
+test("@critical signup confirmation identifies the destination and exposes Mailpit only in development", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium", "The signup confirmation proof runs once in the desktop project.")
+  await page.goto("/signup")
+  await page.locator("#signup-email").fill(signupEmail)
+  await page.locator("#signup-password").fill(password)
+  await page.locator("#signup-confirmation").fill(password)
+  await page.getByRole("button", { name: "Create account" }).click()
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByLabel("Confirmation email destination")).toHaveText(signupEmail)
+  const inbox = page.getByRole("link", { name: "Open Mailpit" })
+  await expect(inbox).toBeVisible()
+  expect(await inbox.getAttribute("href")).toContain("55624")
+  const users = await service!.auth.admin.listUsers({ page: 1, perPage: 1000 })
+  signupUserId = users.data.users.find((user) => user.email === signupEmail)?.id || ""
+  expect(signupUserId).toBeTruthy()
+})
+
 test("@critical authenticated shell preserves collapse, persistence, theme, and feedback", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium", "The authenticated desktop shell proof runs once in the desktop project.")
   await signInAndCreateWorkspace(page)
+  await page.goto("/")
+  await expect(page).toHaveURL(/\/app(?:\?|$)/)
+  await page.goto("/onboarding")
+  await expect(page).toHaveURL(/\/app(?:\?|$)/)
+  await page.goto("/app/setup")
+  await expect(page.getByRole("heading", { name: "Know what is ready" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Account" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Workspace" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Platform administration" })).toBeVisible()
 
   const sidebar = page.locator("#manage-sidebar-desktop")
   await expect(sidebar).toBeVisible()

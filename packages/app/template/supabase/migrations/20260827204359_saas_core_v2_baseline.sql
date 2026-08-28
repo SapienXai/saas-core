@@ -547,6 +547,27 @@ begin
     raise exception using message = 'DEFAULT_PLAN_INVALID';
   end if;
 
+  if not exists (
+    select 1
+    from jsonb_array_elements(target_plans) as entries(item)
+    where entries.item ->> 'key' = target_default_plan_key
+      and coalesce((entries.item ->> 'active')::boolean, true)
+  ) then
+    raise exception using message = 'DEFAULT_PLAN_INVALID';
+  end if;
+
+  if not exists (
+    select 1
+    from jsonb_array_elements(target_plans) as entries(item)
+    where entries.item ->> 'key' = target_default_plan_key
+      and coalesce((entries.item ->> 'active')::boolean, true)
+      and entries.item ? 'limits'
+      and jsonb_typeof(entries.item -> 'limits') = 'object'
+      and (entries.item -> 'limits') ? 'core.workspaces'
+  ) then
+    raise exception using message = 'CORE_WORKSPACE_LIMIT_NOT_CONFIGURED';
+  end if;
+
   if exists (
     select 1
     from jsonb_array_elements(target_plans) as entries(item)
@@ -646,6 +667,7 @@ declare
   workspace public.workspaces%rowtype;
   owner_count integer;
   workspace_limit integer;
+  plan_limits jsonb;
   default_plan_key text;
   base_slug text := lower(trim(both '-' from regexp_replace(coalesce(nullif(btrim(target_workspace_slug), ''), target_workspace_name), '[^a-zA-Z0-9]+', '-', 'g')));
   candidate_slug text;
@@ -658,12 +680,15 @@ begin
     from public.workspace_members
     where user_id = actor and role = 'owner';
   default_plan_key := private.core_default_plan_key();
-  select case
-    when limits ? 'core.workspaces' and limits ->> 'core.workspaces' = 'null' then null
-    when limits ? 'core.workspaces' then nullif(limits ->> 'core.workspaces', '')::integer
-    else null
-  end into workspace_limit
+  select limits into plan_limits
   from public.plans where key = default_plan_key;
+  if not (plan_limits ? 'core.workspaces') then
+    raise exception using message = 'WORKSPACE_LIMIT_NOT_CONFIGURED';
+  end if;
+  workspace_limit := case
+    when plan_limits ->> 'core.workspaces' = 'null' then null
+    else nullif(plan_limits ->> 'core.workspaces', '')::integer
+  end;
   if workspace_limit is not null and owner_count >= workspace_limit then
     raise exception using message = 'WORKSPACE_LIMIT_REACHED';
   end if;
@@ -674,7 +699,7 @@ begin
     candidate_slug := left(base_slug, 58) || '-' || suffix::text;
     suffix := suffix + 1;
   end loop;
-  insert into public.workspaces (name, slug, created_by) values (btrim(target_workspace_name), candidate_slug, actor) returning * into workspace;
+  insert into public.workspaces (name, slug, created_by, onboarding_completed_at) values (btrim(target_workspace_name), candidate_slug, actor, now()) returning * into workspace;
   insert into public.workspace_members (workspace_id, user_id, role) values (workspace.id, actor, 'owner');
   return query select workspace.id, workspace.slug;
 end;
@@ -827,7 +852,6 @@ alter table public.email_provider_webhook_events enable row level security;
 alter table public.email_outbox_runs enable row level security;
 
 create policy workspace_members_read on public.workspaces for select to authenticated using (public.is_workspace_member(id));
-create policy workspace_creator_insert on public.workspaces for insert to authenticated with check (created_by = (select auth.uid()));
 create policy workspace_admin_update on public.workspaces for update to authenticated using (public.has_workspace_role(id, array['owner', 'admin'])) with check (public.has_workspace_role(id, array['owner', 'admin']));
 create policy workspace_owner_delete on public.workspaces for delete to authenticated using (public.has_workspace_role(id, array['owner']));
 
@@ -850,7 +874,8 @@ create policy push_manage on public.workspace_push_subscriptions for all to auth
 revoke all on public.billing_provider_prices, public.billing_webhook_events, public.billing_checkout_sessions, public.billing_mutations, public.billing_cancellation_feedback, public.subscription_overrides from anon, authenticated;
 revoke all on public.platform_members, public.platform_user_controls, public.platform_audit_logs, public.platform_settings from anon, authenticated;
 revoke all on public.email_delivery_events, public.email_delivery_attempts, public.email_provider_webhook_events, public.email_outbox_runs from anon, authenticated;
-grant select, insert, update, delete on public.workspaces, public.workspace_members, public.workspace_invitations, public.workspace_domains, public.workspace_pwa_settings, public.workspace_push_subscriptions to authenticated;
+grant select, update, delete on public.workspaces to authenticated;
+grant select, insert, update, delete on public.workspace_members, public.workspace_invitations, public.workspace_domains, public.workspace_pwa_settings, public.workspace_push_subscriptions to authenticated;
 grant select on public.plans, public.workspace_subscriptions, public.workspace_usage_periods to authenticated;
 grant all on all tables in schema public to service_role;
 grant execute on function public.bootstrap_initial_workspace(text, text) to authenticated;

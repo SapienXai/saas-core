@@ -10,7 +10,7 @@ describe("generic Core contracts", () => {
       catalog: {
         defaultPlanKey: "hobby",
         plans: [
-          { key: "hobby", name: "Hobby", prices: { month: { amount: 7, currency: "EUR" } }, features: { projects: true }, limits: { projects: 25 } },
+          { key: "hobby", name: "Hobby", prices: { month: { amount: 7, currency: "EUR" } }, features: { projects: true }, limits: { "core.workspaces": 2, projects: 25 } },
           { key: "scale", name: "Scale", prices: { year: { amount: 1200, currency: "JPY" } }, features: { projects: true, exports: true }, limits: { projects: null } },
         ],
         usageMetrics: [{ key: "projects", name: "Projects" }, { key: "generations", name: "Generations", unit: "runs" }],
@@ -26,5 +26,16 @@ describe("generic Core contracts", () => {
     expect(evaluateCompatibility({ manifestVersion: "3.0.0", schemaVersion: CORE_SCHEMA_VERSION }).status).toBe("incompatible")
     expect(evaluateCompatibility({ manifestVersion: CORE_VERSION, schemaVersion: "1.3.1" }).status).toBe("incompatible")
     expect(evaluateCompatibility({ packageVersions: { "@sapienx/saas-core": "file:../checkout" } }).status).toBe("incompatible")
+  })
+
+  it("keeps the post-Core onboarding handoff product-owned and internal", () => {
+    const config = defineProductConfig({
+      identity: { name: "Projects Proof", slug: "projects-proof" },
+      capabilities: {},
+      onboarding: { productSetupPath: "/projects/setup" },
+      catalog: { defaultPlanKey: "default", plans: [{ key: "default", name: "Default", limits: { "core.workspaces": null } }], usageMetrics: [] },
+    })
+    expect(config.onboarding?.productSetupPath).toBe("/projects/setup")
+    expect(() => defineCoreProductConfig({ ...config, onboarding: { productSetupPath: "https://example.test" } })).toThrow("internal path")
   })
 })

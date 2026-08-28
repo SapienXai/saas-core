@@ -18,10 +18,11 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/invite/accept", url))
   }
 
-  const access = requested.startsWith("/platform") ? await getCurrentUserAccess() : null
+  const access = requested.startsWith("/platform") || !state.workspaceId ? await getCurrentUserAccess() : null
   const platformRequested = requested.startsWith("/platform") && Boolean(access?.platformRole)
+  const platformHome = !state.workspaceId && Boolean(access?.platformRole) ? "/platform" : null
   const destination = platformRequested
     ? requested
-    : state.path === "/onboarding" ? "/onboarding" : requested.startsWith("/app") ? requested : "/app"
+    : platformHome || (state.path === "/onboarding" ? "/onboarding" : requested.startsWith("/app") ? requested : "/app")
   return NextResponse.redirect(new URL(destination, url))
 }

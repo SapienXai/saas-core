@@ -42,6 +42,16 @@ export type ProductIdentity = {
   description?: string
 }
 
+export type ProductOnboarding = {
+  productSetupPath?: string | null
+}
+
+export type ProductConfigContract = {
+  identity: ProductIdentity
+  catalog: ProductCatalog
+  onboarding?: ProductOnboarding
+}
+
 export type CoreManifest = {
   coreVersion: string
   schemaVersion: string
@@ -64,7 +74,7 @@ export type CompatibilityResult = {
   detail: string
 }
 
-export function defineProductConfig<T extends { identity: ProductIdentity; catalog: ProductCatalog }>(config: T): T {
+export function defineProductConfig<T extends ProductConfigContract>(config: T): T {
   if (!config.identity.slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(config.identity.slug)) throw new Error("Product slug must be kebab-case.")
   if (!config.identity.name.trim()) throw new Error("Product name is required.")
   const keys = new Set<string>()
@@ -73,6 +83,10 @@ export function defineProductConfig<T extends { identity: ProductIdentity; catal
     keys.add(plan.key)
   }
   if (!config.catalog.defaultPlanKey || !keys.has(config.catalog.defaultPlanKey)) throw new Error("The product catalog must define an existing default plan key.")
+  const defaultPlan = config.catalog.plans.find((plan) => plan.key === config.catalog.defaultPlanKey)
+  if (!defaultPlan?.limits || !Object.prototype.hasOwnProperty.call(defaultPlan.limits, "core.workspaces")) throw new Error("The default plan must explicitly define limits.core.workspaces; use null only for intentional unlimited workspaces.")
+  const productSetupPath = config.onboarding?.productSetupPath
+  if (productSetupPath && (!productSetupPath.startsWith("/") || productSetupPath.startsWith("//"))) throw new Error("Product onboarding path must be an internal path.")
   return config
 }
 

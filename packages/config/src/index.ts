@@ -1,11 +1,13 @@
-import type { ProductCatalog, ProductIdentity } from "@sapienx/saas-core"
+import type { ProductCatalog, ProductIdentity, ProductOnboarding } from "@sapienx/saas-core"
 
 export type ProductCapabilityConfig = Readonly<Record<string, boolean>>
+export type ProductOnboardingConfig = ProductOnboarding
 
 export type SaaSCoreProductConfig = {
   identity: ProductIdentity
   capabilities: ProductCapabilityConfig
   catalog: ProductCatalog
+  onboarding?: ProductOnboardingConfig
   navigation?: readonly { label: string; href: string; icon?: string }[]
 }
 
@@ -15,6 +17,9 @@ export function defineProductConfig(config: SaaSCoreProductConfig): SaaSCoreProd
   const planKeys = config.catalog.plans.map((plan) => plan.key)
   if (new Set(planKeys).size !== planKeys.length) throw new Error("Product plan keys must be unique.")
   if (!config.catalog.defaultPlanKey || !planKeys.includes(config.catalog.defaultPlanKey)) throw new Error("The product catalog must define an existing default plan key.")
+  const defaultPlan = config.catalog.plans.find((plan) => plan.key === config.catalog.defaultPlanKey)
+  if (!defaultPlan?.limits || !Object.prototype.hasOwnProperty.call(defaultPlan.limits, "core.workspaces")) throw new Error("The default plan must explicitly define limits.core.workspaces; use null only for intentional unlimited workspaces.")
+  if (config.onboarding?.productSetupPath && (!config.onboarding.productSetupPath.startsWith("/") || config.onboarding.productSetupPath.startsWith("//"))) throw new Error("Product onboarding path must be an internal path.")
   return config
 }
 

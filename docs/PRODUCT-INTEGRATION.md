@@ -19,6 +19,12 @@ Every product should provide:
 replace this module at its application boundary. It must not scatter identity
 constants through Core components or server modules.
 
+The optional `onboarding.productSetupPath` is the product handoff after Core
+has created the first Workspace. It must be an internal path; omitted or
+invalid values resolve to `/app`. Core onboarding itself owns only Account,
+Workspace, membership, and the atomic initial subscription setup. An invited
+member can accept access without being forced through owner onboarding.
+
 The commercial catalog is product-owned too. A product can define any plan
 keys, prices, feature keys, and usage metric keys; Core does not require a
 particular catalog or a universal business metric. Synchronize it through the
@@ -38,7 +44,11 @@ workspace bootstrap only; existing subscriptions are unchanged.
 
 `saas-core init` creates a neutral product-owned starter catalog so a new local
 product can bootstrap a Workspace immediately after its catalog is seeded. It
-does not add Core pricing assumptions or require a schema migration.
+contains one unpriced `default` plan with an explicit
+`limits.core.workspaces: 1` development limit. `null` is the explicit
+unlimited value. It does not add Core pricing assumptions or require a schema
+migration. Catalog synchronization persists the configured default server-side
+and leaves existing subscriptions unchanged when a product changes it.
 
 ## Adding a domain
 

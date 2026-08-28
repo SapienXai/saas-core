@@ -5,7 +5,10 @@
       "key": "default",
       "name": "Default",
       "features": {},
-      "limits": {},
+      "limits": {
+        "core.workspaces": 1,
+        "core.members": null
+      },
       "metadata": {
         "development": true
       }

@@ -12,8 +12,8 @@ integration("configured product default plan", () => {
   let ownerClient: SupabaseClient
   const workspaceIds: string[] = []
 
-  const catalog = [
-    { key: "scale", name: "Scale", sort_order: 0, active: true, features: {}, limits: {}, metadata: { fixture: true } },
+  const catalog: Array<{ key: string; name: string; sort_order: number; active: boolean; features: Record<string, boolean>; limits: Record<string, number | null>; metadata: Record<string, unknown> }> = [
+    { key: "scale", name: "Scale", sort_order: 0, active: true, features: {}, limits: { "core.workspaces": 4 }, metadata: { fixture: true } },
     { key: "hobby", name: "Hobby", sort_order: 99, active: true, features: {}, limits: { "core.workspaces": 3 }, metadata: { fixture: true } },
   ]
 
@@ -51,11 +51,17 @@ integration("configured product default plan", () => {
     const inactive = await sync("hobby", catalog.map((plan) => plan.key === "hobby" ? { ...plan, active: false } : plan))
     expect(inactive.error?.message).toContain("DEFAULT_PLAN_INVALID")
 
+    const missingWorkspaceLimit = await sync("hobby", catalog.map((plan) => plan.key === "hobby" ? { ...plan, limits: {} } : plan))
+    expect(missingWorkspaceLimit.error?.message).toContain("CORE_WORKSPACE_LIMIT_NOT_CONFIGURED")
+
     const nonexistent = await sync("missing")
     expect(nonexistent.error?.message).toContain("DEFAULT_PLAN_INVALID")
 
     const restored = await sync("hobby")
     expect(restored.error).toBeNull()
+
+    const directInsert = await ownerClient.from("workspaces").insert({ name: "Direct insert must fail", slug: `direct-insert-${Date.now()}`, created_by: owner.id })
+    expect(directInsert.error).toBeTruthy()
   })
 
   it("uses the configured default independent of sort order and keeps old subscriptions stable", async () => {
@@ -67,6 +73,8 @@ integration("configured product default plan", () => {
       workspaceIds.push(id)
       const subscription = await service!.from("workspace_subscriptions").select("plan_key").eq("workspace_id", id).single()
       expect(subscription.data?.plan_key).toBe("hobby")
+      const workspace = await service!.from("workspaces").select("onboarding_completed_at").eq("id", id).single()
+      expect(workspace.data?.onboarding_completed_at).toBeTruthy()
     }
 
     const blocked = await ownerClient.rpc("bootstrap_initial_workspace", { target_workspace_name: `Default D ${Date.now()}`, target_workspace_slug: `default-d-${Date.now()}` })

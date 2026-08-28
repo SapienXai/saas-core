@@ -35,6 +35,17 @@ type SidebarUsageItem = {
   limit: number | null
 }
 
+function workspaceRoleLabel(role: string | null, getTranslation: ReturnType<typeof useLanguage>["getTranslation"]) {
+  switch (role) {
+    case "owner": return getTranslation("team.roleOwner")
+    case "admin": return getTranslation("team.roleAdmin")
+    case "manager": return getTranslation("team.roleManager")
+    case "readonly": return getTranslation("manage.users.form.readonly")
+    case "staff": return getTranslation("team.roleStaff")
+    default: return getTranslation("manage.common.noWorkspaceMembership")
+  }
+}
+
 function SidebarUsageBars({ items }: { items: SidebarUsageItem[] }) {
   return (
     <div className="grid grid-cols-2 gap-x-2.5 gap-y-1.5">
@@ -144,6 +155,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
       : getTranslation("manage.common.workspace")
   const userDisplayName = user.name.trim() || user.email.trim() || fallbackUserLabel
   const userSecondaryLabel = user.email.trim() || fallbackUserLabel
+  const currentWorkspaceRole = currentWorkspace?.role || null
   const initials = userDisplayName
     .split(" ")
     .filter(Boolean)
@@ -381,6 +393,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-xs font-bold text-white">{initials}</span>
               <div className="min-w-0"><p className="truncate text-xs font-bold">{userDisplayName}</p><p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{userSecondaryLabel}</p></div>
             </div>
+            <div className="space-y-1.5 border-b border-slate-100 px-2 py-3 dark:border-white/10"><div className="flex items-center justify-between gap-3 text-[11px]"><span className="text-slate-400">{getTranslation("manage.common.workspaceRole")}</span><span className="truncate font-semibold text-slate-700 dark:text-slate-200">{workspaceRoleLabel(currentWorkspaceRole, getTranslation)}</span></div>{platformRole && <div className="flex items-center justify-between gap-3 text-[11px]"><span className="text-slate-400">{getTranslation("manage.common.platformRole")}</span><span className="truncate font-semibold capitalize text-violet-700 dark:text-violet-300">{platformRole.replaceAll("_", " ")}</span></div>}</div>
             <div className="px-1 py-3">
               <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{getTranslation("language.label")}</p>
               <div className="grid grid-cols-2 gap-1.5">
@@ -427,6 +440,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
         currentWorkspaceName={currentWorkspace?.workspace?.name}
         currentWorkspaceId={currentWorkspace?.id}
         ownedWorkspaceId={ownedWorkspaceId}
+        workspaceLimit={typeof currentWorkspace?.plan?.limits?.["core.workspaces"] === "number" ? currentWorkspace.plan.limits["core.workspaces"] : null}
       />
     </>
   )

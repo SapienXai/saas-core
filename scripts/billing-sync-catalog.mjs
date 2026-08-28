@@ -65,6 +65,7 @@ function normalizeCatalog(value) {
   if (!isPlanKey(value.defaultPlanKey) || !keys.has(value.defaultPlanKey)) fail(`defaultPlanKey must name an existing active product plan.`)
   const defaultPlan = plans.find((plan) => plan.key === value.defaultPlanKey)
   if (!defaultPlan?.active) fail(`defaultPlanKey ${value.defaultPlanKey} must name an active product plan.`)
+  if (!Object.prototype.hasOwnProperty.call(defaultPlan.limits, "core.workspaces")) fail(`The default plan ${value.defaultPlanKey} must explicitly define limits.core.workspaces; use null only for intentional unlimited workspaces.`)
   return { plans, usageMetrics, defaultPlanKey: value.defaultPlanKey || null }
 }
 

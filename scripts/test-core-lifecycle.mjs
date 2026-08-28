@@ -39,7 +39,7 @@ try {
   let result = run(coreA, ["init", "Lifecycle Clean", cleanProduct])
   assert(result.status === 0, result.stderr || "clean init failed")
   await writeFile(path.join(cleanProduct, "app/page.tsx"), `${await readFile(path.join(cleanProduct, "app/page.tsx"), "utf8")}\n// product-owned customization\n`, "utf8")
-  await writeFile(path.join(cleanProduct, "product.catalog.json"), JSON.stringify({ defaultPlanKey: "hobby", plans: [{ key: "hobby", name: "Hobby", prices: { month: { amount: 7, currency: "EUR" } } }], usageMetrics: [{ key: "projects", name: "Projects" }] }, null, 2) + "\n", "utf8")
+  await writeFile(path.join(cleanProduct, "product.catalog.json"), JSON.stringify({ defaultPlanKey: "hobby", plans: [{ key: "hobby", name: "Hobby", prices: { month: { amount: 7, currency: "EUR" } }, limits: { "core.workspaces": 2 } }], usageMetrics: [{ key: "projects", name: "Projects" }] }, null, 2) + "\n", "utf8")
   const cleanPackage = JSON.parse(await readFile(path.join(cleanProduct, "package.json"), "utf8"))
   cleanPackage.dependencies["@sapienx/saas-core-ui"] = "^1.0.0"
   await writeFile(path.join(cleanProduct, "package.json"), JSON.stringify(cleanPackage, null, 2) + "\n", "utf8")
@@ -48,7 +48,7 @@ try {
   const dryRun = JSON.parse(result.stdout)
   assert(dryRun.updated.includes("app/error.tsx") && dryRun.updated.includes("package.json") && dryRun.added.includes("app/core-lifecycle-fixture.ts") && dryRun.removed.includes("app/robots.ts"), "dry-run did not report changed/added/removed managed files and package drift")
   result = run(coreB, ["update", cleanProduct, "--json"])
-  assert(result.status === 0, result.stderr || "clean update failed")
+  assert(result.status === 0, `${result.stderr || result.stdout || "clean update failed"}`)
   const cleanReport = JSON.parse(result.stdout)
   assert(cleanReport.backup && existsSync(cleanReport.backup), "clean update did not create a backup")
   assert(JSON.stringify(cleanReport.updated) === JSON.stringify(dryRun.updated) && JSON.stringify(cleanReport.added) === JSON.stringify(dryRun.added) && JSON.stringify(cleanReport.removed) === JSON.stringify(dryRun.removed), "dry-run plan did not match the real update plan")

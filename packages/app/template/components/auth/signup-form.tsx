@@ -11,6 +11,7 @@ import { AuthShell, AuthDivider } from "@/components/auth/auth-shell"
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
+import { getDevMailpitUrl } from "@/lib/dev-mailpit"
 
 export function SignupForm() {
   const [email, setEmail] = useState("")
@@ -21,16 +22,14 @@ export function SignupForm() {
   const [resending, setResending] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [hydrated, setHydrated] = useState(false)
+  const [devMailpitUrl, setDevMailpitUrl] = useState<string | null>(null)
   const [redirectPath, setRedirectPath] = useState("/onboarding")
   const { getTranslation } = useLanguage()
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const requested = params.get("redirect")
-    const plan = params.get("plan")
-    const interval = params.get("interval")
     if (requested && requested.startsWith("/") && !requested.startsWith("//")) setRedirectPath(requested)
-    else if (["starter", "pro", "business"].includes(plan || "") && ["month", "year"].includes(interval || "month")) setRedirectPath(`/onboarding?plan=${encodeURIComponent(plan || "")}&interval=${encodeURIComponent(interval || "month")}`)
     if (params.get("confirmation") === "sent") {
       const storedEmail = window.sessionStorage.getItem("saas-core.signup.email") || ""
       if (storedEmail) {
@@ -40,6 +39,7 @@ export function SignupForm() {
       setConfirmationMessage("sent")
     }
     setHydrated(true)
+    setDevMailpitUrl(getDevMailpitUrl(window.location.hostname))
   }, [])
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -89,13 +89,6 @@ export function SignupForm() {
     }
   }
 
-  function maskEmail(value: string) {
-    const [localPart, domain] = value.trim().split("@")
-    if (!localPart || !domain) return getTranslation("auth.email")
-    const visible = localPart.length <= 2 ? localPart.slice(0, 1) : localPart.slice(0, 2)
-    return `${visible}${"•".repeat(Math.max(2, localPart.length - visible.length))}@${domain}`
-  }
-
   function useDifferentEmail() {
     setConfirmationMessage("")
     setPassword("")
@@ -112,9 +105,11 @@ export function SignupForm() {
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white">✓</span>
             <div className="min-w-0">
               <h2 className="text-sm font-bold">{getTranslation("auth.confirmEmail")}</h2>
-              <p className="mt-1 text-[13px] leading-5 text-emerald-900">{getTranslation("auth.confirmEmailDescription", { email: maskEmail(email) })}</p>
+              <p className="mt-1 text-[13px] leading-5 text-emerald-900">{getTranslation("auth.confirmEmailDescription")}</p>
+              <p className="mt-2 break-all rounded-xl border border-emerald-200 bg-white/70 px-3 py-2 text-[13px] font-bold text-emerald-950" aria-label={getTranslation("auth.confirmEmailDestination")}>{email || getTranslation("auth.email")}</p>
             </div>
           </div>
+          {devMailpitUrl && <div className="mt-3 rounded-2xl border border-dashed border-emerald-300 bg-white/60 p-3 text-emerald-950"><p className="text-xs font-bold">{getTranslation("auth.developmentInbox")}</p><p className="mt-1 text-[11px] leading-5 text-emerald-800">{getTranslation("auth.developmentInboxDescription")}</p><a className="mt-2 inline-flex h-9 items-center rounded-xl bg-emerald-900 px-3 text-xs font-bold text-white transition-colors hover:bg-emerald-800" href={devMailpitUrl} target="_blank" rel="noreferrer">{getTranslation("auth.openDevelopmentInbox")}</a></div>}
           <div className="mt-4 grid grid-cols-2 gap-2">
             <button type="button" onClick={resend} disabled={resending} className="h-10 rounded-xl border border-emerald-300 bg-white px-3 text-xs font-bold text-emerald-900 transition-colors hover:bg-emerald-100 disabled:cursor-wait disabled:opacity-60">{resending ? getTranslation("auth.sending") : getTranslation("auth.resendEmail")}</button>
             <Link className="inline-flex h-10 items-center justify-center rounded-xl bg-emerald-900 px-3 text-xs font-bold text-white transition-colors hover:bg-emerald-800" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signIn")}</Link>

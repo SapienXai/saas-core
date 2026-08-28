@@ -38,8 +38,18 @@ the Workspace and owner membership, and resolves the active default plan from
 the private Core setting written by catalog synchronization. It counts owner
 memberships against that configured plan's `core.workspaces` entitlement;
 `created_by` is audit metadata, not an authorization or one-workspace
-constraint. Invitation creation and acceptance use one-use token hashes, email
-matching, expiry, and role validation.
+constraint. The same RPC records `onboarding_completed_at`, so the initial
+Core foundation is atomic. Existing Workspace members are never sent back
+through owner onboarding, and additional Workspace creation is a distinct,
+entitlement-checked flow. Invitation creation and acceptance use one-use token
+hashes, email matching, expiry, and role validation.
+
+The public entry distinguishes Account, Workspace, Platform, and Product. A
+platform-only account is not assigned a synthetic Workspace administrator
+role. `PLATFORM_OWNER_EMAIL` is resolved server-side into a discoverable
+platform membership/readiness state; the configured identity is not exposed to
+ordinary production users. Product setup is an internal handoff configured by
+`PRODUCT_CONFIG.onboarding.productSetupPath`, defaulting safely to `/app`.
 
 ## Management composition
 

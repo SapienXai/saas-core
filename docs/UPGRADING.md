@@ -34,6 +34,12 @@ updated in `package.json`; the CLI does not rewrite a consumer lockfile, so
 run the consumer package manager without frozen-lockfile mode after an update
 before committing a lockfile change.
 
+The updater never partially applies a plan when a conflict is present. Its
+failure path restores replaced and removed managed files, `package.json`, and
+`.saas-core-manifest.json`, and removes newly added Core files. A rollback
+failure is reported as critical with both error messages and the independent
+backup path; the CLI does not claim a healthy consumer in that case.
+
 Review the generated manifest and run the product’s install, typecheck, test,
 and build commands. Do not copy local `.env` files, `.next`, `node_modules`,
 screenshots, or provider credentials between checkouts.
@@ -59,7 +65,8 @@ Core runtime version and Core schema version are separate compatibility
 coordinates. The 2.0 baseline is runtime `2.0.0`, schema `2.0`; `doctor`
 verifies the actual database metadata when `SUPABASE_URL` and a server-only
 `SUPABASE_SERVICE_ROLE_KEY` are available, and reports a warning when those
-credentials are absent. Changing a product catalog or usage metric does not
+credentials are absent. It reports an error when metadata is missing or
+mismatched. Changing a product catalog, default plan, or usage metric does not
 require a Core migration.
 
 ## UI changes

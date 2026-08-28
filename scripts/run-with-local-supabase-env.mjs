@@ -7,8 +7,8 @@ const status = JSON.parse(execFileSync("supabase", ["status", "--workdir", ".", 
   encoding: "utf8",
   env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: "1" },
 }))
-if (!/^https?:\/\/(127\.0\.0\.1|localhost):55521$/.test(status.API_URL ?? "")) {
-  throw new Error("Refusing to inject environment: the isolated local SaaS Core Supabase project is not running on port 55521.")
+if (!/^https?:\/\/(127\.0\.0\.1|localhost):55621$/.test(status.API_URL ?? "")) {
+  throw new Error("Refusing to inject environment: the isolated local SaaS Core Supabase project is not running on port 55621.")
 }
 
 const environment = {

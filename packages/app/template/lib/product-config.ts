@@ -22,6 +22,11 @@ export type ProductCatalog = {
   usageMetrics?: readonly ProductUsageMetricDefinition[]
 }
 
+export type ProductOnboardingConfig = {
+  /** Optional product-owned setup route after Core onboarding is complete. */
+  productSetupPath?: string | null
+}
+
 export type ProductConfig = {
   name: string
   slug: string
@@ -30,6 +35,7 @@ export type ProductConfig = {
   themeColor: string
   description: string
   capabilities: Readonly<Record<string, boolean>>
+  onboarding?: ProductOnboardingConfig
   /** Product-owned commercial catalog. Core only evaluates its stable keys. */
   catalog: ProductCatalog
 }
@@ -45,7 +51,7 @@ export const PRODUCT_CONFIG: ProductConfig = {
   logoPath: "/product-mark.svg",
   iconPath: "/product-mark.svg",
   themeColor: "#7c3aed",
-  description: "A production-ready workspace foundation for focused products.",
+  description: "A focused place for your team to get work done.",
   capabilities: {
     billing: true,
     domains: true,
@@ -53,5 +59,12 @@ export const PRODUCT_CONFIG: ProductConfig = {
     pushNotifications: true,
     pwa: true,
   },
+  onboarding: { productSetupPath: "/app" },
   catalog: productCatalog as ProductCatalog,
+}
+
+export function getProductOnboardingPath() {
+  const configured = PRODUCT_CONFIG.onboarding?.productSetupPath?.trim()
+  if (!configured || !configured.startsWith("/") || configured.startsWith("//")) return "/app"
+  return configured
 }

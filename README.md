@@ -56,6 +56,7 @@ Public/auth infrastructure is intentionally small:
 /forgot-password     request recovery
 /reset-password      choose a new password
 /onboarding          resumable workspace setup
+/onboarding/workspace create another workspace (when entitled)
 
 /app                 workspace dashboard
 /app/team            membership and invitations
@@ -73,6 +74,12 @@ Public/auth infrastructure is intentionally small:
 
 The `/manage` routes remain compatibility aliases for the extracted
 management application. There are no product-domain routes in Core.
+
+The public root always offers `Sign in` and `Create account`. An authenticated
+account is routed to `/app` or `/onboarding`; an explicit platform member with
+no Workspace is routed to Platform Control. Signup confirmation names the
+destination email. A local-only Mailpit link appears after signup in
+development and is never rendered in production.
 
 ## Source boundary
 
@@ -114,7 +121,7 @@ pnpm db:reset
 pnpm db:test:clean
 ```
 
-The local Supabase project uses ports `55520`–`55528`, isolated from any other
+The local Supabase project uses ports `55620`–`55628`, isolated from any other
 checkout. `db:test:clean` resets it and runs the authenticated workspace/RLS
 suite.
 
@@ -153,7 +160,18 @@ persists the explicit active default plan atomically.
 
 Fresh products receive a neutral, zero-price development catalog with one
 `default` plan. It is deliberately product-owned and may be replaced without
-a Core migration.
+a Core migration. Its default plan explicitly includes
+`limits.core.workspaces: 1`; `null` means intentional unlimited capacity.
+Catalog synchronization persists `defaultPlanKey` in private Core settings and
+rejects a missing, inactive, or structurally incomplete default. Workspace
+creation uses that configured key, completes Core onboarding atomically, and
+does not change existing subscriptions when the default changes.
+
+After Core onboarding, a product may hand off to an internal product route with
+`PRODUCT_CONFIG.onboarding.productSetupPath`; the safe default is `/app`.
+Core does not know the product’s domain or commercial plan names. Account,
+Workspace, Platform, and Product concerns remain separate, and Workspace roles
+do not imply Platform roles.
 
 The lifecycle commands are deliberately portable and manifest-based:
 
@@ -168,6 +186,13 @@ pnpm update -- ./my-product
 They do not write `file:` dependencies, absolute checkout paths, temporary
 tarball paths, or local registry URLs into generated products. The generated
 consumer proof uses a clearly non-domain-specific Projects fixture.
+
+`doctor` verifies manifest, package, ownership, catalog, portability, and—when
+server-only Supabase credentials are available—the actual `2.0` Core schema
+metadata. Without those credentials it reports a warning rather than claiming
+verification. `update` plans completely before mutation, blocks on modified
+managed files, creates a self-contained backup, validates, and rolls back the
+consumer automatically if apply or validation fails.
 
 Generated consumers use `@sapienx/saas-core`, `@sapienx/saas-core-config`, and
 `@sapienx/saas-core-ui` at runtime. The CLI is a devDependency, and

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { execFileSync, spawnSync } from "node:child_process"
 import os from "node:os"
 import path from "node:path"
@@ -55,6 +55,22 @@ try {
   assert(withoutCredentials.status === 0, withoutCredentials.stderr || "doctor should warn, not fail, without database credentials")
   const warningReport = JSON.parse(withoutCredentials.stdout)
   assert(warningReport.checks.some((check) => check.category === "DATABASE" && check.status === "WARNING"), "doctor did not report the missing database credentials as a warning")
+
+  const catalogFile = path.join(product, "product.catalog.json")
+  const originalCatalog = await readFile(catalogFile, "utf8")
+  const catalog = JSON.parse(originalCatalog)
+  await writeFile(catalogFile, JSON.stringify({ ...catalog, defaultPlanKey: "missing" }, null, 2), "utf8")
+  const missingDefault = runDoctor(withoutDatabaseCredentials())
+  assert(missingDefault.status !== 0 && JSON.parse(missingDefault.stdout).checks.some((check) => check.category === "PRODUCT" && check.status === "ERROR" && check.detail.includes("defaultPlanKey")), "doctor accepted a catalog with an invalid default plan")
+
+  await writeFile(catalogFile, JSON.stringify({ ...catalog, plans: catalog.plans.map((plan) => ({ ...plan, active: false })) }, null, 2), "utf8")
+  const inactiveDefault = runDoctor(withoutDatabaseCredentials())
+  assert(inactiveDefault.status !== 0 && JSON.parse(inactiveDefault.stdout).checks.some((check) => check.category === "PRODUCT" && check.status === "ERROR" && check.detail.includes("inactive")), "doctor accepted an inactive default plan")
+
+  await rm(catalogFile)
+  const missingCatalog = runDoctor(withoutDatabaseCredentials())
+  assert(missingCatalog.status !== 0 && JSON.parse(missingCatalog.stdout).checks.some((check) => check.category === "PRODUCT" && check.status === "ERROR" && check.detail.includes("missing")), "doctor accepted a missing product catalog")
+  await writeFile(catalogFile, originalCatalog, "utf8")
 
   const status = localSupabaseStatus()
   if (!status?.API_URL || !status.SERVICE_ROLE_KEY) {

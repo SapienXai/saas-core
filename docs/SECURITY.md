@@ -31,6 +31,14 @@ from `anon` and `authenticated`; the server-only service role is used only
 after `requirePlatformRole()` succeeds. Delivery and provider tables follow
 the same server-only pattern.
 
+`PLATFORM_OWNER_EMAIL` is a server-side bootstrap hint, not a browser role or
+authorization input. A matching authenticated account can receive the initial
+`platform_owner` membership through the server resolver. Production readiness
+views expose only role/access state to ordinary users; the configured email is
+shown only to trusted development or already-authorized platform operators.
+Workspace roles remain independent, so platform authority never silently
+becomes Workspace ownership.
+
 The repository has no `NEXT_PUBLIC_*` service-role value. `SUPABASE_SERVICE_ROLE_KEY`
 is read only from server-only modules and never imported by client components.
 The catalog synchronization command is a server-only Node process and rejects
@@ -65,6 +73,11 @@ the tooling doctor uses the service-role key only from its server-side process.
 The product default plan is likewise stored in the private Core settings table
 and can only be changed through the service-role-only catalog synchronization
 RPC. A public or anonymous key is rejected.
+
+The generated starter catalog requires an explicit `core.workspaces` limit on
+its default plan. Workspace bootstrap checks the effective plan and returns a
+clear limit/configuration error; it does not depend on a `created_by` unique
+index or select an arbitrary plan by sort order.
 
 ## Verification
 

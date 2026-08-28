@@ -3,6 +3,7 @@ import type { EmailOtpType } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { getAccountState, safeInternalRedirect } from "@/lib/account-state"
+import { getCurrentUserAccess } from "@/lib/auth-utils"
 import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
 import { getRequestUrl } from "@/lib/request-url"
 
@@ -32,8 +33,9 @@ export async function GET(request: Request) {
 
   const state = await getAccountState()
   const invitationRequested = Boolean((await cookies()).get(INVITATION_INTENT_COOKIE)?.value) || next === "/invite/accept"
+  const access = state.authenticated && !state.workspaceId ? await getCurrentUserAccess() : null
   const destination = state.authenticated
-    ? invitationRequested ? "/invite/accept" : state.path === "/onboarding" ? (next === "/app" ? "/onboarding" : next) : "/app"
+    ? invitationRequested ? "/invite/accept" : access?.platformRole && !state.workspaceId ? "/platform" : state.path === "/onboarding" ? "/onboarding" : "/app"
     : "/login"
   return NextResponse.redirect(new URL(destination, url))
 }

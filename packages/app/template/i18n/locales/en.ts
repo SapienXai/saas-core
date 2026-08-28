@@ -15,8 +15,8 @@ export const en = {
     workspaceAccess: "workspace access", wrongAccount: "This invitation was sent to {invited}, but you are signed in as {current}.",
   },
   auth: {
-    alreadyHaveAccount: "Already have an account?", backToSignIn: "Back to sign in", confirmEmail: "Check your inbox",
-    confirmEmailDescription: "We sent a confirmation link to {email}. Open it to finish creating your account.",
+    alreadyHaveAccount: "Already have an account?", backToSignIn: "Back to sign in", confirmEmail: "Check your email", confirmEmailDestination: "Confirmation email destination",
+    confirmEmailDescription: "Open the confirmation link to finish creating your account.",
     confirmPassword: "Confirm password", continueWithGoogle: "Continue with Google", createAccount: "Create an account",
     creatingAccount: "Creating account…", description: "Your workspace, managed in one place.", divider: "or continue with email",
     email: "Email", footnote: "SAAS CORE · BUILT FOR TEAMS", forgotPassword: "Forgot password?", growConfidence: "One place to manage it all",
@@ -25,6 +25,7 @@ export const en = {
     moreWorkspacesDescription: "Keep teams, settings, and activity in one place.", newPassword: "New password",
     newPasswordDescription: "Set a new password for your SaaS Core account.", newPasswordTitle: "Choose a new password",
     newToSaasCore: "New to SaaS Core?", password: "Password", passwordPlaceholder: "Enter your password", rememberMe: "Remember me",
+    developmentInbox: "Development email inbox", developmentInboxDescription: "Emails are being captured locally by Mailpit.", openDevelopmentInbox: "Open Mailpit",
     resendEmail: "Resend email", resetDescription: "Enter your email and we’ll send a secure reset link if the account can receive mail.",
     resetSent: "If the address can receive mail, a password reset link is on its way.", resetTitle: "Reset your password",
     saveTime: "Ready for your workflow", saveTimeDescription: "Bring the tools your team uses into one calm workspace.",
@@ -43,14 +44,14 @@ export const en = {
   },
   manage: {
     common: {
-      administrator: "Administrator", administratorRequired: "Administrator access required", collapseSidebar: "Collapse sidebar", closeSidebar: "Close navigation", createWorkspace: "Create workspace", createWorkspaceShort: "Create workspace", currentWorkspace: "Current workspace", darkMode: "Dark mode", goToDashboard: "Open workspace", lightMode: "Light mode", management: "Workspace management", nextStep: "Next step", openSettings: "Open settings", openSidebar: "Open sidebar", pullToRefresh: "Pull to refresh", refreshing: "Refreshing…", releaseToRefresh: "Release to refresh", settings: "Settings", signOut: "Sign out", staff: "Team member", toggleSidebar: "Toggle navigation", upgradeTo: "Upgrade to {plan}", viewPlans: "View plans", workspace: "Workspace", workspaceCreatedWithAdjustedSlug: "Workspace created successfully. The public address was already in use, so we used “{slug}”.", workspaceFallback: "Your workspace", workspaceNavigation: "Workspace navigation",
+      administrator: "Administrator", administratorRequired: "Administrator access required", collapseSidebar: "Collapse sidebar", closeSidebar: "Close navigation", createWorkspace: "Create workspace", createWorkspaceShort: "Create workspace", currentWorkspace: "Current workspace", darkMode: "Dark mode", goToDashboard: "Open workspace", lightMode: "Light mode", management: "Workspace management", nextStep: "Next step", noWorkspaceMembership: "No workspace membership", openSettings: "Open settings", openSidebar: "Open sidebar", platformRole: "Platform role", pullToRefresh: "Pull to refresh", refreshing: "Refreshing…", releaseToRefresh: "Release to refresh", settings: "Settings", signOut: "Sign out", staff: "Team member", toggleSidebar: "Toggle navigation", upgradeTo: "Upgrade to {plan}", viewPlans: "View plans", workspace: "Workspace", workspaceCreatedWithAdjustedSlug: "Workspace created successfully. The public address was already in use, so we used “{slug}”.", workspaceFallback: "Your workspace", workspaceNavigation: "Workspace navigation", workspaceRole: "Workspace role",
     },
     sidebar: { dashboard: "Workspace", domains: "Domains", managementApp: "Management app", planUsage: "Plan & usage", platformControl: "Platform Control", team: "Team" },
     users: { form: { readonly: "Read-only" } },
     workspaceUpgrade: {
       benefitOne: "Keep teams, settings, and activity separate", benefitThree: "Review plan options as your operation grows",
       benefitTwo: "Switch between authorized workspaces from the header", closeDialog: "Close workspace limit dialog", currentWorkspace: "Current workspace",
-      description: "Your {plan} account has reached its workspace limit. Review plan options if you need more room.", eyebrow: "Workspace capacity",
+      description: "Your {plan} plan allows {limit} workspace(s). You have reached that limit. Review plan options if you need more room.", eyebrow: "Workspace capacity",
       maybeLater: "Keep current workspace", title: "You've reached your workspace limit", upgradePlan: "Upgrade plan",
     },
     planUsage: {

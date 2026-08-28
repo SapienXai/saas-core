@@ -6,7 +6,7 @@ values (
   'Default',
   0,
   '{}'::jsonb,
-  '{}'::jsonb,
+  '{"core.workspaces":1,"core.members":null}'::jsonb,
   '{"development":true}'::jsonb
 )
 on conflict (key) do update set

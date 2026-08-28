@@ -22,10 +22,11 @@ type Props = {
   currentWorkspaceName?: string | null
   currentWorkspaceId?: string | null
   ownedWorkspaceId?: string | null
+  workspaceLimit?: number | null
   onUpgrade?: () => void
 }
 
-export function WorkspaceUpgradeModal({ open, onOpenChange, currentPlan, currentWorkspaceName, currentWorkspaceId, ownedWorkspaceId, onUpgrade }: Props) {
+export function WorkspaceUpgradeModal({ open, onOpenChange, currentPlan, currentWorkspaceName, currentWorkspaceId, ownedWorkspaceId, workspaceLimit, onUpgrade }: Props) {
   const { getTranslation } = useLanguage()
   const planHref = getPlanNavigationHref({
     hash: "#upgrade-plans",
@@ -54,7 +55,7 @@ export function WorkspaceUpgradeModal({ open, onOpenChange, currentPlan, current
               {getTranslation("manage.workspaceUpgrade.title")}
             </DialogTitle>
             <DialogDescription className="mt-3 max-w-md text-sm leading-6 text-slate-300">
-              {getTranslation("manage.workspaceUpgrade.description", { plan: currentPlan })}
+              {getTranslation("manage.workspaceUpgrade.description", { plan: currentPlan, limit: workspaceLimit ?? "the configured" })}
             </DialogDescription>
           </DialogHeader>
         </div>

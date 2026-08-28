@@ -100,10 +100,55 @@ async function copyTree(source, destination) {
 }
 
 async function writeProductConfig(directory, name, slug) {
-  await writeFile(path.join(directory, "lib/product-config.ts"), `import productCatalog from "@/product.catalog.json"\n\nexport type ProductConfig = {\n  name: string\n  slug: string\n  logoPath: string\n  iconPath: string\n  themeColor: string\n  description: string\n  capabilities: Readonly<Record<string, boolean>>\n  catalog: { defaultPlanKey: string; plans: readonly unknown[]; usageMetrics: readonly unknown[] }\n}\n\nexport const PRODUCT_CONFIG: ProductConfig = {\n  name: ${JSON.stringify(name)},\n  slug: ${JSON.stringify(slug)},\n  logoPath: "/product-mark.svg",\n  iconPath: "/product-mark.svg",\n  themeColor: "#7c3aed",\n  description: ${JSON.stringify(`${name} workspace management.`)},\n  capabilities: { billing: true, domains: true, platformControl: true, pushNotifications: true, pwa: true },\n  catalog: productCatalog,\n}\n`, "utf8")
+  await writeFile(path.join(directory, "lib/product-config.ts"), `import productCatalog from "@/product.catalog.json"
+
+export type ProductConfig = {
+  name: string
+  slug: string
+  logoPath: string
+  iconPath: string
+  themeColor: string
+  description: string
+  capabilities: Readonly<Record<string, boolean>>
+  onboarding?: { productSetupPath?: string | null }
+  catalog: ProductCatalog
+}
+
+export type ProductPlanDefinition = {
+  key: string
+  name: string
+  description?: string
+  active?: boolean
+  prices?: Readonly<Record<string, { amount: number | null; currency: string; providerPriceId?: string }>>
+  features?: Readonly<Record<string, boolean>>
+  limits?: Readonly<Record<string, number | null>>
+  metadata?: Readonly<Record<string, unknown>>
+}
+
+export type ProductUsageMetricDefinition = { key: string; name: string; unit?: string }
+export type ProductCatalog = { defaultPlanKey: string; plans: readonly ProductPlanDefinition[]; usageMetrics?: readonly ProductUsageMetricDefinition[] }
+
+export const PRODUCT_CONFIG: ProductConfig = {
+  name: ${JSON.stringify(name)},
+  slug: ${JSON.stringify(slug)},
+  logoPath: "/product-mark.svg",
+  iconPath: "/product-mark.svg",
+  themeColor: "#7c3aed",
+  description: ${JSON.stringify(`${name} workspace management.`)},
+  capabilities: { billing: true, domains: true, platformControl: true, pushNotifications: true, pwa: true },
+  onboarding: { productSetupPath: "/app" },
+  catalog: productCatalog,
+}
+
+export function getProductOnboardingPath() {
+  const configured = PRODUCT_CONFIG.onboarding?.productSetupPath?.trim()
+  if (!configured || !configured.startsWith("/") || configured.startsWith("//")) return "/app"
+  return configured
+}
+`, "utf8")
   await writeFile(path.join(directory, "product.catalog.json"), json({
     defaultPlanKey: "default",
-    plans: [{ key: "default", name: "Default", features: {}, limits: {}, metadata: { development: true } }],
+    plans: [{ key: "default", name: "Default", features: {}, limits: { "core.workspaces": 1, "core.members": null }, metadata: { development: true } }],
     usageMetrics: [],
   }), "utf8")
   await mkdir(path.join(directory, "src/product"), { recursive: true })
@@ -169,6 +214,7 @@ function productConfigValid(directory) {
     if (typeof catalog.defaultPlanKey !== "string" || !keys.includes(catalog.defaultPlanKey)) return { status: "ERROR", detail: "defaultPlanKey must refer to an existing product plan." }
     const defaultPlan = catalog.plans.find((plan) => plan.key === catalog.defaultPlanKey)
     if (defaultPlan?.active === false) return { status: "ERROR", detail: `defaultPlanKey ${catalog.defaultPlanKey} is inactive; workspace creation will fail.` }
+    if (!defaultPlan || !defaultPlan.limits || !Object.prototype.hasOwnProperty.call(defaultPlan.limits, "core.workspaces")) return { status: "ERROR", detail: "The default plan must explicitly define limits.core.workspaces; use null only for intentional unlimited workspaces." }
     return { status: "INFO", detail: `${keys.length} product plan(s), ${metricKeys.length} usage metric(s), default ${catalog.defaultPlanKey}` }
   } catch { return { status: "ERROR", detail: "product.catalog.json is not valid JSON." } }
 }

@@ -110,11 +110,17 @@ export const getCurrentUserAccess = cache(async function getCurrentUserAccess():
       userId: data.user.id,
       email: data.user.email?.trim() || "",
       name,
-      role: membership?.role || (platform.member?.role ? "admin" : "staff"),
+      // Platform authority is deliberately not represented as a Workspace
+      // role. Platform-only operators have no implied Workspace admin access.
+      role: membership?.role || "staff",
       workspaceRole: membership?.role || null,
       workspaceAvailable: memberships.available,
       platformRole: platform.member?.status === "active" ? platform.member.role : null,
       isSuperAdmin: platform.member?.status === "active" && platform.member.role === "platform_owner",
     }
-  } catch (error) { console.error("Error resolving user access:", error); return null }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.includes("Supabase server authentication is not configured")) console.error("Error resolving user access:", error)
+    return null
+  }
 })

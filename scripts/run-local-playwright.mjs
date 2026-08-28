@@ -4,8 +4,8 @@ const status = JSON.parse(execFileSync("supabase", ["status", "--workdir", ".", 
   encoding: "utf8",
   env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: "1" },
 }))
-if (!/^https?:\/\/(127\.0\.0\.1|localhost):55521$/.test(status.API_URL || "")) {
-  throw new Error("Refusing browser E2E: the isolated local SaaS Core Supabase project is not running on port 55521.")
+if (!/^https?:\/\/(127\.0\.0\.1|localhost):55621$/.test(status.API_URL || "")) {
+  throw new Error("Refusing browser E2E: the isolated local SaaS Core Supabase project is not running on port 55621.")
 }
 
 const environment = {
@@ -17,7 +17,8 @@ const environment = {
   SUPABASE_ANON_KEY: status.ANON_KEY,
   SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY,
   SUPABASE_JWT_SECRET: status.JWT_SECRET,
-  SAAS_CORE_MAIL_URL: status.INBUCKET_URL || "http://127.0.0.1:55524",
+  SAAS_CORE_MAIL_URL: status.INBUCKET_URL || "http://127.0.0.1:55624",
+  NEXT_PUBLIC_DEV_MAILPIT_URL: status.INBUCKET_URL || "http://127.0.0.1:55624",
   SAAS_CORE_E2E: "1",
   SAAS_CORE_APP_URL: process.env.SAAS_CORE_APP_URL || "http://127.0.0.1:3100",
 }

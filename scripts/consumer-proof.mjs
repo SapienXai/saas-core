@@ -23,7 +23,10 @@ function run(command, args, cwd, extraEnvironment = {}) {
 }
 
 async function bootAndSmoke(cwd, port) {
-  const server = spawn("npm", ["run", "start", "--", "-p", String(port)], { cwd, env: npmEnvironment, stdio: "ignore" })
+  const diagnostics = []
+  const server = spawn("npm", ["run", "start", "--", "-p", String(port)], { cwd, env: npmEnvironment, stdio: ["ignore", "pipe", "pipe"] })
+  server.stdout.on("data", (chunk) => diagnostics.push(String(chunk)))
+  server.stderr.on("data", (chunk) => diagnostics.push(String(chunk)))
   try {
     let ready = false
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -38,7 +41,7 @@ async function bootAndSmoke(cwd, port) {
       }
       await new Promise((resolve) => setTimeout(resolve, 500))
     }
-    if (!ready) throw new Error(`Generated consumer did not boot on port ${port}.`)
+    if (!ready) throw new Error(`Generated consumer did not boot on port ${port}.\n${diagnostics.join("").slice(-4000)}`)
     for (const pathname of ["/", "/login", "/signup", "/forgot-password", "/manifest.webmanifest"]) {
       const response = await fetch(`http://127.0.0.1:${port}${pathname}`)
       if (response.status >= 500) throw new Error(`Generated consumer returned ${response.status} for ${pathname}.`)
@@ -52,7 +55,8 @@ try {
   run(process.execPath, [packageCli, "init", "Projects Proof", product], root)
   const generatedCatalog = JSON.parse(readFileSync(path.join(product, "product.catalog.json"), "utf8"))
   if (generatedCatalog.defaultPlanKey !== "default" || generatedCatalog.plans.length !== 1 || generatedCatalog.plans[0].key !== "default" || generatedCatalog.plans[0].prices) throw new Error("Generated consumer did not receive the neutral product-owned starter catalog.")
-  if (!readFileSync(path.join(product, "supabase/seed.sql"), "utf8").includes("'default'")) throw new Error("Generated consumer seed does not bootstrap the neutral default plan.")
+  const generatedSeed = readFileSync(path.join(product, "supabase/seed.sql"), "utf8")
+  if (!generatedSeed.includes("'default'") || !generatedSeed.includes("'{\"core.workspaces\":1,\"core.members\":null}'::jsonb")) throw new Error("Generated consumer seed does not bootstrap the neutral default plan and its explicit workspace limit.")
   const generatedPackage = JSON.parse(readFileSync(path.join(product, "package.json"), "utf8"))
   if (generatedPackage.dependencies["@sapienx/saas-core-cli"] || generatedPackage.dependencies["@sapienx/saas-core-app"]) throw new Error("Tooling/template-only Core packages were emitted as runtime dependencies.")
   if (generatedPackage.devDependencies["@sapienx/saas-core-cli"] !== "^2.0.0") throw new Error("Core CLI was not emitted as a tooling dependency.")
