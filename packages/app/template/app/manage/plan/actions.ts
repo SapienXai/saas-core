@@ -9,7 +9,6 @@ import { createServiceRoleClient } from "@/lib/supabase"
 import type { Json } from "@/types/supabase"
 import { applyPaddleSubscriptionEvent } from "@/lib/billing/webhook"
 
-const PLAN_LABELS: Record<PaidPlanKey, string> = { starter: "Starter", pro: "Pro", business: "Business" }
 const CANCELLATION_REASONS = new Set(["too_expensive", "not_using", "seasonal", "missing_feature", "technical_problem", "switching_solution", "other"])
 
 type SubscriptionRow = {
@@ -191,9 +190,10 @@ async function subscriptionPreviewData(
   const authoritativePrice = await getPaddleServerClient().prices.get(targetPrice.provider_price_id)
   const recurringAmount = positiveMoneyAmount(authoritativePrice.unitPrice.amount)
   if (!recurringAmount) throw new Error("The target Paddle price is unavailable.")
+  const targetPlanName = await getPlanName(targetPlan)
   return {
     planKey: targetPlan,
-    plan: PLAN_LABELS[targetPlan],
+    plan: targetPlanName,
     interval: targetInterval,
     isDowngrade,
     prorationBillingMode: mode,
@@ -207,6 +207,12 @@ async function subscriptionPreviewData(
     nextBilledAt: preview.nextBilledAt || null,
     effectiveAt,
   }
+}
+
+async function getPlanName(planKey: string) {
+  const { data, error } = await createServiceRoleClient().from("plans").select("name").eq("key", planKey).maybeSingle()
+  if (error) throw new Error(error.message)
+  return data?.name || planKey
 }
 
 async function getPlanSortOrder(planKey: string) {
@@ -223,7 +229,7 @@ async function getPaddlePlanChangeContext(targetPlan: PaidPlanKey, targetInterva
   const currentInterval = providerState.mapping?.billing_interval || (isBillingInterval(subscription.billing_interval || "") ? subscription.billing_interval as BillingInterval : null)
   const interval = targetInterval || currentInterval || "month"
   const mapping = await getActivePaddlePrice(targetPlan, environment, interval, providerState.mapping?.currency || subscription.billing_currency || "USD")
-  if (!mapping) throw new Error(`Paddle ${environment} ${interval} price mapping is not configured for ${PLAN_LABELS[targetPlan]}.`)
+  if (!mapping) throw new Error(`Paddle ${environment} ${interval} price mapping is not configured for plan ${targetPlan}.`)
   if (providerState.subscription.scheduledChange?.action === "cancel" || subscription.cancel_at_period_end) throw new Error("Reactivate the subscription before changing its plan.")
   if (subscription.plan_key === targetPlan && currentInterval === interval) throw new Error("The workspace is already on that plan and billing cycle.")
   return { membership, subscription, environment, mapping, interval, providerState, currentPeriodEndAt: providerPeriodEnd(providerState, subscription) }
@@ -240,7 +246,7 @@ export async function getPlanUsage() {
       getWorkspaceEntitlements(membership.workspace_id),
       getWorkspaceUsage(membership.workspace_id),
       getCurrentBillingSubscription(membership.workspace_id),
-      supabase.from("plans").select("key, name, monthly_price_usd_cents, sort_order, workspace_limit, user_limit, activity_limit, history_days, features").eq("active", true).order("sort_order"),
+      supabase.from("plans").select("key, name, sort_order, active, features, limits, metadata").eq("active", true).order("sort_order"),
     ])
     if (workspaceError || !workspace) return { success: false, message: "Workspace could not be loaded." }
     if (plans.error) throw new Error(plans.error.message)
@@ -376,13 +382,13 @@ export async function previewPaddleCheckout(targetPlan: string, billingInterval:
     if (!isPaidPlanKey(targetPlan) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
     const environment = getBillingEnvironment()
     const mapping = await getActivePaddlePrice(targetPlan, environment, billingInterval)
-    if (!mapping) return { success: false, message: `Paddle ${environment} ${billingInterval} price mapping is not configured for ${PLAN_LABELS[targetPlan]}.` }
+    if (!mapping) return { success: false, message: `Paddle ${environment} ${billingInterval} price mapping is not configured for plan ${targetPlan}.` }
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider === "paddle" && subscription.provider_subscription_id && subscription.provider_status !== "canceled") return { success: false, message: "This workspace already has a Paddle subscription. Use Manage plan instead." }
-    if (subscription.plan_key !== "free") return { success: false, message: "This workspace is not eligible for a new paid checkout." }
+    if (subscription.source !== "system" || subscription.provider_subscription_id) return { success: false, message: "This workspace is not eligible for a new paid checkout." }
     const preview = await getPaddleServerClient().transactions.preview({ items: [{ priceId: mapping.provider_price_id, quantity: 1 }], ...(subscription.provider_customer_id ? { customerId: subscription.provider_customer_id } : {}) })
     const totals = preview.details.totals
-    return { success: true, data: { planKey: targetPlan, plan: PLAN_LABELS[targetPlan], interval: billingInterval, amount: totals.grandTotal || totals.total, currency: totals.currencyCode, nextRecurringAmount: totals.grandTotal || totals.total, previewedAt: new Date().toISOString() } }
+    return { success: true, data: { planKey: targetPlan, plan: await getPlanName(targetPlan), interval: billingInterval, amount: totals.grandTotal || totals.total, currency: totals.currencyCode, nextRecurringAmount: totals.grandTotal || totals.total, previewedAt: new Date().toISOString() } }
   } catch (error) { return { success: false, message: friendlyBillingError(error) } }
 }
 
@@ -395,10 +401,10 @@ export async function startPaddleCheckout(targetPlan: string, intervalOrRequestK
     const environment = getBillingEnvironment()
     const mapping = await getActivePaddlePrice(targetPlan, environment, billingInterval)
     const publicConfig = getPublicPaddleConfig()
-    if (!mapping || !publicConfig) return { success: false, message: `Paddle ${environment} price mapping is not configured for ${PLAN_LABELS[targetPlan]}.` }
+    if (!mapping || !publicConfig) return { success: false, message: `Paddle ${environment} price mapping is not configured for plan ${targetPlan}.` }
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider === "paddle" && subscription.provider_subscription_id && subscription.provider_status !== "canceled") return { success: false, message: "This workspace already has a Paddle subscription. Use Change plan instead." }
-    if (subscription.plan_key !== "free") return { success: false, message: "This workspace is not eligible for a new paid checkout." }
+    if (subscription.source !== "system" || subscription.provider_subscription_id) return { success: false, message: "This workspace is not eligible for a new paid checkout." }
     const idempotencyKey = normalizeRequestKey(actualRequestKey)
     const mutation = await beginBillingMutation(membership.workspace_id, idempotencyKey, "checkout")
     if (mutation.status === "succeeded") {

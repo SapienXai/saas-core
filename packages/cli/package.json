@@ -1,10 +1,14 @@
 {
-  "name": "@saas-core/cli",
+  "name": "@sapienx/saas-core-cli",
   "version": "2.0.0",
   "description": "SaaS Core product lifecycle CLI",
   "type": "module",
   "bin": {
     "saas-core": "./bin/saas-core.mjs"
   },
-  "files": ["bin", "template", "README.md"]
+  "files": ["bin", "template", "scripts", "app-package.json", "README.md"],
+  "scripts": {
+    "prepack": "node scripts/sync-template.mjs",
+    "postpack": "node scripts/clean-template.mjs"
+  }
 }

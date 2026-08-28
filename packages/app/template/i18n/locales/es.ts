@@ -17,7 +17,7 @@ const spanishTranslations: Record<string, string> = {
   "A CALMER WAY TO WORK": "UNA FORMA MÁS TRANQUILA DE TRABAJAR", "SaaS Core home": "Inicio de SaaS Core", "New to SaaS Core?": "¿Es tu primera vez en SaaS Core?",
   "Sign in to your SaaS Core account.": "Inicia sesión en tu cuenta de SaaS Core.", "Start managing your workspace in one place.": "Empieza a gestionar tu espacio de trabajo en un solo lugar.",
   "Set a new password for your SaaS Core account.": "Establece una nueva contraseña para tu cuenta de SaaS Core.", "Team members": "Miembros del equipo", "Workspaces": "Espacios de trabajo",
-  "Activity this period": "Actividad de este periodo", "Activity / period": "Actividad / periodo", "Plan preview": "Vista previa del plan", "Active plan": "Plan activo", "Free plan": "Plan gratuito",
+  "Usage this period": "Uso de este periodo", "Usage / period": "Uso / periodo", "Plan preview": "Vista previa del plan", "Active plan": "Plan activo", "Base plan": "Plan base",
   "Notifications": "Notificaciones", "Enable notifications": "Activar notificaciones", "Disable notifications": "Desactivar notificaciones", "Management App": "Aplicación de gestión", "Install App": "Instalar aplicación", "Save branding": "Guardar marca",
   "Accept invitation": "Aceptar invitación", "Join {workspace}": "Unirse a {workspace}", "Joining…": "Uniéndose…", "workspace access": "acceso al espacio de trabajo",
   "Billing details": "Datos de facturación", "Billing cycle": "Ciclo de facturación", "Monthly": "Mensual", "Annual": "Anual", "Change plan": "Cambiar de plan", "Upgrade your plan": "Mejorar tu plan", "Manage billing": "Gestionar facturación", "Payment method": "Método de pago", "Invoices": "Facturas",

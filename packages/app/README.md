@@ -1,4 +1,4 @@
-# `@saas-core/app`
+# `@sapienx/saas-core-app`
 
 This package carries the portable application template extracted from the
 production management implementation. The CLI materializes its

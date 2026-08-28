@@ -42,7 +42,7 @@ async function requirePwaAdmin() {
   const current = await getCurrentWorkspace()
   if (!current) throw new Error("Workspace access is required.")
   if (!['owner', 'admin'].includes(current.role)) throw new Error("Only workspace owners and admins can manage PWA branding.")
-  if (!(await can(current.workspace_id, "customPWA"))) throw new Error("Custom PWA branding is available on Pro and Business plans.")
+  if (!(await can(current.workspace_id, "customPWA"))) throw new Error("Custom PWA branding is not enabled for this workspace plan.")
   return current
 }
 

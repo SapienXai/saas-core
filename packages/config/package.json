@@ -1,10 +1,13 @@
 {
-  "name": "@saas-core/config",
+  "name": "@sapienx/saas-core-config",
   "version": "2.0.0",
   "description": "Product configuration boundary for SaaS Core",
   "type": "module",
   "exports": {
-    ".": "./src/index.js"
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
   },
-  "files": ["src", "README.md"]
+  "files": ["dist", "README.md"],
+  "scripts": { "build": "tsc -p tsconfig.build.json", "prepack": "pnpm run build" },
+  "types": "./dist/index.d.ts",
+  "dependencies": { "@sapienx/saas-core": "workspace:^" }
 }

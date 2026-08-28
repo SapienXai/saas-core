@@ -459,45 +459,36 @@ export type Database = {
       plans: {
         Row: {
           active: boolean
-          activity_limit: number | null
           created_at: string
           features: Json
-          history_days: number | null
           key: string
-          monthly_price_usd_cents: number
+          limits: Json
+          metadata: Json
           name: string
           sort_order: number
           updated_at: string
-          user_limit: number | null
-          workspace_limit: number | null
         }
         Insert: {
           active?: boolean
-          activity_limit?: number | null
           created_at?: string
           features?: Json
-          history_days?: number | null
           key: string
-          monthly_price_usd_cents: number
+          limits?: Json
+          metadata?: Json
           name: string
           sort_order: number
           updated_at?: string
-          user_limit?: number | null
-          workspace_limit?: number | null
         }
         Update: {
           active?: boolean
-          activity_limit?: number | null
           created_at?: string
           features?: Json
-          history_days?: number | null
           key?: string
-          monthly_price_usd_cents?: number
+          limits?: Json
+          metadata?: Json
           name?: string
           sort_order?: number
           updated_at?: string
-          user_limit?: number | null
-          workspace_limit?: number | null
         }
         Relationships: []
       }
@@ -1057,30 +1048,30 @@ export type Database = {
       }
       workspace_usage_periods: {
         Row: {
-          activity_count: number
           created_at: string
           id: string
           period_end: string
           period_start: string
           updated_at: string
+          usage: Json
           workspace_id: string
         }
         Insert: {
-          activity_count?: number
           created_at?: string
           id?: string
           period_end: string
           period_start: string
           updated_at?: string
+          usage?: Json
           workspace_id: string
         }
         Update: {
-          activity_count?: number
           created_at?: string
           id?: string
           period_end?: string
           period_start?: string
           updated_at?: string
+          usage?: Json
           workspace_id?: string
         }
         Relationships: [

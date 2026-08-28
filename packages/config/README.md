@@ -1,4 +1,5 @@
-# @saas-core/config
+# @sapienx/saas-core-config
 
-The small product identity boundary: name, slug, mark, theme, metadata,
-navigation, and enabled Core capabilities.
+The typed product-owned identity and commercial boundary: name, slug, branding,
+navigation, capabilities, plan catalog, feature keys, and usage metrics.
+Provider credentials and authorization do not belong in this package.

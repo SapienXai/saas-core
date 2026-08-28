@@ -1,5 +1,5 @@
 {
-  "name": "@saas-core/core",
+  "name": "@sapienx/saas-core",
   "version": "2.0.0",
   "ownership": "core",
   "capabilities": ["auth", "workspace", "membership", "billing", "domains", "pwa", "platform", "audit", "email", "push"]

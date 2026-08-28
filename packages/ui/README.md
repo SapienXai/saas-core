@@ -1,6 +1,10 @@
-# @saas-core/ui
+# @sapienx/saas-core-ui
 
-The runtime reference for the source-derived UI system is the root
-`components/ui` and management shell. This package records the stable public
-UI contract while the component source is moved with semantic, import-only
-diffs in a later packaging phase.
+This is the reusable UI package extracted from the production ReserveVia
+surface. It contains the actual Radix/shadcn-style primitives, theme provider,
+language context, loading surfaces, toast helpers, and utility implementation;
+it is not a marker package.
+
+The integrated management shell remains in the application template because it
+adapts server-backed workspace context, navigation, PWA, and auth data. The UI
+package must not import Supabase, Paddle, or server credentials.

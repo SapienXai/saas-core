@@ -2,7 +2,6 @@
 
 import { ArrowUpRight, Check, Sparkles } from "lucide-react"
 import { useLanguage } from "@/context/language-context"
-import { PLAN_FEATURE_LABELS } from "@/lib/plan-feature-labels"
 
 type PlanFeaturePreviewPlan = {
   key: string
@@ -13,6 +12,10 @@ type PlanFeaturePreviewPlan = {
 type Props = {
   plan: PlanFeaturePreviewPlan | null
   currentPlanKey: string
+}
+
+function displayKey(key: string) {
+  return key.replaceAll(/[._-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2")
 }
 
 /** SaaS Core-derived plan capability preview, with product-neutral feature keys. */
@@ -42,13 +45,13 @@ export function PlanFeaturePreview({ plan, currentPlanKey }: Props) {
         {enabledFeatures.map(([key]) => (
           <div key={key} className="flex min-w-0 items-center gap-2 rounded-xl bg-emerald-50/80 px-3 py-2 text-xs font-medium text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
             <Check className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{PLAN_FEATURE_LABELS[key] ? t(PLAN_FEATURE_LABELS[key]) : key}</span>
+            <span className="truncate">{displayKey(key)}</span>
           </div>
         ))}
         {disabledFeatures.map(([key]) => (
           <div key={key} className="flex min-w-0 items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400 dark:bg-white/[0.03] dark:text-slate-500">
             <Check className="h-3.5 w-3.5 shrink-0 opacity-25" />
-            <span className="truncate">{PLAN_FEATURE_LABELS[key] ? t(PLAN_FEATURE_LABELS[key]) : key}</span>
+            <span className="truncate">{displayKey(key)}</span>
           </div>
         ))}
       </div>

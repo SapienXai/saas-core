@@ -21,14 +21,6 @@ import { PRODUCT_CONFIG } from "@/lib/product-config"
 
 const SETTINGS_GROUP_STORAGE_KEY = "saas-core:manage:sidebar-settings-open"
 const LEGACY_TOOLS_GROUP_STORAGE_KEY = "saas-core:manage:sidebar-tools-open"
-const PLAN_ORDER = ["free", "starter", "pro", "business"] as const
-const PLAN_LABELS: Record<string, string> = {
-  free: "Free",
-  starter: "Starter",
-  pro: "Pro",
-  business: "Business",
-}
-
 type SidebarNavigationItem = {
   name: string
   href: string
@@ -76,20 +68,21 @@ interface ManageSidebarProps {
 export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeChange, toggleSidebar }: ManageSidebarProps) {
   const pathname = usePathname()
   const { currentLang, getTranslation, setLanguage } = useLanguage()
-  const { role, platformRole, user, currentWorkspace, ownedWorkspaceId, canCreateWorkspace } = useManageContext()
+  const { role, platformRole, user, currentWorkspace, planCatalog, ownedWorkspaceId, canCreateWorkspace } = useManageContext()
   const isStaff = role === "staff"
   const isDomainAdmin = role === "owner" || role === "admin"
   const currentPlanKey = currentWorkspace?.plan?.key || null
-  const currentPlanIndex = currentPlanKey ? PLAN_ORDER.indexOf(currentPlanKey as (typeof PLAN_ORDER)[number]) : -1
-  const nextPlanKey = currentPlanIndex >= 0 && currentPlanIndex < PLAN_ORDER.length - 1 ? PLAN_ORDER[currentPlanIndex + 1] : null
-  const nextPlanLabel = nextPlanKey ? PLAN_LABELS[nextPlanKey] : null
+  const currentPlanSortOrder = planCatalog.find((plan) => plan.key === currentPlanKey)?.sortOrder ?? -1
+  const nextPlan = planCatalog.filter((plan) => plan.sortOrder > currentPlanSortOrder).sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key))[0]
+  const nextPlanKey = nextPlan?.key || null
+  const nextPlanLabel = nextPlan?.name || null
   const canShowUpgrade = Boolean(nextPlanKey && nextPlanLabel && currentWorkspace?.role === "owner" && !isStaff)
   const workspaceUsage = currentWorkspace?.usage
   const workspaceLimits = currentWorkspace?.plan?.limits
   const usageItems: SidebarUsageItem[] = workspaceUsage && workspaceLimits
     ? [
-        { label: getTranslation("manage.planUsage.workspaces"), used: workspaceUsage.workspaces, limit: workspaceLimits.workspaces },
-        { label: getTranslation("manage.planUsage.teamMembers"), used: workspaceUsage.users, limit: workspaceLimits.users },
+        { label: getTranslation("manage.planUsage.workspaces"), used: workspaceUsage.workspaces, limit: workspaceLimits["core.workspaces"] ?? null },
+        { label: getTranslation("manage.planUsage.teamMembers"), used: workspaceUsage.users, limit: workspaceLimits["core.members"] ?? null },
       ]
     : []
   const hasWorkspaceUsage = usageItems.length > 0

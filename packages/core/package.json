@@ -1,10 +1,12 @@
 {
-  "name": "@saas-core/core",
+  "name": "@sapienx/saas-core",
   "version": "2.0.0",
-  "description": "Workspace tenancy and lifecycle contracts extracted from SaaS Core",
+  "description": "Workspace tenancy, entitlement, manifest and lifecycle contracts for SaaS Core",
   "type": "module",
   "exports": {
-    ".": "./src/index.js"
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
   },
-  "files": ["src", "README.md", "manifest.json"]
+  "files": ["dist", "README.md", "manifest.json"],
+  "scripts": { "build": "tsc -p tsconfig.build.json", "prepack": "pnpm run build" },
+  "types": "./dist/index.d.ts"
 }

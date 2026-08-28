@@ -25,6 +25,8 @@ export default defineConfig([
     "scripts/dev-only/**",
     "out/**",
     "build/**",
+    "dist/**",
+    "**/dist/**",
     "public/vendor/**",
     "next-env.d.ts",
   ]),
