@@ -73,7 +73,19 @@ if (mappingError || !mapping) {
 }
 
 const status = subscription.status
-const planKey = status === "paused" || status === "canceled" ? "free" : mapping.plan_key
+const { data: fallbackPlan, error: fallbackPlanError } = await supabase
+  .from("plans")
+  .select("key")
+  .eq("active", true)
+  .order("sort_order", { ascending: true })
+  .order("key", { ascending: true })
+  .limit(1)
+  .maybeSingle()
+if (fallbackPlanError || !fallbackPlan) {
+  console.error("No active fallback plan is configured. No local state was changed.")
+  process.exit(1)
+}
+const planKey = status === "paused" || status === "canceled" ? fallbackPlan.key : mapping.plan_key
 const periodStart = subscription.currentBillingPeriod?.startsAt?.slice(0, 10) || null
 const periodEnd = subscription.currentBillingPeriod?.endsAt?.slice(0, 10) || null
 const periodStartAt = subscription.currentBillingPeriod?.startsAt || null

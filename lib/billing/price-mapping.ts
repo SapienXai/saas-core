@@ -4,8 +4,8 @@ import type { PlanKey } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import type { BillingEnvironment } from "./paddle-client"
 
-export const PAID_PLAN_KEYS = ["starter", "pro", "business"] as const
-export type PaidPlanKey = (typeof PAID_PLAN_KEYS)[number]
+/** Provider-backed plan keys are product-owned and intentionally open-ended. */
+export type PaidPlanKey = PlanKey
 export const BILLING_INTERVALS = ["month", "year"] as const
 export type BillingInterval = (typeof BILLING_INTERVALS)[number]
 
@@ -14,7 +14,7 @@ export function isBillingInterval(value: string): value is BillingInterval {
 }
 
 export function isPaidPlanKey(value: string): value is PaidPlanKey {
-  return (PAID_PLAN_KEYS as readonly string[]).includes(value)
+  return /^[a-z][a-z0-9_-]{0,63}$/.test(value)
 }
 
 export type ProviderPriceMapping = {

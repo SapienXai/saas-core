@@ -8,12 +8,12 @@ describe("platform filter parsing", () => {
     expect(filtersHaveValues(filters)).toBe(true)
   })
 
-  it("falls back safely for unknown filters", () => {
+  it("preserves arbitrary product plan filters while normalizing core filters", () => {
     const filters = parsePlatformFilters({ status: "danger", plan: "gold", page: "0", pageSize: "-5" })
     expect(filters.status).toBe("all")
-    expect(filters.plan).toBe("all")
+    expect(filters.plan).toBe("gold")
     expect(filters.page).toBe(1)
     expect(filters.pageSize).toBe(30)
-    expect(filtersHaveValues(filters)).toBe(false)
+    expect(filtersHaveValues(filters)).toBe(true)
   })
 })

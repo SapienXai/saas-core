@@ -2,10 +2,8 @@ import { execFileSync } from "node:child_process"
 import { createClient } from "@supabase/supabase-js"
 
 const [planKey, environment, productId, priceId, billingInterval = "month", currency = "USD"] = process.argv.slice(2)
-const paidPlans = new Set(["starter", "pro", "business"])
-
-if (!paidPlans.has(planKey) || !["sandbox", "live"].includes(environment) || !productId || !priceId || !["month", "year"].includes(billingInterval) || !/^[A-Z]{3}$/.test(currency)) {
-  console.error("Usage: npm run billing:register-price -- <starter|pro|business> <sandbox|live> <product-id> <price-id> [month|year] [ISO-currency]")
+if (!/^[a-z][a-z0-9_-]{0,63}$/.test(planKey || "") || !["sandbox", "live"].includes(environment) || !productId || !priceId || !["month", "year"].includes(billingInterval) || !/^[A-Z]{3}$/.test(currency)) {
+  console.error("Usage: npm run billing:register-price -- <plan-key> <sandbox|live> <product-id> <price-id> [month|year] [ISO-currency]")
   process.exit(1)
 }
 

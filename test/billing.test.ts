@@ -40,12 +40,12 @@ describe("Paddle billing boundaries", () => {
     expect(legacyShape.status).toBe("past_due")
   })
 
-  it("keeps paid access during recovery and falls back to Free only when inactive", () => {
-    expect(getSubscriptionPlanForStatus("active", "starter")).toBe("starter")
-    expect(getSubscriptionPlanForStatus("trialing", "pro")).toBe("pro")
-    expect(getSubscriptionPlanForStatus("past_due", "business")).toBe("business")
-    expect(getSubscriptionPlanForStatus("paused", "pro")).toBe("free")
-    expect(getSubscriptionPlanForStatus("canceled", "starter")).toBe("free")
+  it("keeps paid access during recovery and uses the configured fallback plan", () => {
+    expect(getSubscriptionPlanForStatus("active", "team", "base")).toBe("team")
+    expect(getSubscriptionPlanForStatus("trialing", "scale", "base")).toBe("scale")
+    expect(getSubscriptionPlanForStatus("past_due", "enterprise", "base")).toBe("enterprise")
+    expect(getSubscriptionPlanForStatus("paused", "scale", "base")).toBe("base")
+    expect(getSubscriptionPlanForStatus("canceled", "team", "base")).toBe("base")
   })
 
   it("projects a deterministic fourteen-day payment recovery window", () => {

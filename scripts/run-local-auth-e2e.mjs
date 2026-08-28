@@ -27,7 +27,8 @@ try {
   workspaceId = bootstrap.data[0].workspace_id
   const workspace = await client.from("workspaces").select("id, name, slug").eq("id", workspaceId).single()
   const subscription = await client.from("workspace_subscriptions").select("plan_key, status").eq("workspace_id", workspaceId).single()
-  if (workspace.error || subscription.error || subscription.data?.plan_key !== "free") throw workspace.error || subscription.error || new Error("Default workspace subscription was not created.")
+  const plan = subscription.data?.plan_key ? await client.from("plans").select("key, active").eq("key", subscription.data.plan_key).single() : null
+  if (workspace.error || subscription.error || plan?.error || !subscription.data?.plan_key || plan?.data?.active !== true) throw workspace.error || subscription.error || plan?.error || new Error("Workspace subscription was not created from an active product plan.")
   console.log(`Auth, session, bootstrap, tenancy, and default plan verified for ${email}.`)
 } finally {
   if (workspaceId) await service.from("workspaces").delete().eq("id", workspaceId)

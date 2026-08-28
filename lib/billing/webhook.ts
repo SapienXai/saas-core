@@ -1,6 +1,7 @@
 import "server-only"
 
 import type { Json } from "@/types/supabase"
+import type { PlanKey } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import { getPaddlePriceByProviderId, isPaidPlanKey, type PaidPlanKey } from "./price-mapping"
 import { getBillingEnvironment } from "./paddle-client"
@@ -126,8 +127,8 @@ export function getWorkspaceIdFromEvent(event: NormalizedPaddleEvent) {
   return stringValue(customData.saas_core_workspace_id)
 }
 
-export function getSubscriptionPlanForStatus(status: PaddleSubscriptionStatus, purchasedPlan: PaidPlanKey): PaidPlanKey | "free" {
-  return status === "paused" || status === "canceled" ? "free" : purchasedPlan
+export function getSubscriptionPlanForStatus(status: PaddleSubscriptionStatus, purchasedPlan: PaidPlanKey, fallbackPlan: PlanKey = purchasedPlan): PlanKey {
+  return status === "paused" || status === "canceled" ? fallbackPlan : purchasedPlan
 }
 
 export function getSubscriptionPlanFromPrice(providerPriceId: string | null, environment = getBillingEnvironment()) {
@@ -205,12 +206,12 @@ export async function applyPaddleSubscriptionEvent(event: NormalizedPaddleEvent)
   if (current.error) throw new Error(current.error.message)
   if (!current.data) throw new BillingSyncError("UNKNOWN_WORKSPACE", "Workspace subscription does not exist.")
 
-  const canReplaceCanceledSubscription = current.data.plan_key === "free" && current.data.provider_status === "canceled"
+  const canReplaceCanceledSubscription = current.data.provider_status === "canceled"
   if (current.data.provider_subscription_id && current.data.provider_subscription_id !== subscription.id && !canReplaceCanceledSubscription) {
     throw new BillingSyncError("DUPLICATE_PROVIDER_SUBSCRIPTION", "Workspace already has another Paddle subscription.")
   }
 
-  if (!existingByProvider.data && current.data.plan_key !== "free" && current.data.source !== "paddle") {
+  if (!existingByProvider.data && current.data.source !== "system" && current.data.source !== "paddle") {
     throw new BillingSyncError("WORKSPACE_NOT_BILLING_ELIGIBLE", "Workspace already has a non-Paddle commercial state.")
   }
 
@@ -218,7 +219,9 @@ export async function applyPaddleSubscriptionEvent(event: NormalizedPaddleEvent)
     return { status: "ignored" as const, reason: "OUT_OF_ORDER", workspaceId }
   }
 
-  const effectivePlan = getSubscriptionPlanForStatus(subscription.status, mapping.plan_key)
+  const fallbackPlanQuery = await supabase.from("plans").select("key").eq("active", true).order("sort_order", { ascending: true }).order("key", { ascending: true }).limit(1).maybeSingle()
+  if (fallbackPlanQuery.error || !fallbackPlanQuery.data) throw new BillingSyncError("PLAN_NOT_CONFIGURED", "No active fallback plan is configured.")
+  const effectivePlan = getSubscriptionPlanForStatus(subscription.status, mapping.plan_key, fallbackPlanQuery.data.key)
   const paymentFailureStartedAt = subscription.status === "past_due"
     ? current.data.payment_failure_started_at || event.occurredAt
     : null
@@ -229,7 +232,7 @@ export async function applyPaddleSubscriptionEvent(event: NormalizedPaddleEvent)
   const pendingPlanIsActive = subscription.status !== "paused" && subscription.status !== "canceled" &&
     (current.data.scheduled_plan_key === mapping.plan_key || current.data.plan_key === mapping.plan_key) &&
     Boolean((current.data.scheduled_effective_at || current.data.scheduled_plan_at) && (current.data.scheduled_effective_at || current.data.scheduled_plan_at) > new Date().toISOString())
-  const localPlan = graceExpired ? "free" : pendingPlanIsActive ? current.data.plan_key : effectivePlan
+  const localPlan = graceExpired ? fallbackPlanQuery.data.key : pendingPlanIsActive ? current.data.plan_key : effectivePlan
   const localBillingInterval = pendingPlanIsActive && current.data.billing_interval ? current.data.billing_interval : mapping.billing_interval
   const localBillingCurrency = pendingPlanIsActive && current.data.billing_currency ? current.data.billing_currency : mapping.currency
   const period = subscriptionPeriod(

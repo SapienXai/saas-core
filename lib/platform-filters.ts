@@ -1,12 +1,13 @@
 export const PLATFORM_STATUS_FILTERS = ["all", "active", "attention", "suspended"] as const
-export const PLATFORM_PLAN_FILTERS = ["all", "free", "starter", "pro", "business"] as const
+/** Plan keys belong to the product catalog; Core only reserves the all state. */
+export const PLATFORM_PLAN_FILTERS = ["all"] as const
 export const PLATFORM_ACTIVITY_FILTERS = ["all", "recent", "inactive", "new"] as const
 export const PLATFORM_BILLING_FILTERS = ["all", "active", "past_due", "manual_override", "needs_attention"] as const
 export const PLATFORM_USAGE_FILTERS = ["all", "normal", "approaching", "at_limit"] as const
 export const PLATFORM_DOMAIN_FILTERS = ["all", "connected", "pending", "problem", "none"] as const
 
 export type PlatformStatusFilter = (typeof PLATFORM_STATUS_FILTERS)[number]
-export type PlatformPlanFilter = (typeof PLATFORM_PLAN_FILTERS)[number]
+export type PlatformPlanFilter = string
 export type PlatformActivityFilter = (typeof PLATFORM_ACTIVITY_FILTERS)[number]
 export type PlatformBillingFilter = (typeof PLATFORM_BILLING_FILTERS)[number]
 export type PlatformUsageFilter = (typeof PLATFORM_USAGE_FILTERS)[number]
@@ -38,7 +39,7 @@ export function parsePlatformFilters(input: URLSearchParams | Record<string, str
   return {
     q: (get("q") || "").trim().slice(0, 120),
     status: oneOf(get("status"), PLATFORM_STATUS_FILTERS, "all"),
-    plan: oneOf(get("plan"), PLATFORM_PLAN_FILTERS, "all"),
+    plan: get("plan")?.trim() || "all",
     activity: oneOf(get("activity"), PLATFORM_ACTIVITY_FILTERS, "all"),
     billing: oneOf(get("billing"), PLATFORM_BILLING_FILTERS, "all"),
     usage: oneOf(get("usage"), PLATFORM_USAGE_FILTERS, "all"),

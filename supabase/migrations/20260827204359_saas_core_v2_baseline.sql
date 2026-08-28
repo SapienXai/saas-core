@@ -19,28 +19,18 @@ end;
 $$;
 
 create table public.plans (
-  key text primary key check (key in ('free', 'starter', 'pro', 'business')),
+  key text primary key check (key ~ '^[a-z][a-z0-9_-]{0,63}$'),
   name text not null,
-  monthly_price_usd_cents integer not null check (monthly_price_usd_cents >= 0),
   sort_order integer not null check (sort_order >= 0),
   active boolean not null default true,
-  workspace_limit integer check (workspace_limit is null or workspace_limit > 0),
-  user_limit integer check (user_limit is null or user_limit > 0),
-  activity_limit integer check (activity_limit is null or activity_limit > 0),
-  history_days integer check (history_days is null or history_days > 0),
   features jsonb not null default '{}'::jsonb check (jsonb_typeof(features) = 'object'),
+  limits jsonb not null default '{}'::jsonb check (jsonb_typeof(limits) = 'object'),
+  metadata jsonb not null default '{}'::jsonb check (jsonb_typeof(metadata) = 'object'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 create index plans_active_sort_idx on public.plans (active, sort_order);
-
-insert into public.plans (key, name, monthly_price_usd_cents, sort_order, workspace_limit, user_limit, activity_limit, history_days, features)
-values
-  ('free', 'Free', 0, 10, 1, 1, 100, 30, '{"emailNotifications":true,"customDomain":false,"customPWA":false,"pushNotifications":false,"teamManagement":false,"platformControl":false,"workspaceExport":false}'::jsonb),
-  ('starter', 'Starter', 1900, 20, 1, 3, 500, 365, '{"emailNotifications":true,"customDomain":true,"customPWA":false,"pushNotifications":false,"teamManagement":true,"platformControl":false,"workspaceExport":true}'::jsonb),
-  ('pro', 'Pro', 4900, 30, 5, 10, null, null, '{"emailNotifications":true,"customDomain":true,"customPWA":true,"pushNotifications":true,"teamManagement":true,"platformControl":false,"workspaceExport":true}'::jsonb),
-  ('business', 'Business', 9900, 40, null, 25, null, null, '{"emailNotifications":true,"customDomain":true,"customPWA":true,"pushNotifications":true,"teamManagement":true,"platformControl":false,"workspaceExport":true}'::jsonb);
 
 create table public.workspaces (
   id uuid primary key default gen_random_uuid(),
@@ -55,7 +45,6 @@ create table public.workspaces (
 );
 
 create unique index workspaces_slug_key on public.workspaces (slug);
-create unique index workspaces_self_service_creator_key on public.workspaces (created_by) where created_by is not null;
 create index workspaces_created_by_idx on public.workspaces (created_by);
 create index workspaces_platform_status_idx on public.workspaces (platform_status, updated_at desc);
 
@@ -95,7 +84,7 @@ create table public.workspace_subscriptions (
   workspace_id uuid primary key references public.workspaces(id) on delete cascade,
   plan_key text not null references public.plans(key),
   status text not null default 'active' check (status in ('active', 'trialing', 'past_due', 'canceled', 'paused')),
-  source text not null default 'system' check (source in ('free', 'manual', 'system', 'paddle')),
+  source text not null default 'system' check (source in ('manual', 'system', 'paddle')),
   current_period_start date,
   current_period_end date,
   provider text check (provider is null or provider = 'paddle'),
@@ -137,7 +126,7 @@ create table public.workspace_usage_periods (
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   period_start date not null,
   period_end date not null,
-  activity_count integer not null default 0 check (activity_count >= 0),
+  usage jsonb not null default '{}'::jsonb check (jsonb_typeof(usage) = 'object'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (workspace_id, period_start, period_end),
@@ -150,7 +139,7 @@ create table public.billing_provider_prices (
   id uuid primary key default gen_random_uuid(),
   provider text not null check (provider = 'paddle'),
   environment text not null check (environment in ('sandbox', 'live')),
-  plan_key text not null references public.plans(key) check (plan_key in ('starter', 'pro', 'business')),
+  plan_key text not null references public.plans(key),
   provider_product_id text not null check (length(btrim(provider_product_id)) > 0),
   provider_price_id text not null check (length(btrim(provider_price_id)) > 0),
   billing_interval text not null default 'month' check (billing_interval in ('month', 'year')),
@@ -191,7 +180,7 @@ create table public.billing_checkout_sessions (
   workspace_id uuid not null references public.workspaces(id) on delete cascade,
   provider text not null default 'paddle' check (provider = 'paddle'),
   environment text not null check (environment in ('sandbox', 'live')),
-  target_plan_key text not null references public.plans(key) check (target_plan_key in ('starter', 'pro', 'business')),
+  target_plan_key text not null references public.plans(key),
   provider_price_id text not null,
   provider_transaction_id text,
   idempotency_key text not null,
@@ -477,6 +466,20 @@ as $$
   where subscription.workspace_id = target_workspace_id;
 $$;
 
+create or replace function private.workspace_plan_limit(target_workspace_id uuid, target_metric text)
+returns integer
+language sql stable security definer set search_path = public, private
+as $$
+  select case
+    when plan.limits ? target_metric and plan.limits ->> target_metric = 'null' then null
+    when plan.limits ? target_metric then nullif(plan.limits ->> target_metric, '')::integer
+    else null
+  end
+  from public.workspace_subscriptions subscription
+  join public.plans plan on plan.key = subscription.plan_key and plan.active
+  where subscription.workspace_id = target_workspace_id;
+$$;
+
 create or replace function public.bootstrap_initial_workspace(target_workspace_name text, target_workspace_slug text default null)
 returns table (workspace_id uuid, workspace_slug text)
 language plpgsql security definer set search_path = public, private
@@ -484,6 +487,10 @@ as $$
 declare
   actor uuid := auth.uid();
   workspace public.workspaces%rowtype;
+  owner_workspace_id uuid;
+  owner_count integer;
+  workspace_limit integer;
+  default_plan_key text;
   base_slug text := lower(trim(both '-' from regexp_replace(coalesce(nullif(btrim(target_workspace_slug), ''), target_workspace_name), '[^a-zA-Z0-9]+', '-', 'g')));
   candidate_slug text;
   suffix integer := 2;
@@ -491,8 +498,30 @@ begin
   if actor is null then raise exception using message = 'AUTH_REQUIRED'; end if;
   if length(btrim(coalesce(target_workspace_name, ''))) not between 1 and 120 then raise exception using message = 'INVALID_WORKSPACE_NAME'; end if;
   perform pg_advisory_xact_lock(hashtextextended(actor::text, 0));
-  select * into workspace from public.workspaces where created_by = actor order by created_at, id limit 1 for update;
-  if workspace.id is not null then return query select workspace.id, workspace.slug; return; end if;
+  select count(*)::integer into owner_count
+    from public.workspace_members
+    where user_id = actor and role = 'owner';
+  select member.workspace_id into owner_workspace_id
+    from public.workspace_members member
+    join public.workspace_subscriptions subscription on subscription.workspace_id = member.workspace_id
+    where member.user_id = actor and member.role = 'owner'
+    order by member.created_at, member.workspace_id
+    limit 1;
+  if owner_workspace_id is not null then
+    workspace_limit := private.workspace_plan_limit(owner_workspace_id, 'core.workspaces');
+  else
+    select key into default_plan_key from public.plans where active order by sort_order, key limit 1;
+    if default_plan_key is null then raise exception using message = 'PLAN_NOT_CONFIGURED'; end if;
+    select case
+      when limits ? 'core.workspaces' and limits ->> 'core.workspaces' = 'null' then null
+      when limits ? 'core.workspaces' then nullif(limits ->> 'core.workspaces', '')::integer
+      else null
+    end into workspace_limit
+    from public.plans where key = default_plan_key;
+  end if;
+  if workspace_limit is not null and owner_count >= workspace_limit then
+    raise exception using message = 'WORKSPACE_LIMIT_REACHED';
+  end if;
   if base_slug = '' then base_slug := 'workspace'; end if;
   if base_slug in ('www', 'app', 'api', 'admin', 'manage', 'login', 'signup', 'reset-password', 'onboarding', 'platform', 'assets', 'static') then raise exception using message = 'SLUG_RESERVED'; end if;
   candidate_slug := left(base_slug, 63);
@@ -611,9 +640,13 @@ create or replace function public.ensure_workspace_subscription()
 returns trigger
 language plpgsql security definer set search_path = public
 as $$
+declare
+  default_plan_key text;
 begin
+  select key into default_plan_key from public.plans where active order by sort_order, key limit 1;
+  if default_plan_key is null then raise exception using message = 'PLAN_NOT_CONFIGURED'; end if;
   insert into public.workspace_subscriptions (workspace_id, plan_key, status, source, current_period_start, current_period_end)
-  values (new.id, 'free', 'active', 'free', date_trunc('month', current_date)::date, (date_trunc('month', current_date) + interval '1 month')::date)
+  values (new.id, default_plan_key, 'active', 'system', date_trunc('month', current_date)::date, (date_trunc('month', current_date) + interval '1 month')::date)
   on conflict (workspace_id) do nothing;
   return new;
 end;
@@ -673,6 +706,8 @@ create policy push_manage on public.workspace_push_subscriptions for all to auth
 revoke all on public.billing_provider_prices, public.billing_webhook_events, public.billing_checkout_sessions, public.billing_mutations, public.billing_cancellation_feedback, public.subscription_overrides from anon, authenticated;
 revoke all on public.platform_members, public.platform_user_controls, public.platform_audit_logs, public.platform_settings from anon, authenticated;
 revoke all on public.email_delivery_events, public.email_delivery_attempts, public.email_provider_webhook_events, public.email_outbox_runs from anon, authenticated;
+grant select, insert, update, delete on public.workspaces, public.workspace_members, public.workspace_invitations, public.workspace_domains, public.workspace_pwa_settings, public.workspace_push_subscriptions to authenticated;
+grant select on public.plans, public.workspace_subscriptions, public.workspace_usage_periods to authenticated;
 grant all on all tables in schema public to service_role;
 grant execute on function public.bootstrap_initial_workspace(text, text) to authenticated;
 grant execute on function public.create_workspace_invitation(uuid, text, text, text) to authenticated;

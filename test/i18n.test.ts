@@ -52,7 +52,7 @@ describe("translations", () => {
   })
 
   it("keeps Spanish translated instead of silently mirroring English", () => {
-    for (const key of ["auth.headline", "auth.signInDescription", "manage.common.management", "manage.planUsage.activityPeriod"]) {
+    for (const key of ["auth.headline", "auth.signInDescription", "manage.common.management", "manage.planUsage.usagePeriod"]) {
       const english = getValue(localeMessages.en, key)
       const spanish = getValue(localeMessages.es, key)
       expect(typeof english).toBe("string")
@@ -68,7 +68,7 @@ describe("translations", () => {
   it("translates dynamic action messages and guest validation messages", () => {
     expect(translateMessage("es", "Workspace created successfully. The public address was already in use, so we used “nuevo-workspace”."))
       .toContain("nuevo-workspace")
-    expect(translateMessage("es", "Paddle sandbox price mapping is not configured for Pro."))
+    expect(translateMessage("es", "Paddle sandbox price mapping is not configured for Scale."))
       .toContain("no está configurada")
     expect(translateMessage("es", "Please enter a valid email address.")).toBe("Introduce una dirección de correo electrónico válida.")
   })

@@ -13,6 +13,7 @@ integration("clean Core tenancy and RLS", () => {
   let ownerClient: SupabaseClient
   let memberClient: SupabaseClient
   let workspaceId = ""
+  let secondWorkspaceId = ""
 
   beforeAll(async () => {
     const stamp = Date.now()
@@ -36,7 +37,7 @@ integration("clean Core tenancy and RLS", () => {
   })
 
   afterAll(async () => {
-    if (workspaceId) await service!.from("workspaces").delete().eq("id", workspaceId)
+    for (const id of [workspaceId, secondWorkspaceId]) if (id) await service!.from("workspaces").delete().eq("id", id)
     for (const account of [owner, member]) if (account?.id) await service!.auth.admin.deleteUser(account.id)
   })
 
@@ -51,6 +52,20 @@ integration("clean Core tenancy and RLS", () => {
 
     const platformRead = await ownerClient.from("platform_settings").select("key").limit(1)
     expect(platformRead.error).not.toBeNull()
+  })
+
+  it("allows multiple owned workspaces until the explicit entitlement limit", async () => {
+    const second = await ownerClient.rpc("bootstrap_initial_workspace", { target_workspace_name: `Core RLS Second ${Date.now()}`, target_workspace_slug: `core-rls-second-${Date.now()}` })
+    expect(second.error).toBeNull()
+    secondWorkspaceId = second.data?.[0]?.workspace_id || ""
+    expect(secondWorkspaceId).toBeTruthy()
+
+    const third = await ownerClient.rpc("bootstrap_initial_workspace", { target_workspace_name: `Core RLS Third ${Date.now()}`, target_workspace_slug: `core-rls-third-${Date.now()}` })
+    expect(third.error?.message).toContain("WORKSPACE_LIMIT_REACHED")
+
+    const memberCannotSeeSecond = await memberClient.from("workspaces").select("id").eq("id", secondWorkspaceId).maybeSingle()
+    expect(memberCannotSeeSecond.error).toBeNull()
+    expect(memberCannotSeeSecond.data).toBeNull()
   })
 
   it("accepts a one-use invitation without widening tenant access", async () => {
