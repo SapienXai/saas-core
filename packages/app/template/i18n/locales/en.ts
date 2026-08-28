@@ -15,9 +15,9 @@ export const en = {
     workspaceAccess: "workspace access", wrongAccount: "This invitation was sent to {invited}, but you are signed in as {current}.",
   },
   auth: {
-    alreadyHaveAccount: "Already have an account?", backToSignIn: "Back to sign in", confirmEmail: "Check your email", confirmEmailDestination: "Confirmation email destination",
+    alreadyHaveAccount: "Already have an account?", authNavigation: "Authentication navigation", backToSignIn: "Back to sign in", backToWelcome: "Back to welcome", confirmEmail: "Check your email", confirmEmailDestination: "Confirmation email destination",
     confirmEmailDescription: "Open the confirmation link to finish creating your account.",
-    confirmPassword: "Confirm password", continueWithGoogle: "Continue with Google", createAccount: "Create an account",
+    confirmPassword: "Confirm password", continueWithGoogle: "Continue with Google", createAccount: "Create an account", dontHaveAccount: "Don’t have an account?",
     creatingAccount: "Creating account…", description: "Your workspace, managed in one place.", divider: "or continue with email",
     email: "Email", footnote: "SAAS CORE · BUILT FOR TEAMS", forgotPassword: "Forgot password?", growConfidence: "One place to manage it all",
     growConfidenceDescription: "Plan, team, settings, and activity in one workspace.", headline: "Ready for your team.", hidePassword: "Hide password",
@@ -32,7 +32,9 @@ export const en = {
     sendResetLink: "Send reset link", sending: "Sending…", showPassword: "Show password", signIn: "Sign in",
     signInDescription: "Sign in to your SaaS Core account.", signUp: "Create your account", signUpAction: "Create account",
     signUpDescription: "Start managing your workspace in one place.", signingIn: "Signing in…", updatePassword: "Update password", updating: "Updating…",
-    useAnotherEmail: "Use another email", welcomeBack: "Welcome back",
+    register: "Register", signInAction: "Sign In", signInTitle: "Let’s sign you in.", signInSubtitle: "Welcome back.\nAccess your workspace.",
+    signUpTitle: "Create your\naccount.", signUpSubtitle: "Start building with {product}.", createAccountAction: "Create Account",
+    useAnotherEmail: "Use another email", welcomeBack: "Welcome back", welcomeTitle: "Build your SaaS\nfaster.", welcomeDescription: "Launch products, manage teams, and\nscale from one powerful core platform.",
     errors: {
       generic: "We could not complete that request. Please try again.", googleUnavailable: "Google sign-in is not available yet. Please use email and password, or try again later.",
       invalidConfirmation: "This confirmation link is invalid or has expired.", invalidReset: "This reset link is invalid or has expired. Request a new one and try again.",

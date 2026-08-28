@@ -38,7 +38,7 @@ async function signInAndCreateWorkspace(page: Page) {
   await page.goto("/login")
   await page.locator("#login-email").fill(email)
   await page.locator("#login-password").fill(password)
-  await page.getByRole("button", { name: "Sign in" }).click()
+  await page.getByRole("button", { name: "Sign In" }).click()
   await expect(page).toHaveURL(/\/(onboarding|app)(\?|$)/, { timeout: 30_000 })
 
   if (new URL(page.url()).pathname === "/onboarding") {
@@ -75,13 +75,13 @@ test.afterAll(async () => {
 
 test("@critical public and auth surfaces remain available", async ({ page }) => {
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "Welcome to SaaS Core" })).toBeVisible()
-  await expect(page.getByRole("link", { name: "Sign in" })).toBeVisible()
-  await expect(page.getByRole("link", { name: "Create account" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Build your SaaS faster." })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Sign In" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Register" })).toBeVisible()
   await expect(page.getByText("Open workspace")).toHaveCount(0)
   await page.goto("/login")
   await expect(page.locator("#login-email")).toBeVisible()
-  await expect(page.getByRole("link", { name: "Create an account" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Register" })).toBeVisible()
   await page.goto("/signup")
   await expect(page.locator("#signup-email")).toBeVisible()
   await page.goto("/forgot-password")
@@ -94,7 +94,7 @@ test("@critical signup confirmation identifies the destination and exposes Mailp
   await page.locator("#signup-email").fill(signupEmail)
   await page.locator("#signup-password").fill(password)
   await page.locator("#signup-confirmation").fill(password)
-  await page.getByRole("button", { name: "Create account" }).click()
+  await page.getByRole("button", { name: "Create Account" }).click()
   await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByLabel("Confirmation email destination")).toHaveText(signupEmail)
   const inbox = page.getByRole("link", { name: "Open Mailpit" })

@@ -63,7 +63,7 @@ export default async function RootLayout({
     <html lang={getLocaleConfig(language).intl} dir={getLocaleConfig(language).direction} suppressHydrationWarning>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <meta name="theme-color" content="#000000" />
+        <meta name="theme-color" content="#090b11" />
       </head>
       <body className="font-sans">
         <Script id="product-pwa-install-capture" strategy="beforeInteractive">

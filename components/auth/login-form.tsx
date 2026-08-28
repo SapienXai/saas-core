@@ -2,11 +2,11 @@
 
 import Link from "next/link"
 import { useEffect, useState } from "react"
+import { Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AuthShell, AuthDivider } from "@/components/auth/auth-shell"
+import { AuthField, AuthShell } from "@/components/auth/auth-shell"
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
@@ -40,19 +40,25 @@ export function LoginForm() {
 
   return (
     <AuthShell
-      title={getTranslation("auth.welcomeBack")}
-      description={getTranslation("auth.signInDescription")}
-      footer={<span>{getTranslation("auth.newToSaasCore")} {" "}<Link className="font-semibold text-stone-950 underline-offset-4 hover:underline" href={`/signup?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.createAccount")}</Link></span>}
+      title={getTranslation("auth.signInTitle")}
+      description={getTranslation("auth.signInSubtitle")}
+      footer={<span>{getTranslation("auth.dontHaveAccount")} {" "}<Link className="auth-footer-link" href={`/signup?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.register")}</Link></span>}
     >
-      {error && <Alert variant="destructive" className="mb-4 rounded-[11px] border-rose-200 bg-rose-50 px-3.5 py-2.5 text-[12px] text-rose-900"><AlertDescription>{error}</AlertDescription></Alert>}
-      <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
-      <div className="my-4"><AuthDivider /></div>
-      <form method="post" action="/auth/signin" onSubmit={() => setSubmitting(true)} className="space-y-3">
+      {error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>}
+      <form method="post" action="/auth/signin" onSubmit={(event) => { if (submitting) { event.preventDefault(); return }; setSubmitting(true) }} className="auth-form">
         <input type="hidden" name="redirect" value={redirectPath} />
-        <div className="space-y-1"><Label className="text-[12px] font-semibold" htmlFor="login-email">{getTranslation("auth.email")}</Label><Input className="h-[42px] rounded-[10px] border-stone-200 bg-white px-3.5 text-[13px] shadow-none placeholder:text-stone-400 focus-visible:border-stone-950 focus-visible:ring-4 focus-visible:ring-stone-950/10" id="login-email" name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></div>
-        <div className="space-y-1"><Label className="text-[12px] font-semibold" htmlFor="login-password">{getTranslation("auth.password")}</Label><PasswordField id="login-password" name="password" label={getTranslation("auth.password")} placeholder={getTranslation("auth.passwordPlaceholder")} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></div>
-        <div className="flex items-center justify-between gap-3 pt-0.5 text-[11px] text-stone-500"><label className="inline-flex items-center gap-2"><input type="checkbox" className="h-3.5 w-3.5 rounded border-stone-300 accent-stone-950" /> <span>{getTranslation("auth.rememberMe")}</span></label><Link href="/forgot-password" className="font-semibold transition-colors hover:text-stone-950">{getTranslation("auth.forgotPassword")}</Link></div>
-        <Button type="submit" loading={submitting} className="h-[42px] w-full rounded-[10px] bg-stone-950 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(28,25,23,0.15)] hover:bg-stone-800">{submitting ? getTranslation("auth.signingIn") : getTranslation("auth.signIn")}</Button>
+        <AuthField id="login-email" label={getTranslation("auth.email")}>
+          <div className="auth-input-shell">
+            <Mail className="auth-input-icon" aria-hidden="true" strokeWidth={1.75} />
+            <Input className="auth-input" id="login-email" name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" inputMode="email" required />
+          </div>
+        </AuthField>
+        <AuthField id="login-password" label={getTranslation("auth.password")}>
+          <PasswordField id="login-password" name="password" label={getTranslation("auth.password")} placeholder={getTranslation("auth.passwordPlaceholder")} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
+        </AuthField>
+        <div className="auth-form-meta"><Link href="/forgot-password" className="auth-muted-link">{getTranslation("auth.forgotPassword")}</Link></div>
+        <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
+        <Button type="submit" loading={submitting} className="auth-primary-button">{submitting ? getTranslation("auth.signingIn") : getTranslation("auth.signInAction")}</Button>
       </form>
     </AuthShell>
   )

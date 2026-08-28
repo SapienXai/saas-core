@@ -3,15 +3,16 @@
 import type React from "react"
 import Link from "next/link"
 import { useEffect, useState } from "react"
+import { Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AuthShell, AuthDivider } from "@/components/auth/auth-shell"
+import { AuthField, AuthShell } from "@/components/auth/auth-shell"
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
 import { getDevMailpitUrl } from "@/lib/dev-mailpit"
+import { PRODUCT_CONFIG } from "@/lib/product-config"
 
 export function SignupForm() {
   const [email, setEmail] = useState("")
@@ -44,6 +45,7 @@ export function SignupForm() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (submitting) return
     setError("")
     if (password.length < 8) { event.preventDefault(); setError(getTranslation("auth.errors.passwordLength")); return }
     if (password !== passwordConfirmation) { event.preventDefault(); setError(getTranslation("auth.errors.passwordMismatch")); return }
@@ -97,10 +99,10 @@ export function SignupForm() {
   }
 
   return (
-    <AuthShell title={getTranslation("auth.signUp")} description={getTranslation("auth.signUpDescription")} footer={<span>{getTranslation("auth.alreadyHaveAccount")} <Link className="font-semibold text-stone-950 underline-offset-4 hover:underline" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signIn")}</Link></span>}>
-      {error && <Alert variant="destructive" className="mb-4 rounded-[11px] border-rose-200 bg-rose-50 px-3.5 py-2.5 text-[12px] text-rose-900"><AlertDescription>{error}</AlertDescription></Alert>}
+    <AuthShell title={getTranslation("auth.signUpTitle")} description={getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })} footer={<span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
+      {error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>}
       {confirmationMessage ? (
-        <section className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-emerald-950" aria-live="polite">
+        <section className="auth-confirmation rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4 text-emerald-950" aria-live="polite">
           <div className="flex items-start gap-3">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white">✓</span>
             <div className="min-w-0">
@@ -121,14 +123,22 @@ export function SignupForm() {
         </section>
       ) : (
           <div>
-          <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
-          <div className="my-3.5"><AuthDivider /></div>
-          <form method="post" action="/auth/signup" onSubmit={submit} className="space-y-3">
+          <form method="post" action="/auth/signup" onSubmit={submit} className="auth-form">
             <input type="hidden" name="redirect" value={redirectPath} />
-            <div className="space-y-1"><Label className="text-[12px] font-semibold" htmlFor="signup-email">{getTranslation("auth.email")}</Label><Input className="h-[42px] rounded-[10px] border-stone-200 bg-white px-3.5 text-[13px] shadow-none placeholder:text-stone-400 focus-visible:border-stone-950 focus-visible:ring-4 focus-visible:ring-stone-950/10" id="signup-email" name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></div>
-            <div className="space-y-1"><Label className="text-[12px] font-semibold" htmlFor="signup-password">{getTranslation("auth.password")}</Label><PasswordField id="signup-password" name="password" label={getTranslation("auth.password")} placeholder={getTranslation("auth.passwordPlaceholder")} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required /></div>
-            <div className="space-y-1"><Label className="text-[12px] font-semibold" htmlFor="signup-confirmation">{getTranslation("auth.confirmPassword")}</Label><PasswordField id="signup-confirmation" name="password_confirmation" label={getTranslation("auth.confirmPassword")} placeholder={getTranslation("auth.passwordPlaceholder")} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" minLength={8} required /></div>
-            <Button type="submit" loading={submitting} disabled={!hydrated} className="h-[42px] w-full rounded-[10px] bg-stone-950 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(28,25,23,0.15)] hover:bg-stone-800">{submitting ? getTranslation("auth.creatingAccount") : getTranslation("auth.signUpAction")}</Button>
+            <AuthField id="signup-email" label={getTranslation("auth.email")}>
+              <div className="auth-input-shell">
+                <Mail className="auth-input-icon" aria-hidden="true" strokeWidth={1.75} />
+                <Input className="auth-input" id="signup-email" name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" inputMode="email" required />
+              </div>
+            </AuthField>
+            <AuthField id="signup-password" label={getTranslation("auth.password")}>
+              <PasswordField id="signup-password" name="password" label={getTranslation("auth.password")} placeholder={getTranslation("auth.passwordPlaceholder")} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required />
+            </AuthField>
+            <AuthField id="signup-confirmation" label={getTranslation("auth.confirmPassword")}>
+              <PasswordField id="signup-confirmation" name="password_confirmation" label={getTranslation("auth.confirmPassword")} placeholder={getTranslation("auth.passwordPlaceholder")} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" minLength={8} required />
+            </AuthField>
+            <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
+            <Button type="submit" loading={submitting} disabled={!hydrated} className="auth-primary-button">{submitting ? getTranslation("auth.creatingAccount") : getTranslation("auth.createAccountAction")}</Button>
           </form>
         </div>
       )}

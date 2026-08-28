@@ -1,10 +1,86 @@
 "use client"
+
 import Image from "next/image"
 import Link from "next/link"
 import type { ReactNode } from "react"
-import { BarChart3, Clock3, Layers3 } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
 import { useLanguage } from "@/context/language-context"
-export function AuthDivider() { const { getTranslation } = useLanguage(); return <div className="flex items-center gap-3 text-[9px] font-bold uppercase tracking-[0.16em] text-stone-400 sm:text-[10px]"><span className="h-px flex-1 bg-stone-200" /><span className="shrink-0">{getTranslation("auth.divider")}</span><span className="h-px flex-1 bg-stone-200" /></div> }
-function ProductBrand({ stacked = false, onMedia = false }: { stacked?: boolean; onMedia?: boolean }) { const { getTranslation } = useLanguage(); return <Link href="/" aria-label={getTranslation("auth.homeLabel")} className={stacked ? "group inline-flex w-fit flex-col items-center justify-center gap-2 text-center" : "inline-flex w-fit items-center gap-2.5"}><Image src={PRODUCT_CONFIG.logoPath} alt="" width={stacked ? 40 : 48} height={stacked ? 40 : 48} className={stacked ? "h-10 w-10 rounded-[12px] object-cover" : "h-12 w-12 rounded-[14px] object-cover"} priority /><span className={stacked ? "font-serif text-[17px] font-semibold tracking-[0.055em] text-stone-950" : onMedia ? "text-[13px] font-extrabold tracking-[0.24em] text-white" : "text-[13px] font-extrabold tracking-[0.16em] text-stone-900"}>{stacked ? PRODUCT_CONFIG.name : PRODUCT_CONFIG.slug.toUpperCase()}</span></Link> }
-export function AuthShell({ title, description, children, footer }: { title: string; description: string; children: ReactNode; footer: ReactNode }) { const { getTranslation } = useLanguage(); return <main className="auth-page min-h-[100dvh] overflow-hidden bg-[#f4eee7] text-stone-950 max-[359px]:overflow-visible lg:h-[100dvh] lg:p-5"><section className="auth-layout mx-auto grid min-h-[100dvh] w-full overflow-hidden border-stone-200/80 bg-[#faf7f2] max-[359px]:min-h-0 max-[359px]:overflow-visible lg:h-[calc(100dvh-2.5rem)] lg:min-h-0 lg:max-w-[1440px] lg:grid-cols-[minmax(0,1.04fr)_minmax(390px,0.96fr)] lg:rounded-[28px] lg:border"><aside className="auth-aside isolate relative hidden overflow-hidden bg-stone-950 lg:flex lg:min-h-0 lg:flex-col lg:justify-between lg:p-10 xl:p-12"><div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_20%,rgba(139,92,246,0.55),transparent_32%),linear-gradient(145deg,#151020,#09090b)]" /><div className="relative z-10"><ProductBrand onMedia /><div className="auth-copy mt-10 max-w-[390px] xl:mt-11"><p className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">{getTranslation("auth.kicker")}</p><h2 className="max-w-[18ch] text-balance text-[2.2rem] font-semibold leading-[0.99] tracking-[-0.065em] text-white xl:text-[2.55rem]">{getTranslation("auth.headline")}</h2><p className="mt-5 max-w-[340px] text-[13px] leading-[1.65] text-white/80 xl:text-[14px]">{getTranslation("auth.description")}</p><div className="mt-7 space-y-4">{[{ icon: Layers3, title: getTranslation("auth.moreWorkspaces"), description: getTranslation("auth.moreWorkspacesDescription") }, { icon: Clock3, title: getTranslation("auth.saveTime"), description: getTranslation("auth.saveTimeDescription") }, { icon: BarChart3, title: getTranslation("auth.growConfidence"), description: getTranslation("auth.growConfidenceDescription") }].map(({ icon: Icon, title: valueTitle, description: valueDescription }) => <div key={valueTitle} className="flex items-center gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-white/15 text-white ring-1 ring-white/20"><Icon className="h-[17px] w-[17px]" strokeWidth={1.8} /></span><span><strong className="block text-[12px] font-bold leading-4 text-white">{valueTitle}</strong><span className="mt-0.5 block text-[11px] leading-4 text-white/70">{valueDescription}</span></span></div>)}</div></div></div><p className="relative z-10 mt-10 text-[10px] font-bold uppercase tracking-[0.2em] text-white/70">{getTranslation("auth.footnote")}</p></aside><div className="auth-content relative z-10 flex min-h-[100dvh] items-center justify-center overflow-y-auto px-5 py-6 max-[359px]:min-h-0 max-[359px]:overflow-visible sm:px-8 sm:py-8 lg:min-h-0 lg:overflow-visible lg:border-l lg:border-stone-300/80 lg:px-10 xl:px-14"><section className="auth-card w-full max-w-[390px] rounded-[22px] border border-stone-200/90 bg-white px-6 py-7 shadow-[0_18px_55px_rgba(67,45,24,0.09)] sm:px-7 sm:py-8 lg:px-7 lg:py-8" aria-labelledby="auth-title"><div className="mb-5 flex justify-center lg:hidden"><ProductBrand stacked /></div><div className="text-center"><h1 id="auth-title" className="text-[1.75rem] font-semibold leading-[1.08] tracking-[-0.055em] sm:text-[1.9rem]">{title}</h1><p className="mx-auto mt-2 max-w-[285px] text-[12px] leading-[1.55] text-stone-600 sm:text-[13px]">{description}</p></div><div className="mt-5">{children}</div>{footer && <div className="mt-4 text-center text-[12px] text-stone-600 sm:text-[13px]">{footer}</div>}</section></div></section></main> }
+
+type AuthShellProps = {
+  title: string
+  description: string
+  children: ReactNode
+  footer?: ReactNode
+  backHref?: string
+}
+
+export function AuthDivider() {
+  const { getTranslation } = useLanguage()
+
+  return (
+    <div className="auth-divider" aria-hidden="true">
+      <span />
+      <span>{getTranslation("auth.divider")}</span>
+      <span />
+    </div>
+  )
+}
+
+export function ProductBrand() {
+  const { getTranslation } = useLanguage()
+
+  return (
+    <Link href="/" aria-label={getTranslation("auth.homeLabel")} className="auth-brand">
+      <span className="auth-brand-mark">
+        <Image src={PRODUCT_CONFIG.logoPath} alt="" width={34} height={34} priority />
+      </span>
+      <span className="auth-brand-name">{PRODUCT_CONFIG.name}</span>
+    </Link>
+  )
+}
+
+export function AuthBackButton({ href = "/" }: { href?: string }) {
+  const { getTranslation } = useLanguage()
+
+  return (
+    <Link href={href} className="auth-back-button" aria-label={getTranslation("auth.backToWelcome")}>
+      <ArrowLeft aria-hidden="true" strokeWidth={1.8} />
+    </Link>
+  )
+}
+
+export function AuthField({
+  id,
+  label,
+  children,
+}: {
+  id: string
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div className="auth-field">
+      <label className="auth-field-label" htmlFor={id}>{label}</label>
+      {children}
+    </div>
+  )
+}
+
+export function AuthShell({ title, description, children, footer, backHref = "/" }: AuthShellProps) {
+  return (
+    <main className="auth-page auth-form-page">
+      <div className="auth-form-container">
+        <AuthBackButton href={backHref} />
+        <section className="auth-card auth-form-card" aria-labelledby="auth-title">
+          <header className="auth-form-heading">
+            <h1 id="auth-title">{title}</h1>
+            <p>{description}</p>
+          </header>
+          <div className="auth-form-content">{children}</div>
+          {footer && <div className="auth-form-footer">{footer}</div>}
+        </section>
+      </div>
+    </main>
+  )
+}
