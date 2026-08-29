@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
-import { getAuthRedirectUrl } from "@/lib/request-url"
+import { getAuthRedirectUrl, getRequestUrl } from "@/lib/request-url"
 
 type SignUpBody = {
   email?: unknown
@@ -30,8 +30,9 @@ export async function POST(request: Request) {
   const email = typeof body.email === "string" ? body.email.trim() : ""
   const password = typeof body.password === "string" ? body.password : ""
   const redirect = safeRedirect(body.redirect)
+  const requestUrl = getRequestUrl(request)
   if (!email || !password) {
-    if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&error=invalid_request`, request.url), 303)
+    if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&error=invalid_request`, requestUrl), 303)
     return NextResponse.json({ error: "invalid_request" }, { status: 400 })
   }
 
@@ -43,11 +44,11 @@ export async function POST(request: Request) {
     options: { emailRedirectTo: `${origin}/auth/confirm?next=${encodeURIComponent(redirect)}` },
   })
   if (error) {
-    if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&error=create_failed`, request.url), 303)
+    if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&error=create_failed`, requestUrl), 303)
     return NextResponse.json({ error: "create_failed" }, { status: 400 })
   }
 
-  if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&confirmation=sent`, request.url), 303)
+  if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&confirmation=sent`, requestUrl), 303)
 
   return NextResponse.json({ ok: true })
 }

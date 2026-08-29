@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { getRequestUrl } from "@/lib/request-url"
 
 type SignInBody = {
   email?: unknown
@@ -28,15 +29,16 @@ export async function POST(request: Request) {
   const email = typeof body.email === "string" ? body.email.trim() : ""
   const password = typeof body.password === "string" ? body.password : ""
   const redirect = safeRedirect(body.redirect)
+  const requestUrl = getRequestUrl(request)
   if (!email || !password) {
-    if (isFormRequest) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=invalid_request`, request.url), 303)
+    if (isFormRequest) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=invalid_request`, requestUrl), 303)
     return NextResponse.json({ error: "invalid_request" }, { status: 400 })
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY
   if (!supabaseUrl || !supabaseKey) {
-    if (isFormRequest) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=service_unavailable`, request.url), 303)
+    if (isFormRequest) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=service_unavailable`, requestUrl), 303)
     return NextResponse.json({ error: "service_unavailable" }, { status: 503 })
   }
 
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
     const errorCode = error.message.toLowerCase().includes("email not confirmed")
       ? "email_not_confirmed"
       : "invalid_credentials"
-    if (isFormRequest) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=${errorCode}`, request.url), 303)
+    if (isFormRequest) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=${errorCode}`, requestUrl), 303)
     return NextResponse.json({ error: errorCode }, { status: 401 })
   }
 
