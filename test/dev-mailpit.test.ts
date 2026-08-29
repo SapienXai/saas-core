@@ -16,7 +16,8 @@ describe("development Mailpit boundary", () => {
     environment.NODE_ENV = "test"
     delete process.env.NEXT_PUBLIC_DEV_MAILPIT_URL
     expect(getDevMailpitUrl("localhost")).toBe("http://localhost:55624")
-    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108:55624")
+    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108.nip.io:55624")
+    expect(getDevMailpitUrl("192.168.1.108.nip.io")).toBe("http://192.168.1.108.nip.io:55624")
     expect(getDevMailpitUrl("product.example.com")).toBeNull()
   })
 
@@ -35,12 +36,18 @@ describe("development Mailpit boundary", () => {
   it("moves a loopback override to the current private host", () => {
     environment.NODE_ENV = "test"
     process.env.NEXT_PUBLIC_DEV_MAILPIT_URL = "http://localhost:55624"
-    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108:55624")
+    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108.nip.io:55624")
+  })
+
+  it("recognizes a nip.io app host and preserves a consumer-specific port", () => {
+    environment.NODE_ENV = "test"
+    process.env.NEXT_PUBLIC_DEV_MAILPIT_URL = "http://localhost:55524"
+    expect(getDevMailpitUrl("192.168.1.108.nip.io")).toBe("http://192.168.1.108.nip.io:55524")
   })
 
   it("preserves a consumer-specific Mailpit port when moving a loopback override", () => {
     environment.NODE_ENV = "test"
     process.env.NEXT_PUBLIC_DEV_MAILPIT_URL = "http://localhost:55524"
-    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108:55524")
+    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108.nip.io:55524")
   })
 })

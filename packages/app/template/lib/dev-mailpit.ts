@@ -1,4 +1,5 @@
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"])
+const NIP_IO_SUFFIX = ".nip.io"
 
 function isPrivateIpv4(hostname: string) {
   const parts = hostname.split(".")
@@ -7,14 +8,19 @@ function isPrivateIpv4(hostname: string) {
   return first === 10 || (first === 192 && second === 168) || (first === 172 && second >= 16 && second <= 31)
 }
 
+function isPrivateNipIoHost(hostname: string) {
+  return hostname.endsWith(NIP_IO_SUFFIX) && isPrivateIpv4(hostname.slice(0, -NIP_IO_SUFFIX.length))
+}
+
 function isLocalDevelopmentHost(hostname?: string | null) {
   const normalized = hostname?.trim().toLowerCase().replace(/^\[|\]$/g, "") || ""
-  return LOCAL_HOSTS.has(normalized) || normalized.endsWith(".localhost") || isPrivateIpv4(normalized)
+  return LOCAL_HOSTS.has(normalized) || normalized.endsWith(".localhost") || isPrivateIpv4(normalized) || isPrivateNipIoHost(normalized)
 }
 
 function localMailpitOrigin(hostname: string) {
   const normalized = hostname.replace(/^\[|\]$/g, "")
-  const host = normalized.includes(":") ? `[${normalized}]` : normalized
+  const reachableHost = isPrivateIpv4(normalized) ? `${normalized}${NIP_IO_SUFFIX}` : normalized
+  const host = reachableHost.includes(":") ? `[${reachableHost}]` : reachableHost
   return `http://${host}:55624`
 }
 
@@ -40,7 +46,7 @@ export function getDevMailpitUrl(hostname?: string | null) {
     const configuredHost = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")
     const currentHostNormalized = currentHost.toLowerCase().replace(/^\[|\]$/g, "")
     if (configured && fallback && LOCAL_HOSTS.has(configuredHost) && !LOCAL_HOSTS.has(currentHostNormalized)) {
-      url.hostname = currentHostNormalized
+      url.hostname = isPrivateIpv4(currentHostNormalized) ? `${currentHostNormalized}${NIP_IO_SUFFIX}` : currentHostNormalized
       return url.toString().replace(/\/$/, "")
     }
 
