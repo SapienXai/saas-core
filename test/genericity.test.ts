@@ -22,6 +22,9 @@ describe("generic Core contracts", () => {
   })
 
   it("separates runtime and schema compatibility", () => {
+    expect(CORE_VERSION).toBe("2.1.0")
+    expect(CORE_SCHEMA_VERSION).toBe("2.0")
+    expect(evaluateCompatibility({ manifestVersion: "2.0.0", schemaVersion: "2.0" }).status).toBe("compatible")
     expect(evaluateCompatibility({ manifestVersion: CORE_VERSION, schemaVersion: CORE_SCHEMA_VERSION }).status).toBe("compatible")
     expect(evaluateCompatibility({ manifestVersion: "3.0.0", schemaVersion: CORE_SCHEMA_VERSION }).status).toBe("incompatible")
     expect(evaluateCompatibility({ manifestVersion: CORE_VERSION, schemaVersion: "1.3.1" }).status).toBe("incompatible")

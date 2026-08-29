@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-const VERSION = "2.0.0"
+const VERSION = "2.1.0"
 const SCHEMA_VERSION = "2.0"
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const REPOSITORY_TEMPLATE = path.resolve(CLI_ROOT, "../app/template")
@@ -370,7 +370,10 @@ async function diff(options) {
   const source = await templateManagedFiles(sourceRoot, productOwnedPaths)
   const core = []
   const version = []
-  const packages = packageDrift(await readJson(path.join(directory, "package.json")), manifest.packageVersions || corePackageVersions())
+  // Diff against the release this CLI will apply, not the ranges recorded by
+  // the old manifest. Otherwise a 2.0 consumer can appear package-clean while
+  // the update is about to move it to the 2.1 runtime family.
+  const packages = packageDrift(await readJson(path.join(directory, "package.json")), corePackageVersions())
   if (manifest.coreVersion !== VERSION) version.push(`Core version ${manifest.coreVersion} → ${VERSION}`)
   if (manifest.schemaVersion !== SCHEMA_VERSION) version.push(`Schema version ${manifest.schemaVersion} → ${SCHEMA_VERSION}`)
   for (const [relative, record] of Object.entries(manifest.managedFiles || {})) {

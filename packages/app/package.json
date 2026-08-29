@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core-app",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Portable source-derived SaaS Core application template",
   "type": "module",
   "files": ["template", "README.md"],

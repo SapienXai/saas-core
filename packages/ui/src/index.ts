@@ -21,5 +21,5 @@ export * from "./components/ui/textarea"
 export * from "./components/ui/tooltip"
 export * from "./components/ui/sidebar"
 
-export const UI_SYSTEM_VERSION = "2.0.0"
+export const UI_SYSTEM_VERSION = "2.1.0"
 export const UI_SOURCE = "Production-derived source-preserving primitives"

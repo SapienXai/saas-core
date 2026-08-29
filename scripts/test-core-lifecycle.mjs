@@ -7,6 +7,11 @@ import path from "node:path"
 const root = process.cwd()
 const cli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const source = path.join(root, "packages/app/template")
+const RELEASE_VERSION = "2.1.0"
+const LEGACY_VERSION = "2.0.0"
+const SCHEMA_VERSION = "2.0"
+const runtimePackages = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
+const toolingPackages = ["@sapienx/saas-core-cli"]
 const fixture = await fsTemp("saas-core-lifecycle-")
 const coreA = path.join(fixture, "core-a")
 const coreB = path.join(fixture, "core-b")
@@ -100,14 +105,48 @@ try {
   const agentThemeFile = path.join(agentSurfaceProduct, "styles/product-theme.css")
   const agentTheme = `${await readFile(agentThemeFile, "utf8")}\n:root { --agent-surface-test-token: #123456; }\n`
   await writeFile(agentThemeFile, agentTheme, "utf8")
+  const agentProductFiles = ["styles/product-theme.css", "lib/product-config.ts", "product.catalog.json", "src/product/domain.ts"]
+  const agentProductBefore = Object.fromEntries(await Promise.all(agentProductFiles.map(async (relative) => [relative, await readFile(path.join(agentSurfaceProduct, relative), "utf8")])))
+  const legacyPackageFile = path.join(agentSurfaceProduct, "package.json")
+  const legacyPackage = JSON.parse(await readFile(legacyPackageFile, "utf8"))
+  for (const name of runtimePackages) legacyPackage.dependencies[name] = `^${LEGACY_VERSION}`
+  for (const name of toolingPackages) legacyPackage.devDependencies[name] = `^${LEGACY_VERSION}`
+  await writeFile(legacyPackageFile, JSON.stringify(legacyPackage, null, 2) + "\n", "utf8")
+  const legacyManifestFile = path.join(agentSurfaceProduct, ".saas-core-manifest.json")
+  const agentLegacyManifest = JSON.parse(await readFile(legacyManifestFile, "utf8"))
+  agentLegacyManifest.coreVersion = LEGACY_VERSION
+  agentLegacyManifest.templateVersion = LEGACY_VERSION
+  agentLegacyManifest.schemaVersion = SCHEMA_VERSION
+  agentLegacyManifest.packageVersions = Object.fromEntries([...runtimePackages, ...toolingPackages].map((name) => [name, `^${LEGACY_VERSION}`]))
+  for (const relative of agentSurfaceFiles) {
+    await rm(path.join(agentSurfaceProduct, relative), { force: true })
+    delete agentLegacyManifest.managedFiles[relative]
+  }
+  await writeFile(legacyManifestFile, JSON.stringify(agentLegacyManifest, null, 2) + "\n", "utf8")
+  result = run(coreB, ["diff", agentSurfaceProduct, "--json"])
+  assert(result.status === 2, `${result.stderr || result.stdout || "Agent Surface version diff did not report expected drift"}`)
+  const agentDiff = JSON.parse(result.stdout)
+  assert(agentDiff.versionDrift.includes(`Core version ${LEGACY_VERSION} → ${RELEASE_VERSION}`), "Agent Surface diff did not report the runtime upgrade")
+  assert(agentDiff.schemaDrift.length === 0 && agentDiff.versionDrift.every((item) => !item.includes("Schema")), "Agent Surface version upgrade incorrectly changed the schema")
+  assert(agentDiff.packageDrift.length === 4 && agentDiff.packageDrift.every((item) => item.actual === `^${LEGACY_VERSION}` && item.expected === `^${RELEASE_VERSION}`), "Agent Surface diff did not report all package movements")
+  assert(agentDiff.coreDrift.every((item) => !agentProductFiles.some((relative) => item.endsWith(` ${relative}`))), "Agent Surface diff proposed product-owned changes")
   result = run(coreB, ["update", agentSurfaceProduct, "--dry-run", "--json"])
   assert(result.status === 0, result.stderr || "Agent Surface fixture dry-run failed")
   const agentDryRun = JSON.parse(result.stdout)
   for (const relative of agentSurfaceFiles) assert(agentDryRun.added.includes(relative), `Agent Surface dry-run omitted ${relative}`)
+  assert(agentDryRun.updated.includes("package.json"), "Agent Surface dry-run omitted the package version movement")
   result = run(coreB, ["update", agentSurfaceProduct, "--json"])
   assert(result.status === 0, result.stderr || result.stdout || "Agent Surface fixture update failed")
   assert((await readFile(agentThemeFile, "utf8")) === agentTheme, "Agent Surface update overwrote the product-owned theme")
+  for (const relative of agentProductFiles) assert((await readFile(path.join(agentSurfaceProduct, relative), "utf8")) === agentProductBefore[relative], `Agent Surface update changed product-owned file ${relative}`)
   for (const relative of agentSurfaceFiles) assert(existsSync(path.join(agentSurfaceProduct, relative)), `Agent Surface update did not add ${relative}`)
+  const upgradedAgentPackage = JSON.parse(await readFile(legacyPackageFile, "utf8"))
+  for (const name of runtimePackages) assert(upgradedAgentPackage.dependencies[name] === `^${RELEASE_VERSION}`, `Agent Surface update did not advance ${name}`)
+  for (const name of toolingPackages) assert(upgradedAgentPackage.devDependencies[name] === `^${RELEASE_VERSION}`, `Agent Surface update did not advance ${name}`)
+  const upgradedAgentManifest = JSON.parse(await readFile(legacyManifestFile, "utf8"))
+  assert(upgradedAgentManifest.coreVersion === RELEASE_VERSION && upgradedAgentManifest.templateVersion === RELEASE_VERSION, "Agent Surface update did not advance manifest runtime metadata")
+  assert(upgradedAgentManifest.schemaVersion === SCHEMA_VERSION, "Agent Surface update changed the schema version")
+  assert(Object.values(upgradedAgentManifest.packageVersions).every((value) => value === `^${RELEASE_VERSION}`), "Agent Surface update did not record the new package versions")
   const agentConflictFile = path.join(agentSurfaceProduct, "lib/agent-surface/webmcp.ts")
   const agentConflictContent = `${await readFile(agentConflictFile, "utf8")}\n// local managed modification\n`
   await writeFile(agentConflictFile, agentConflictContent, "utf8")
@@ -192,7 +231,7 @@ try {
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
   assert(result.status === 0, result.stderr || "doctor rejected the consumer after rollback")
 
-  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, agentSurfaceUpdate: true, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
+  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, agentSurfaceUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
 } finally {
   await rm(fixture, { recursive: true, force: true })
 }

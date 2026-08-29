@@ -1,5 +1,7 @@
 # @sapienx/saas-core
 
+Current release: runtime `2.1.0`; Core database schema `2.0`.
+
 Generic SaaS Core contracts include product configuration, compatibility
 metadata, and the Agent Surface contract. Use `defineAgentTool()` for a
 validated, transport-neutral capability definition; the managed application

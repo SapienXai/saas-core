@@ -8,6 +8,11 @@ import { chromium } from "@playwright/test"
 const root = process.cwd()
 const packageCli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const artifacts = path.join(root, "artifacts")
+const RELEASE_VERSION = "2.1.0"
+const LEGACY_VERSION = "2.0.0"
+const SCHEMA_VERSION = "2.0"
+const runtimePackages = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
+const toolingPackages = ["@sapienx/saas-core-cli"]
 const npmCache = mkdtempSync(path.join(os.tmpdir(), "saas-core-npm-cache-"))
 const product = mkdtempSync(path.join(os.tmpdir(), "saas-core-product-"))
 const packedProduct = mkdtempSync(path.join(os.tmpdir(), "saas-core-packed-product-"))
@@ -24,6 +29,46 @@ function run(command, args, cwd, extraEnvironment = {}) {
   const result = spawnSync(command, args, { cwd, env: { ...npmEnvironment, ...extraEnvironment }, stdio: "inherit" })
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed with ${result.status ?? "unknown status"}`)
 }
+
+function runOutput(command, args, cwd, extraEnvironment = {}, expectedStatus = 0) {
+  const result = spawnSync(command, args, { cwd, env: { ...npmEnvironment, ...extraEnvironment }, encoding: "utf8" })
+  if (result.status !== expectedStatus) throw new Error(`${command} ${args.join(" ")} failed with ${result.status ?? "unknown status"}: ${result.stderr || result.stdout}`)
+  return result.stdout
+}
+
+function downgradeToLegacyConsumer(directory, agentSurfaceFiles) {
+  const packageFile = path.join(directory, "package.json")
+  const packageJson = JSON.parse(readFileSync(packageFile, "utf8"))
+  for (const name of runtimePackages) packageJson.dependencies[name] = `^${LEGACY_VERSION}`
+  for (const name of toolingPackages) packageJson.devDependencies[name] = `^${LEGACY_VERSION}`
+  writeFileSync(packageFile, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8")
+
+  const manifestFile = path.join(directory, ".saas-core-manifest.json")
+  const manifest = JSON.parse(readFileSync(manifestFile, "utf8"))
+  manifest.coreVersion = LEGACY_VERSION
+  manifest.templateVersion = LEGACY_VERSION
+  manifest.schemaVersion = SCHEMA_VERSION
+  manifest.packageVersions = Object.fromEntries([...runtimePackages, ...toolingPackages].map((name) => [name, `^${LEGACY_VERSION}`]))
+  for (const relative of agentSurfaceFiles) {
+    rmSync(path.join(directory, relative), { force: true })
+    delete manifest.managedFiles[relative]
+  }
+  writeFileSync(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`, "utf8")
+}
+
+const packedExportProbe = `
+import { readFileSync } from "node:fs"
+import * as core from "@sapienx/saas-core"
+for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions"]) {
+  if (typeof core[name] !== "function") throw new Error("Missing packed runtime export: " + name)
+}
+if (core.CORE_VERSION !== "${RELEASE_VERSION}" || core.CORE_SCHEMA_VERSION !== "${SCHEMA_VERSION}") throw new Error("Packed Core version metadata is incorrect.")
+core.validateAgentToolDefinitions([])
+const declarations = readFileSync(new URL("./index.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
+for (const name of ["JsonSchema", "AgentToolDefinition", "AgentSurfaceEvent", "AgentSurfaceObserver"]) {
+  if (!declarations.includes("export type " + name)) throw new Error("Missing packed type export: " + name)
+}
+`
 
 function localSupabaseEnvironment() {
   try {
@@ -153,7 +198,7 @@ try {
   if (!generatedSeed.includes("'default'") || !generatedSeed.includes("'{\"core.workspaces\":1,\"core.members\":null}'::jsonb")) throw new Error("Generated consumer seed does not bootstrap the neutral default plan and its explicit workspace limit.")
   const generatedPackage = JSON.parse(readFileSync(path.join(product, "package.json"), "utf8"))
   if (generatedPackage.dependencies["@sapienx/saas-core-cli"] || generatedPackage.dependencies["@sapienx/saas-core-app"]) throw new Error("Tooling/template-only Core packages were emitted as runtime dependencies.")
-  if (generatedPackage.devDependencies["@sapienx/saas-core-cli"] !== "^2.0.0") throw new Error("Core CLI was not emitted as a tooling dependency.")
+  if (generatedPackage.devDependencies["@sapienx/saas-core-cli"] !== `^${RELEASE_VERSION}`) throw new Error("Core CLI was not emitted as a 2.1.0 tooling dependency.")
   for (const name of ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]) if (!generatedPackage.dependencies[name]) throw new Error(`Missing runtime Core dependency: ${name}`)
   const agentSurfaceFiles = ["components/agent-surface/core-webmcp-tools.tsx", "lib/agent-surface/server.ts", "lib/agent-surface/webmcp.ts"]
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing Agent Surface file: ${relative}`)
@@ -164,10 +209,33 @@ try {
   const installedCli = path.join(product, "node_modules/.bin/saas-core")
   if (!existsSync(installedCli)) throw new Error("Packed Core CLI was not installed in the generated consumer.")
   run(installedCli, ["doctor", product], product)
+  run(process.execPath, ["--input-type=module", "-e", packedExportProbe], product)
   run(installedCli, ["init", "Packed CLI Proof", packedProduct], product)
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed CLI consumer is missing Agent Surface file: ${relative}`)
   run(installedCli, ["doctor", packedProduct], packedProduct)
+  const legacyThemeFile = path.join(packedProduct, "styles/product-theme.css")
+  const legacyTheme = `${readFileSync(legacyThemeFile, "utf8")}\n:root { --legacy-upgrade-proof: #123456; }\n`
+  writeFileSync(legacyThemeFile, legacyTheme, "utf8")
+  downgradeToLegacyConsumer(packedProduct, agentSurfaceFiles)
+  const legacyDiff = JSON.parse(runOutput(installedCli, ["diff", packedProduct, "--json"], packedProduct, {}, 2))
+  if (!legacyDiff.versionDrift.includes(`Core version ${LEGACY_VERSION} → ${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy runtime upgrade.")
+  if (legacyDiff.schemaDrift.length || legacyDiff.packageDrift.length !== 4 || legacyDiff.packageDrift.some((item) => item.actual !== `^${LEGACY_VERSION}` || item.expected !== `^${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy package movement while preserving schema 2.0.")
+  run(installedCli, ["update", packedProduct], packedProduct)
+  const upgradedLegacyManifest = JSON.parse(readFileSync(path.join(packedProduct, ".saas-core-manifest.json"), "utf8"))
+  if (upgradedLegacyManifest.coreVersion !== RELEASE_VERSION || upgradedLegacyManifest.schemaVersion !== SCHEMA_VERSION || Object.values(upgradedLegacyManifest.packageVersions).some((value) => value !== `^${RELEASE_VERSION}`)) throw new Error("Packed legacy consumer manifest was not upgraded to Core 2.1.0 / schema 2.0.")
+  const upgradedLegacyPackage = JSON.parse(readFileSync(path.join(packedProduct, "package.json"), "utf8"))
+  if (runtimePackages.some((name) => upgradedLegacyPackage.dependencies[name] !== `^${RELEASE_VERSION}`) || toolingPackages.some((name) => upgradedLegacyPackage.devDependencies[name] !== `^${RELEASE_VERSION}`)) throw new Error("Packed legacy consumer package.json was not upgraded to ^2.1.0.")
+  if (readFileSync(legacyThemeFile, "utf8") !== legacyTheme) throw new Error("Packed legacy update overwrote the product-owned theme.")
+  writeFileSync(path.join(packedProduct, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
+  run("npm", ["install", "--ignore-scripts", "--audit=false", "--fund=false"], packedProduct)
+  const legacyInstalledCli = path.join(packedProduct, "node_modules/.bin/saas-core")
+  run(legacyInstalledCli, ["doctor", packedProduct], packedProduct)
+  run(process.execPath, ["--input-type=module", "-e", packedExportProbe], packedProduct)
+  run("npm", ["run", "typecheck"], packedProduct)
+  run("npm", ["test"], packedProduct)
+  run("npm", ["run", "build"], packedProduct, supabaseEnvironment || {})
   run("npm", ["test"], product)
+  run("npm", ["run", "typecheck"], product)
   run("npm", ["run", "build"], product, supabaseEnvironment || {})
   await bootAndSmoke(product, 3217, true, supabaseEnvironment)
   renameSync(product, relocated)
@@ -187,7 +255,7 @@ try {
   const packageJson = JSON.parse(readFileSync(path.join(relocated, "package.json"), "utf8"))
   const persistedPackage = JSON.stringify(packageJson)
   if (/file:|link:|workspace:|registry\.url|\/Users\/|\/private\//.test(persistedPackage) || persistedPackage.includes(root)) throw new Error("Generated consumer contains a local dependency path.")
-  console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", configuredShell: true, browserShell: Boolean(supabaseEnvironment), relocation: true, frozenInstall: true }))
+  console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", packedExports: true, freshConsumer: `${RELEASE_VERSION} / schema ${SCHEMA_VERSION}`, legacyConsumerUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, legacyProductOwnedPreserved: true, legacyTypecheck: true, legacyTests: true, legacyBuild: true, configuredShell: true, browserShell: Boolean(supabaseEnvironment), relocation: true, frozenInstall: true }))
 } finally {
   registryProcess.kill("SIGTERM")
   rmSync(product, { recursive: true, force: true })

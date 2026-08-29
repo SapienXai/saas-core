@@ -1,10 +1,14 @@
-# SaaS Core 2.0
+# SaaS Core 2.1
 
 SaaS Core is infrastructure for workspace-based products. This repository is
 a clean extraction from the production ReserveVia foundations: the proven
 authentication, management shell, workspace boundary, billing, domains, PWA,
 operator control plane, and interaction system remain; the restaurant and
 reservation product domain does not.
+
+The current Core runtime and coordinated package release is `2.1.0`. The Core
+database schema remains `2.0`; Agent Surface is a runtime capability and adds no
+database migration.
 
 The governing model is:
 

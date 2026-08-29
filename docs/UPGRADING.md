@@ -115,8 +115,9 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and Core schema version are separate compatibility
-coordinates. The 2.0 baseline is runtime `2.0.0`, schema `2.0`; `doctor`
-verifies the actual database metadata when `SUPABASE_URL` and a server-only
+coordinates. The current runtime is `2.1.0` and the Core schema remains `2.0`;
+the Agent Surface capability required a backward-compatible minor package
+release, not a schema migration. `doctor` verifies the actual database metadata when `SUPABASE_URL` and a server-only
 `SUPABASE_SERVICE_ROLE_KEY` are available, and reports a warning when those
 credentials are absent. It reports an error when metadata is missing or
 mismatched. Changing a product catalog, default plan, or usage metric does not
