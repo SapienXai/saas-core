@@ -78,11 +78,10 @@ export function ProductBrand() {
 }
 
 function AuthFormBrand() {
-  const { getTranslation } = useLanguage()
   const logoStyle = { "--auth-form-brand-url": `url("${PRODUCT_CONFIG.logoPath}")` } as CSSProperties
 
   return (
-    <Link href="/" aria-label={getTranslation("auth.homeLabel")} className="auth-form-brand" style={logoStyle}>
+    <Link href="/" aria-label={`${PRODUCT_CONFIG.name} home`} className="auth-form-brand" style={logoStyle}>
       <span className="auth-form-brand-mark" aria-hidden="true" />
     </Link>
   )
