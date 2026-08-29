@@ -11,22 +11,29 @@ const SCHEMA_VERSION = "2.0"
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const REPOSITORY_TEMPLATE = path.resolve(CLI_ROOT, "../app/template")
 const PACKED_TEMPLATE = path.join(CLI_ROOT, "template")
-const TEMPLATE_ROOT = process.env.SAAS_CORE_TEMPLATE ? path.resolve(process.env.SAAS_CORE_TEMPLATE) : existsSync(REPOSITORY_TEMPLATE) ? REPOSITORY_TEMPLATE : PACKED_TEMPLATE
+const DEFAULT_TEMPLATE_ROOT = process.env.SAAS_CORE_TEMPLATE ? path.resolve(process.env.SAAS_CORE_TEMPLATE) : existsSync(REPOSITORY_TEMPLATE) ? REPOSITORY_TEMPLATE : PACKED_TEMPLATE
 const RUNTIME_CORE_PACKAGES = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
 const TOOLING_CORE_PACKAGES = ["@sapienx/saas-core-cli"]
 const CORE_PACKAGES = [...RUNTIME_CORE_PACKAGES, ...TOOLING_CORE_PACKAGES]
 const IGNORED_FILES = new Set(["next-env.d.ts", ".gitignore", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"])
 const PRODUCT_PREFIXES = ["src/product/", "app/(product)/", "app/product/", "components/product/", "supabase/migrations/product/"]
-const PRODUCT_FILES = new Set(["lib/product-config.ts", "product.catalog.json", "styles/product.css", "app/page.tsx", "app/manage/page.tsx", "supabase/config.toml", "supabase/seed.sql"])
+const PRODUCT_FILES = new Set(["lib/product-config.ts", "product.catalog.json", "styles/product-theme.css", "styles/product.css", "app/page.tsx", "app/manage/page.tsx", "supabase/config.toml", "supabase/seed.sql"])
+const DEFAULT_PRODUCT_OWNED_PATHS = [...PRODUCT_PREFIXES, ...PRODUCT_FILES]
 const args = process.argv.slice(2)
 const command = args[0] || "help"
 
 function flags(values) {
-  const result = { dryRun: false, json: false, to: null, positional: [] }
+  const result = { dryRun: false, json: false, source: null, to: null, positional: [] }
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index]
     if (value === "--dry-run") result.dryRun = true
     else if (value === "--json") result.json = true
+    else if (value === "--source") {
+      const source = values[++index]
+      if (!source || source.startsWith("--")) throw new Error("--source requires a Core repository or template path.")
+      result.source = source
+    }
+    else if (value.startsWith("--source=")) result.source = value.slice(9)
     else if (value === "--to") result.to = values[++index] || null
     else if (value.startsWith("--to=")) result.to = value.slice(5)
     else if (!value.startsWith("--")) result.positional.push(value)
@@ -41,9 +48,31 @@ function slugify(value) {
 function targetDirectory(value) { return path.resolve(process.cwd(), value || ".") }
 function hash(value) { return createHash("sha256").update(value).digest("hex") }
 function json(value) { return `${JSON.stringify(value, null, 2)}\n` }
-function isProductOwned(relative) { return PRODUCT_FILES.has(relative) || PRODUCT_PREFIXES.some((prefix) => relative.startsWith(prefix)) || relative.startsWith("public/product-") }
+function isProductOwned(relative, productOwnedPaths = DEFAULT_PRODUCT_OWNED_PATHS) {
+  return relative.startsWith("public/product-") || productOwnedPaths.some((ownedPath) => ownedPath.endsWith("/") ? relative.startsWith(ownedPath) : relative === ownedPath)
+}
 function isIgnored(relative) { return IGNORED_FILES.has(relative) || relative === ".saas-core-manifest.json" || relative === "supabase/.gitignore" || relative.startsWith(".next/") || relative.startsWith("node_modules/") || relative.startsWith("output/") || relative.startsWith("artifacts/") || relative.startsWith("supabase/.branches/") || relative.startsWith("supabase/.temp/") }
 function managedHash(value) { return typeof value === "string" ? value : value?.hash || "" }
+
+function manifestProductOwnedPaths(manifest) {
+  const configured = Array.isArray(manifest?.productOwnedPaths)
+    ? manifest.productOwnedPaths.filter((value) => typeof value === "string" && value.length > 0)
+    : []
+  return [...new Set([...DEFAULT_PRODUCT_OWNED_PATHS, ...configured])]
+}
+
+function resolveTemplateRoot(source) {
+  if (!source) return DEFAULT_TEMPLATE_ROOT
+  const requested = path.resolve(process.cwd(), source)
+  const candidates = [
+    path.join(requested, "packages/app/template"),
+    path.join(requested, "app/template"),
+    requested,
+  ]
+  const resolved = candidates.find((candidate) => existsSync(path.join(candidate, "app/layout.tsx")))
+  if (!resolved) throw new Error(`Invalid Core source ${source}; expected a Core repository or app template containing app/layout.tsx.`)
+  return resolved
+}
 
 async function walk(root, relative = "") {
   const entries = await readdir(path.join(root, relative), { withFileTypes: true })
@@ -63,11 +92,11 @@ function readManifestSync(directory) {
   try { return JSON.parse(readFileSync(file, "utf8")) } catch { return null }
 }
 
-async function templateManagedFiles() {
+async function templateManagedFiles(sourceRoot = DEFAULT_TEMPLATE_ROOT, productOwnedPaths = DEFAULT_PRODUCT_OWNED_PATHS) {
   const result = new Map()
-  for (const relative of await walk(TEMPLATE_ROOT)) {
-    if (isIgnored(relative) || isProductOwned(relative)) continue
-    result.set(relative, await readFile(path.join(TEMPLATE_ROOT, relative), "utf8"))
+  for (const relative of await walk(sourceRoot)) {
+    if (isIgnored(relative) || isProductOwned(relative, productOwnedPaths)) continue
+    result.set(relative, await readFile(path.join(sourceRoot, relative), "utf8"))
   }
   return result
 }
@@ -84,8 +113,8 @@ async function managedFilesForConsumer(directory, sourceFiles) {
 
 function corePackageVersions() { return Object.fromEntries(CORE_PACKAGES.map((name) => [name, `^${VERSION}`])) }
 
-async function appPackageManifest() {
-  const candidates = [path.join(CLI_ROOT, "app-package.json"), path.resolve(CLI_ROOT, "../app/package.json")]
+async function appPackageManifest(sourceRoot = DEFAULT_TEMPLATE_ROOT) {
+  const candidates = [path.join(CLI_ROOT, "app-package.json"), path.resolve(sourceRoot, "../package.json"), path.resolve(CLI_ROOT, "../app/package.json")]
   for (const candidate of candidates) if (existsSync(candidate)) return readJson(candidate)
   return { dependencies: {}, devDependencies: {} }
 }
@@ -172,8 +201,8 @@ export function getProductOnboardingPath() {
   await writeFile(path.join(directory, "src/product/domain.ts"), `export type ProductDomain = { workspaceId: string }\n\n// Product-owned domain starts at the Core Workspace boundary.\nexport const productDomain: ProductDomain = { workspaceId: "" }\n`, "utf8")
 }
 
-async function writeConsumerPackage(directory, slug) {
-  const app = await appPackageManifest()
+async function writeConsumerPackage(directory, slug, sourceRoot) {
+  const app = await appPackageManifest(sourceRoot)
   const dependencies = { ...(app.templateDependencies || app.dependencies || {}), ...Object.fromEntries(RUNTIME_CORE_PACKAGES.map((name) => [name, `^${VERSION}`])) }
   const devDependencies = { ...(app.devDependencies || {}) }
   devDependencies["@sapienx/saas-core-cli"] = `^${VERSION}`
@@ -197,11 +226,13 @@ async function init(options) {
   if (!name) throw new Error("Usage: saas-core init <product-name> [directory]")
   const slug = slugify(name)
   const directory = targetDirectory(options.positional[1] || slug)
+  const sourceRoot = resolveTemplateRoot(options.source)
+  const sourceFiles = await templateManagedFiles(sourceRoot)
   await mkdir(directory, { recursive: true })
-  await copyTree(TEMPLATE_ROOT, directory)
+  await copyTree(sourceRoot, directory)
   await writeProductConfig(directory, name, slug)
-  await writeConsumerPackage(directory, slug)
-  await writeFile(path.join(directory, ".saas-core-manifest.json"), json(manifestData(name, slug, await managedFilesForConsumer(directory))), "utf8")
+  await writeConsumerPackage(directory, slug, sourceRoot)
+  await writeFile(path.join(directory, ".saas-core-manifest.json"), json(manifestData(name, slug, await managedFilesForConsumer(directory, sourceFiles))), "utf8")
   await writeFile(path.join(directory, "README.md"), `# ${name}\n\nA product built on the SaaS Core workspace platform. Add product tables, routes, navigation and commercial configuration without changing Core tenancy or security infrastructure.\n`, "utf8")
   console.log(`Created portable SaaS Core product at ${path.relative(process.cwd(), directory) || "."}.`)
 }
@@ -311,6 +342,9 @@ async function diff(options) {
   const directory = targetDirectory(options.positional[0])
   const manifest = readManifestSync(directory)
   if (!manifest) throw new Error("Missing or invalid .saas-core-manifest.json")
+  const sourceRoot = resolveTemplateRoot(options.source)
+  const productOwnedPaths = manifestProductOwnedPaths(manifest)
+  const source = await templateManagedFiles(sourceRoot, productOwnedPaths)
   const core = []
   const version = []
   const packages = packageDrift(await readJson(path.join(directory, "package.json")), manifest.packageVersions || corePackageVersions())
@@ -321,8 +355,8 @@ async function diff(options) {
     if (!existsSync(file)) core.push(`D ${relative}`)
     else if (hash(await readFile(file, "utf8")) !== managedHash(record)) core.push(`M ${relative}`)
   }
-  for (const relative of (await templateManagedFiles()).keys()) if (!manifest.managedFiles?.[relative]) core.push(`A ${relative}`)
-  const productChanges = (await walk(directory)).filter((relative) => isProductOwned(relative) && !isIgnored(relative) && !manifest.managedFiles?.[relative])
+  for (const relative of source.keys()) if (!manifest.managedFiles?.[relative]) core.push(`A ${relative}`)
+  const productChanges = (await walk(directory)).filter((relative) => isProductOwned(relative, productOwnedPaths) && !isIgnored(relative) && !manifest.managedFiles?.[relative])
   const report = { coreDrift: core, versionDrift: version, packageDrift: packages, schemaDrift: manifest.schemaVersion === SCHEMA_VERSION ? [] : ["Core schema version differs"], productChangesIgnored: productChanges }
   if (options.json) console.log(JSON.stringify(report, null, 2))
   else {
@@ -448,7 +482,9 @@ async function update(options) {
   if (targetVersion !== VERSION) throw new Error(`Core ${targetVersion} is not available in this distribution.`)
   const manifest = readManifestSync(directory)
   if (!manifest) throw new Error("Missing or invalid .saas-core-manifest.json")
-  const source = await templateManagedFiles()
+  const sourceRoot = resolveTemplateRoot(options.source)
+  const productOwnedPaths = manifestProductOwnedPaths(manifest)
+  const source = await templateManagedFiles(sourceRoot, productOwnedPaths)
   const previous = manifest.managedFiles || {}
   const additions = []
   const replacements = []
@@ -466,7 +502,7 @@ async function update(options) {
     replacements.push(relative)
   }
   for (const relative of Object.keys(previous)) {
-    if (source.has(relative) || isProductOwned(relative)) continue
+    if (source.has(relative) || isProductOwned(relative, productOwnedPaths)) continue
     const current = path.join(directory, relative)
     if (!existsSync(current)) continue
     if (hash(await readFile(current, "utf8")) !== managedHash(previous[relative])) { conflicts.push(relative); continue }
@@ -513,7 +549,7 @@ async function update(options) {
         await writeApplied("package.json", json(mergeCoreDependencies(currentPackage, corePackageVersions())))
       }
       const managedFiles = await managedFilesForConsumer(directory, source)
-      await writeApplied(".saas-core-manifest.json", json({ ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), templateVersion: VERSION, managedFiles, generatedAt: new Date().toISOString() }))
+      await writeApplied(".saas-core-manifest.json", json({ ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), templateVersion: VERSION, productOwnedPaths, managedFiles, generatedAt: new Date().toISOString() }))
       await validateUpdatedConsumer(directory, source, { ...manifest, packageVersions: corePackageVersions() })
       report.backup = backup
     } catch (error) {
@@ -537,7 +573,7 @@ async function update(options) {
   if (conflicts.length || report.errors?.length) process.exitCode = 2
 }
 
-function help() { console.log("Usage: saas-core <init|doctor|diff|update> [directory] [--dry-run] [--json] [--to <version>]") }
+function help() { console.log("Usage: saas-core <init|doctor|diff|update> [directory] [--dry-run] [--json] [--source <core-repository-or-template>] [--to <version>]") }
 
 try {
   const options = flags(args.slice(1))

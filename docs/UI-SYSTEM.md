@@ -94,5 +94,8 @@ outlines remain visible; disabled and loading controls communicate state
 without depending on color alone.
 
 Future products may change palette, logo, and copy through product config and
-product CSS. They should preserve this behavior contract and extend the
+the product-owned `styles/product-theme.css`. The root layout loads that file
+after the managed Core theme, allowing documented token overrides to reach
+auth, onboarding and management surfaces. Keep route/domain selectors in
+`styles/product.css`, preserve this behavior contract, and extend the
 source-derived components instead of rebuilding them.

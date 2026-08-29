@@ -20,6 +20,22 @@ pnpm diff -- ./my-product
 pnpm update -- ./my-product
 ```
 
+When both repositories are checked out locally, point the existing lifecycle
+tool at the canonical Core source instead of publishing packages first:
+
+```bash
+node ../saas-core/packages/cli/bin/saas-core.mjs diff ../PlaceDJ --source ../saas-core --json
+node ../saas-core/packages/cli/bin/saas-core.mjs update ../PlaceDJ --source ../saas-core --dry-run --json
+node ../saas-core/packages/cli/bin/saas-core.mjs update ../PlaceDJ --source ../saas-core
+```
+
+The `--source` flag is a local-development override. It accepts a Core
+repository (resolving `packages/app/template`) or a template directory and
+does not alter release installation semantics. The command still reads the
+consumer manifest, blocks locally modified managed files, preserves every
+product-owned path, creates the normal backup and runs the normal validation
+and rollback path. It does not apply database migrations or rewrite a lockfile.
+
 `saas-core diff` compares the consumer against the managed-file hashes from
 its manifest and reports Core, version, package, schema, and ignored product
 changes separately. `saas-core update --dry-run` plans additions,
@@ -45,6 +61,12 @@ predate the shell extension continue using the Core Workspace dashboard;
 updates add the managed resolver without overwriting `lib/product-config.ts`.
 If a product adopts the extension, keep its routes under the product-owned
 route boundary and do not claim Core-reserved `/app` paths.
+
+Product-wide auth and management branding belongs in the product-owned
+`styles/product-theme.css`, which the root layout loads after the managed
+`styles/core-lilac.css`. Keep the file to token overrides and small extension
+selectors; do not edit Core-managed auth/manage components or duplicate the
+Core stylesheet. `styles/product.css` remains for product-route-only styles.
 
 Review the generated manifest and run the product’s install, typecheck, test,
 and build commands. Do not copy local `.env` files, `.next`, `node_modules`,

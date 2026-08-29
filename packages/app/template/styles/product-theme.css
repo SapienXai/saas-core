@@ -1,0 +1,7 @@
+/*
+ * Product-owned global theme extension point.
+ *
+ * Keep this file limited to documented Core tokens and product-level selectors.
+ * It is loaded after core-lilac.css so a product can brand auth, onboarding,
+ * and management surfaces without editing Core-managed files.
+ */

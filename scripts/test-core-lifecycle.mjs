@@ -14,6 +14,7 @@ const cleanProduct = path.join(fixture, "clean-product")
 const conflictProduct = path.join(fixture, "conflict-product")
 const rollbackProduct = path.join(fixture, "rollback-product")
 const legacyProduct = path.join(fixture, "legacy-product")
+const localSourceProduct = path.join(fixture, "local-source-product")
 
 async function fsTemp(prefix) {
   const directory = await import("node:fs/promises").then(({ mkdtemp }) => mkdtemp(path.join(os.tmpdir(), prefix)))
@@ -21,7 +22,10 @@ async function fsTemp(prefix) {
 }
 
 function run(template, args, extraEnvironment = {}) {
-  const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, env: { ...process.env, SAAS_CORE_TEMPLATE: template, ...extraEnvironment }, encoding: "utf8" })
+  const environment = { ...process.env, ...extraEnvironment }
+  if (template) environment.SAAS_CORE_TEMPLATE = template
+  else delete environment.SAAS_CORE_TEMPLATE
+  const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, env: environment, encoding: "utf8" })
   return result
 }
 
@@ -37,11 +41,29 @@ try {
   await writeFile(path.join(coreB, "app/core-lifecycle-fixture.ts"), "export const lifecycleFixture = true\n", "utf8")
   await rm(path.join(coreB, "app/robots.ts"))
 
+  // A repository root can be supplied as a local development source. The
+  // source flag must select the canonical template while preserving the
+  // consumer's product-owned theme file.
+  let result = run(null, ["init", "Local Source Consumer", localSourceProduct, "--source", root])
+  assert(result.status === 0, result.stderr || "local source init failed")
+  const localThemeFile = path.join(localSourceProduct, "styles/product-theme.css")
+  const localTheme = `${await readFile(localThemeFile, "utf8")}\n:root { --placedj-test-token: #123456; }\n`
+  await writeFile(localThemeFile, localTheme, "utf8")
+  result = run(coreA, ["update", localSourceProduct, "--source", coreB, "--dry-run", "--json"])
+  assert(result.status === 0, result.stderr || "local source dry-run failed")
+  const localDryRun = JSON.parse(result.stdout)
+  assert(localDryRun.updated.includes("app/error.tsx") && !localDryRun.updated.includes("styles/product-theme.css"), "local source dry-run did not preserve the product-owned theme")
+  result = run(coreA, ["update", localSourceProduct, "--source", coreB, "--json"])
+  assert(result.status === 0, result.stderr || result.stdout || "local source update failed")
+  assert((await readFile(localThemeFile, "utf8")) === localTheme, "local source update overwrote the product-owned theme")
+  result = run(coreB, ["doctor", localSourceProduct, "--json"])
+  assert(result.status === 0, result.stderr || "local source post-update doctor failed")
+
   // Simulate a consumer generated before the product shell contract existed.
   // Its product-owned config must survive the update byte-for-byte while the
   // new managed resolver is added from the canonical template.
   await rm(path.join(coreA, "lib/product-shell.ts"))
-  let result = run(coreA, ["init", "Legacy Shell Consumer", legacyProduct])
+  result = run(coreA, ["init", "Legacy Shell Consumer", legacyProduct])
   assert(result.status === 0, result.stderr || "legacy init failed")
   const legacyConfigFile = path.join(legacyProduct, "lib/product-config.ts")
   const legacyConfig = (await readFile(legacyConfigFile, "utf8"))
@@ -53,6 +75,8 @@ try {
   assert(result.status === 0, result.stderr || result.stdout || "legacy consumer update failed")
   assert(existsSync(path.join(legacyProduct, "lib/product-shell.ts")), "legacy update did not add the product shell resolver")
   assert((await readFile(legacyConfigFile, "utf8")) === legacyConfigBeforeUpdate, "legacy product config was overwritten during update")
+  const legacyManifest = JSON.parse(await readFile(path.join(legacyProduct, ".saas-core-manifest.json"), "utf8"))
+  assert(legacyManifest.productOwnedPaths.includes("styles/product-theme.css"), "legacy update did not record the product theme boundary")
   result = run(coreB, ["doctor", legacyProduct, "--json"])
   assert(result.status === 0, result.stderr || "legacy consumer doctor failed")
 
@@ -110,7 +134,7 @@ try {
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
   assert(result.status === 0, result.stderr || "doctor rejected the consumer after rollback")
 
-  console.log(JSON.stringify({ status: "PASS", cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, rollback: true, rollbackDoctor: true }))
+  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, rollback: true, rollbackDoctor: true }))
 } finally {
   await rm(fixture, { recursive: true, force: true })
 }

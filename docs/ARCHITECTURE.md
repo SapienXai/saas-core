@@ -20,8 +20,10 @@ Core owns:
 Product code owns business entities and workflows. A product may add routes,
 dashboard cards, navigation, theme values, and product CSS. Its tables attach
 to Core through an explicit `workspace_id` foreign key and enforce their own
-RLS policies. Core never interprets a Workspace as a venue, account type, or
-other product entity.
+RLS policies. The global product theme extension is
+`styles/product-theme.css`; it is loaded after the managed Core styles and is
+excluded from managed-file updates. Core never interprets a Workspace as a
+venue, account type, or other product entity.
 
 ## Request and session flow
 
@@ -152,8 +154,9 @@ generic contracts; `packages/config` contains product identity/catalog
 contracts; `packages/ui` contains the source-derived reusable primitives; and
 `packages/cli` ships the template at pack time. `scripts/core-*` provide
 portable `pack`, `init`, `doctor`, `diff`, and `update` behavior based on a
-managed-file manifest. They do not write checkout paths or local dependency
-URLs into a consumer.
+managed-file manifest. `diff` and `update` can use an explicit local Core
+repository/template through `--source`; this is a development override and
+does not write checkout paths or local dependency URLs into a consumer.
 
 The controlled namespace is `@sapienx`: `@sapienx/saas-core`,
 `@sapienx/saas-core-config`, `@sapienx/saas-core-ui`,

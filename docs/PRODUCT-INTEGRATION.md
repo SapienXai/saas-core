@@ -19,6 +19,23 @@ Every product should provide:
 replace this module at its application boundary. It must not scatter identity
 constants through Core components or server modules.
 
+## Ownership and dependency direction
+
+Classify a requested change before editing a consumer:
+
+- **Core:** reusable platform capability or generic implementation that would
+  still make sense for another product;
+- **Product:** domain behavior, product data, copy, assets or composition that
+  only has meaning inside one product;
+- **Integration:** the product-side configuration and consumption of a Core
+  capability.
+
+Use this test: would the request still make sense if this product did not
+exist? If yes, it belongs in Core. If the product needs a capability Core does
+not expose, add the generic capability to Core first, then configure and
+consume it in the product. Keep the direction `SaaS Core → Products → domain`
+and never duplicate generic implementations in both repositories.
+
 The optional `onboarding.productSetupPath` is the product handoff after Core
 has created the first Workspace. It must be an internal path; omitted or
 invalid values resolve to `/app`. Core onboarding itself owns only Account,
@@ -81,6 +98,25 @@ Core reserves `/app`, `/app/team`, `/app/plan`, `/app/domains`, `/app/pwa`,
 navigation paths must be safe internal `/app/*` paths and cannot claim these
 reserved areas. The shell field is optional so products generated before this
 extension continue to compile, update, and retain their product config.
+
+## Global product theme boundary
+
+The application root loads the styles in this order:
+
+```text
+styles/globals.css       Core-managed primitives/tokens
+styles/core-lilac.css    Core-managed auth and management behavior/tokens
+styles/product-theme.css Product-owned global token overrides
+```
+
+`styles/product-theme.css` is intentionally small and token-oriented. It is
+loaded by the root layout, so a product can brand `/login`, `/signup`,
+password recovery/reset, onboarding and management surfaces without editing
+`components/auth/**`, `components/manage/**` or `styles/core-lilac.css`.
+`styles/product.css` remains the product-owned route/domain stylesheet for
+selectors that should only affect product pages. Products must override
+documented Core variables rather than copy the Core stylesheet; Core’s empty
+starter theme preserves the default palette when no customization is needed.
 
 ## Adding a domain
 
@@ -183,6 +219,10 @@ Products may customize:
 - dashboard cards and product-specific empty/loading states;
 - product CSS and domain-specific responsive views;
 - email and notification templates that call Core delivery infrastructure.
+
+The manifest must list `styles/product-theme.css` as product-owned alongside
+`styles/product.css`. The Core updater preserves both paths and never silently
+turns a product theme into a managed fork.
 
 Core continues to own authentication, Workspace membership, billing
 enforcement, platform operator access, outbox delivery, PWA safety, and the
