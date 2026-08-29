@@ -40,7 +40,8 @@ export function getDevMailpitUrl(hostname?: string | null) {
     const configuredHost = url.hostname.toLowerCase().replace(/^\[|\]$/g, "")
     const currentHostNormalized = currentHost.toLowerCase().replace(/^\[|\]$/g, "")
     if (configured && fallback && LOCAL_HOSTS.has(configuredHost) && !LOCAL_HOSTS.has(currentHostNormalized)) {
-      return new URL(fallback).toString().replace(/\/$/, "")
+      url.hostname = currentHostNormalized
+      return url.toString().replace(/\/$/, "")
     }
 
     return url.toString().replace(/\/$/, "")

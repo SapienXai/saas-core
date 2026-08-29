@@ -37,4 +37,10 @@ describe("development Mailpit boundary", () => {
     process.env.NEXT_PUBLIC_DEV_MAILPIT_URL = "http://localhost:55624"
     expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108:55624")
   })
+
+  it("preserves a consumer-specific Mailpit port when moving a loopback override", () => {
+    environment.NODE_ENV = "test"
+    process.env.NEXT_PUBLIC_DEV_MAILPIT_URL = "http://localhost:55524"
+    expect(getDevMailpitUrl("192.168.1.108")).toBe("http://192.168.1.108:55524")
+  })
 })
