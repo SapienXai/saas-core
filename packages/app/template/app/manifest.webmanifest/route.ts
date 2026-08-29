@@ -25,9 +25,10 @@ export async function GET(request: Request) {
     ? await getEffectivePwaBranding(workspaceId)
     : getGenericPwaBranding())
   const resolvedWorkspaceId = branding.workspaceId || workspaceId
+  const fallbackIconType = PWA_FALLBACK_ICON.endsWith(".svg") ? "image/svg+xml" : PWA_FALLBACK_ICON.endsWith(".webp") ? "image/webp" : "image/png"
   const fallbackIcons = [
-    { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
-    { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+    { src: PWA_FALLBACK_ICON, sizes: "192x192", type: fallbackIconType, purpose: "any maskable" },
+    { src: PWA_FALLBACK_ICON, sizes: "512x512", type: fallbackIconType, purpose: "any maskable" },
   ]
   const icons = branding.iconUrl === PWA_FALLBACK_ICON
     ? fallbackIcons
