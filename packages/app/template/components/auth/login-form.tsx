@@ -40,6 +40,7 @@ export function LoginForm() {
 
   return (
     <AuthShell
+      showBrand
       title={getTranslation("auth.signInTitle")}
       description={getTranslation("auth.signInSubtitle")}
       footer={<span>{getTranslation("auth.dontHaveAccount")} {" "}<Link className="auth-footer-link" href={`/signup?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.register")}</Link></span>}

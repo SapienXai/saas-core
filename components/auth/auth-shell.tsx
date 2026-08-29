@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import type { ReactNode } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { ArrowLeft } from "lucide-react"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
 import { useLanguage } from "@/context/language-context"
@@ -13,6 +13,7 @@ type AuthShellProps = {
   children: ReactNode
   footer?: ReactNode
   backHref?: string
+  showBrand?: boolean
 }
 
 function getAuthBackgroundUrl() {
@@ -76,6 +77,17 @@ export function ProductBrand() {
   )
 }
 
+function AuthFormBrand() {
+  const { getTranslation } = useLanguage()
+  const logoStyle = { "--auth-form-brand-url": `url("${PRODUCT_CONFIG.logoPath}")` } as CSSProperties
+
+  return (
+    <Link href="/" aria-label={getTranslation("auth.homeLabel")} className="auth-form-brand" style={logoStyle}>
+      <span className="auth-form-brand-mark" aria-hidden="true" />
+    </Link>
+  )
+}
+
 export function AuthBackButton({ href = "/" }: { href?: string }) {
   const { getTranslation } = useLanguage()
 
@@ -103,7 +115,7 @@ export function AuthField({
   )
 }
 
-export function AuthShell({ title, description, children, footer, backHref = "/" }: AuthShellProps) {
+export function AuthShell({ title, description, children, footer, backHref = "/", showBrand = false }: AuthShellProps) {
   return (
     <main className="auth-page auth-form-page">
       <AuthMediaBackground />
@@ -116,7 +128,10 @@ export function AuthShell({ title, description, children, footer, backHref = "/"
           </header>
         </div>
         <section className="auth-card auth-form-card" aria-labelledby="auth-title">
-          <div className="auth-form-content">{children}</div>
+          <div className="auth-form-content">
+            {showBrand && <AuthFormBrand />}
+            {children}
+          </div>
           {footer && <div className="auth-form-footer">{footer}</div>}
         </section>
       </div>
