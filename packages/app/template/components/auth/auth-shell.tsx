@@ -15,6 +15,37 @@ type AuthShellProps = {
   backHref?: string
 }
 
+function getAuthBackgroundUrl() {
+  const candidate = PRODUCT_CONFIG.auth?.backgroundUrl?.trim()
+  if (!candidate) return null
+
+  try {
+    const url = new URL(candidate)
+    return url.protocol === "https:" ? url.href : null
+  } catch {
+    return null
+  }
+}
+
+function AuthMediaBackground() {
+  const src = getAuthBackgroundUrl()
+  if (!src) return null
+
+  return (
+    <div className="auth-media-background" aria-hidden="true">
+      <iframe
+        className="auth-media-background-frame"
+        src={src}
+        title=""
+        tabIndex={-1}
+        loading="eager"
+        referrerPolicy="no-referrer"
+        allow="autoplay; fullscreen; picture-in-picture"
+      />
+    </div>
+  )
+}
+
 export function AuthDivider() {
   const { getTranslation } = useLanguage()
 
@@ -70,13 +101,16 @@ export function AuthField({
 export function AuthShell({ title, description, children, footer, backHref = "/" }: AuthShellProps) {
   return (
     <main className="auth-page auth-form-page">
+      <AuthMediaBackground />
       <div className="auth-form-container">
-        <AuthBackButton href={backHref} />
-        <section className="auth-card auth-form-card" aria-labelledby="auth-title">
+        <div className="auth-form-topline">
+          <AuthBackButton href={backHref} />
           <header className="auth-form-heading">
             <h1 id="auth-title">{title}</h1>
             <p>{description}</p>
           </header>
+        </div>
+        <section className="auth-card auth-form-card" aria-labelledby="auth-title">
           <div className="auth-form-content">{children}</div>
           {footer && <div className="auth-form-footer">{footer}</div>}
         </section>

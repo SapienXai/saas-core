@@ -118,6 +118,18 @@ selectors that should only affect product pages. Products must override
 documented Core variables rather than copy the Core stylesheet; Core’s empty
 starter theme preserves the default palette when no customization is needed.
 
+The optional `PRODUCT_CONFIG.auth.backgroundUrl` field adds one reusable auth
+surface without allowing product code into the Core auth implementation:
+
+```ts
+auth: { backgroundUrl: "https://media.example.com/venue-screen" },
+```
+
+Core accepts HTTPS URLs only and renders the media surface behind auth forms
+with no pointer or keyboard interaction capture. Products own the URL and any
+palette overrides in `styles/product-theme.css`; reduced-motion mode hides
+the external media surface while keeping the auth flow available.
+
 ## Adding a domain
 
 ```sql

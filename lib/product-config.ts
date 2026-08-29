@@ -27,6 +27,11 @@ export type ProductOnboardingConfig = {
   productSetupPath?: string | null
 }
 
+export type ProductAuthConfig = {
+  /** Optional HTTPS media surface rendered behind Core auth forms. */
+  backgroundUrl?: string | null
+}
+
 export type ProductShellNavigationItem = {
   key: string
   label: string
@@ -52,6 +57,7 @@ export type ProductConfig = {
   description: string
   capabilities: Readonly<Record<string, boolean>>
   onboarding?: ProductOnboardingConfig
+  auth?: ProductAuthConfig
   shell?: ProductShellConfig
   /** Product-owned commercial catalog. Core only evaluates its stable keys. */
   catalog: ProductCatalog

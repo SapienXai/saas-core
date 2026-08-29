@@ -147,8 +147,14 @@ export type ProductConfig = {
   description: string
   capabilities: Readonly<Record<string, boolean>>
   onboarding?: { productSetupPath?: string | null }
+  auth?: ProductAuthConfig
   shell?: ProductShellConfig
   catalog: ProductCatalog
+}
+
+export type ProductAuthConfig = {
+  /** Optional HTTPS media surface rendered behind Core auth forms. */
+  backgroundUrl?: string | null
 }
 
 export type ProductShellNavigationItem = {

@@ -46,6 +46,11 @@ export type ProductOnboarding = {
   productSetupPath?: string | null
 }
 
+export type ProductAuthConfig = {
+  /** Optional HTTPS media surface rendered behind Core auth forms. */
+  backgroundUrl?: string | null
+}
+
 export type CoreWorkspaceRole = "owner" | "admin" | "manager" | "staff" | "readonly"
 
 export type ProductShellNavigationItem = {
@@ -68,6 +73,7 @@ export type ProductConfigContract = {
   identity: ProductIdentity
   catalog: ProductCatalog
   onboarding?: ProductOnboarding
+  auth?: ProductAuthConfig
   shell?: ProductShellConfig
 }
 
