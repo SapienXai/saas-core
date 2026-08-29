@@ -35,6 +35,10 @@ does not alter release installation semantics. The command still reads the
 consumer manifest, blocks locally modified managed files, preserves every
 product-owned path, creates the normal backup and runs the normal validation
 and rollback path. It does not apply database migrations or rewrite a lockfile.
+When the source is a Git checkout, the update records only its 40-character
+`coreSourceCommit` in the manifest, never the local filesystem path. This is
+an optional field, so older manifests remain backward-compatible; a direct
+template directory or packed release has no Git SHA to record.
 
 `saas-core diff` compares the consumer against the managed-file hashes from
 its manifest and reports Core, version, package, schema, and ignored product

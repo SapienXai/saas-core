@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto"
+import { execFileSync } from "node:child_process"
 import { access, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
@@ -48,6 +49,12 @@ function slugify(value) {
 function targetDirectory(value) { return path.resolve(process.cwd(), value || ".") }
 function hash(value) { return createHash("sha256").update(value).digest("hex") }
 function json(value) { return `${JSON.stringify(value, null, 2)}\n` }
+function sourceGitCommit(sourceRoot) {
+  try {
+    const commit = execFileSync("git", ["-C", sourceRoot, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim()
+    return /^[0-9a-f]{40}$/.test(commit) ? commit : null
+  } catch { return null }
+}
 function isProductOwned(relative, productOwnedPaths = DEFAULT_PRODUCT_OWNED_PATHS) {
   return relative.startsWith("public/product-") || productOwnedPaths.some((ownedPath) => ownedPath.endsWith("/") ? relative.startsWith(ownedPath) : relative === ownedPath)
 }
@@ -217,8 +224,10 @@ async function writeConsumerPackage(directory, slug, sourceRoot) {
   }), "utf8")
 }
 
-function manifestData(name, slug, managedFiles) {
-  return { coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), managedFiles, productOwnedPaths: [...PRODUCT_PREFIXES, ...PRODUCT_FILES], templateVersion: VERSION, product: { name, slug }, generatedAt: new Date().toISOString() }
+function manifestData(name, slug, managedFiles, coreSourceCommit = null) {
+  const manifest = { coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), managedFiles, productOwnedPaths: [...PRODUCT_PREFIXES, ...PRODUCT_FILES], templateVersion: VERSION, product: { name, slug }, generatedAt: new Date().toISOString() }
+  if (coreSourceCommit) manifest.coreSourceCommit = coreSourceCommit
+  return manifest
 }
 
 async function init(options) {
@@ -232,7 +241,7 @@ async function init(options) {
   await copyTree(sourceRoot, directory)
   await writeProductConfig(directory, name, slug)
   await writeConsumerPackage(directory, slug, sourceRoot)
-  await writeFile(path.join(directory, ".saas-core-manifest.json"), json(manifestData(name, slug, await managedFilesForConsumer(directory, sourceFiles))), "utf8")
+  await writeFile(path.join(directory, ".saas-core-manifest.json"), json(manifestData(name, slug, await managedFilesForConsumer(directory, sourceFiles), options.source ? sourceGitCommit(sourceRoot) : null)), "utf8")
   await writeFile(path.join(directory, "README.md"), `# ${name}\n\nA product built on the SaaS Core workspace platform. Add product tables, routes, navigation and commercial configuration without changing Core tenancy or security infrastructure.\n`, "utf8")
   console.log(`Created portable SaaS Core product at ${path.relative(process.cwd(), directory) || "."}.`)
 }
@@ -483,6 +492,7 @@ async function update(options) {
   const manifest = readManifestSync(directory)
   if (!manifest) throw new Error("Missing or invalid .saas-core-manifest.json")
   const sourceRoot = resolveTemplateRoot(options.source)
+  const coreSourceCommit = options.source ? sourceGitCommit(sourceRoot) : null
   const productOwnedPaths = manifestProductOwnedPaths(manifest)
   const source = await templateManagedFiles(sourceRoot, productOwnedPaths)
   const previous = manifest.managedFiles || {}
@@ -515,8 +525,9 @@ async function update(options) {
     const nextPackage = mergeCoreDependencies(currentPackage, corePackageVersions())
     packageChanged = JSON.stringify(currentPackage) !== JSON.stringify(nextPackage)
   }
-  const changed = additions.length + replacements.length + removals.length + (packageChanged ? 1 : 0)
-  const report = { dryRun: options.dryRun, targetVersion, updated: [...replacements, ...(packageChanged ? ["package.json"] : [])], added: additions, removed: removals, preserved: conflicts, conflicts, backup: null }
+  const provenanceChanged = Boolean(coreSourceCommit && manifest.coreSourceCommit !== coreSourceCommit)
+  const changed = additions.length + replacements.length + removals.length + (packageChanged ? 1 : 0) + (provenanceChanged ? 1 : 0)
+  const report = { dryRun: options.dryRun, targetVersion, updated: [...replacements, ...(packageChanged ? ["package.json"] : [])], added: additions, removed: removals, preserved: conflicts, conflicts, provenance: coreSourceCommit, manifestChanged: provenanceChanged, backup: null }
   if (!options.dryRun && conflicts.length) {
     report.errors = ["Update blocked because locally modified Core-managed files require an explicit merge."]
   } else if (!options.dryRun && changed > 0) {
@@ -549,7 +560,9 @@ async function update(options) {
         await writeApplied("package.json", json(mergeCoreDependencies(currentPackage, corePackageVersions())))
       }
       const managedFiles = await managedFilesForConsumer(directory, source)
-      await writeApplied(".saas-core-manifest.json", json({ ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), templateVersion: VERSION, productOwnedPaths, managedFiles, generatedAt: new Date().toISOString() }))
+      const nextManifest = { ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), templateVersion: VERSION, productOwnedPaths, managedFiles, generatedAt: new Date().toISOString() }
+      if (coreSourceCommit) nextManifest.coreSourceCommit = coreSourceCommit
+      await writeApplied(".saas-core-manifest.json", json(nextManifest))
       await validateUpdatedConsumer(directory, source, { ...manifest, packageVersions: corePackageVersions() })
       report.backup = backup
     } catch (error) {

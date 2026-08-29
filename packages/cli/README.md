@@ -18,7 +18,10 @@ saas-core update ../PlaceDJ --source ../saas-core
 template directory directly). It is an explicit development-source override;
 without it, the installed/packed template and normal release update semantics
 are unchanged. The same manifest conflict checks, product-owned exclusions,
-backup, post-update validation and rollback apply to local-source updates.
+backup, post-update validation and rollback apply to local-source updates. When
+the source is inside a Git checkout, init/update records its 40-character
+`coreSourceCommit` in the consumer manifest; it records no local path and older
+manifests without this optional field remain valid.
 
 The CLI is tooling, not application runtime. Generated consumers place it in
 `devDependencies`; the app package is a template carrier and is not retained

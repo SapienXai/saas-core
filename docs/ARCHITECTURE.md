@@ -156,7 +156,9 @@ contracts; `packages/ui` contains the source-derived reusable primitives; and
 portable `pack`, `init`, `doctor`, `diff`, and `update` behavior based on a
 managed-file manifest. `diff` and `update` can use an explicit local Core
 repository/template through `--source`; this is a development override and
-does not write checkout paths or local dependency URLs into a consumer.
+does not write checkout paths or local dependency URLs into a consumer. If the
+source is a Git checkout, local init/update records the optional
+`coreSourceCommit` SHA for provenance without recording the source path.
 
 The controlled namespace is `@sapienx`: `@sapienx/saas-core`,
 `@sapienx/saas-core-config`, `@sapienx/saas-core-ui`,
