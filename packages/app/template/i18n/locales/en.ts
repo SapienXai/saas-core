@@ -33,7 +33,7 @@ export const en = {
     signInDescription: "Sign in to your SaaS Core account.", signUp: "Create your account", signUpAction: "Create account",
     signUpDescription: "Start managing your workspace in one place.", signingIn: "Signing in…", updatePassword: "Update password", updating: "Updating…",
     register: "Register", signInAction: "Sign In", signInTitle: "Let’s sign you in.", signInSubtitle: "Welcome back.\nAccess your workspace.",
-    signUpTitle: "Create your\naccount.", signUpSubtitle: "Start building with {product}.", createAccountAction: "Create Account",
+    signUpTitle: "Create your account.", signUpSubtitle: "Start building with {product}.", createAccountAction: "Create Account",
     useAnotherEmail: "Use another email", welcomeBack: "Welcome back", welcomeTitle: "Build your SaaS\nfaster.", welcomeDescription: "Launch products, manage teams, and\nscale from one powerful core platform.",
     errors: {
       generic: "We could not complete that request. Please try again.", googleUnavailable: "Google sign-in is not available yet. Please use email and password, or try again later.",

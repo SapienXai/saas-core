@@ -44,23 +44,64 @@
 
 .auth-media-background-frame {
   display: block;
+  position: relative;
+  z-index: 0;
   height: 100%;
   width: 100%;
   border: 0;
   pointer-events: none;
   transform: scale(1.08);
   transform-origin: center;
-  filter: grayscale(1) saturate(0) contrast(1.04) brightness(0.76);
+  filter: saturate(0.96) contrast(1.05) brightness(0.68);
 }
 
-.auth-media-background::after {
+.auth-media-background > span {
   position: absolute;
   inset: 0;
+  display: block;
   pointer-events: none;
-  content: "";
+}
+
+.auth-media-background-cinematic {
+  z-index: 1;
   background:
-    linear-gradient(90deg, rgba(5, 6, 6, 0.62) 0%, rgba(5, 6, 6, 0.38) 50%, rgba(5, 6, 6, 0.6) 100%),
-    linear-gradient(180deg, rgba(5, 6, 6, 0.28) 0%, rgba(5, 6, 6, 0.08) 45%, rgba(5, 6, 6, 0.68) 100%);
+    linear-gradient(90deg, rgba(4, 3, 10, 0.5) 0%, rgba(4, 3, 10, 0.16) 52%, rgba(4, 3, 10, 0.38) 100%),
+    linear-gradient(180deg, rgba(4, 3, 10, 0.18) 0%, transparent 44%, rgba(4, 3, 10, 0.52) 100%);
+}
+
+.auth-media-background-scanlines {
+  z-index: 2;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(247, 244, 255, 0.055) 0,
+    rgba(247, 244, 255, 0.055) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+  mix-blend-mode: screen;
+  opacity: 0.34;
+}
+
+.auth-media-background-grain {
+  z-index: 3;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.78' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.48'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  mix-blend-mode: soft-light;
+  opacity: 0.045;
+}
+
+.auth-media-background-vignette {
+  z-index: 4;
+  background: radial-gradient(ellipse 78% 72% at 50% 46%, transparent 22%, rgba(3, 2, 9, 0.08) 58%, rgba(3, 2, 9, 0.64) 100%);
+  opacity: 0.86;
+}
+
+.auth-media-background-sweep {
+  z-index: 5;
+  background: linear-gradient(106deg, transparent 28%, rgba(220, 214, 255, 0.08) 48%, transparent 68%);
+  opacity: 0.28;
+  transform: translate3d(-75%, 0, 0);
+  animation: auth-broadcast-sweep 24s ease-in-out infinite alternate;
 }
 
 .auth-page::before {
@@ -589,6 +630,13 @@
   .auth-media-background-frame { transform: scale(1.08); }
 }
 
+@media (max-width: 699px) {
+  .auth-media-background-frame {
+    transform: scale(1.16);
+    filter: saturate(0.96) contrast(1.05) brightness(0.64);
+  }
+}
+
 @media (max-height: 740px) and (max-width: 699px) {
   .auth-entry-content { padding-block: 8px 12px; }
   .auth-illustration { width: min(100%, 330px); }
@@ -601,6 +649,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .auth-media-background-frame { display: none; }
+  .auth-media-background-sweep { opacity: 0; animation: none; }
   .auth-page *,
   .auth-page *::before,
   .auth-page *::after {
@@ -608,6 +657,16 @@
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+@media (prefers-reduced-data: reduce) {
+  .auth-media-background-frame { display: none; }
+  .auth-media-background-sweep { opacity: 0; animation: none; }
+}
+
+@keyframes auth-broadcast-sweep {
+  from { transform: translate3d(-75%, 0, 0); }
+  to { transform: translate3d(75%, 0, 0); }
 }
 
 /* Shared management shell */

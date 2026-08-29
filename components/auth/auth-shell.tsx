@@ -42,6 +42,11 @@ function AuthMediaBackground() {
         referrerPolicy="no-referrer"
         allow="autoplay; fullscreen; picture-in-picture"
       />
+      <span className="auth-media-background-cinematic" />
+      <span className="auth-media-background-scanlines" />
+      <span className="auth-media-background-grain" />
+      <span className="auth-media-background-vignette" />
+      <span className="auth-media-background-sweep" />
     </div>
   )
 }
