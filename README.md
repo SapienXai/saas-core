@@ -217,6 +217,14 @@ does not change existing subscriptions when the default changes.
 
 After Core onboarding, a product may hand off to an internal product route with
 `PRODUCT_CONFIG.onboarding.productSetupPath`; the safe default is `/app`.
+Manual Workspace provisioning remains the default. A product whose first
+meaningful setup action should create its own resource may explicitly opt into
+`workspaceProvisioning: "deferred"`. In that mode, an authenticated user with
+no Workspace is sent to the product setup route, and the product calls the
+generic server-side `ensureInitialWorkspace({ nameHint })` capability when the
+first action is submitted. Core reuses an existing membership, enforces the
+configured Workspace limit, creates the owner membership, and generates a
+unique Workspace slug; it never receives or models the product resource.
 Core does not know the product’s domain or commercial plan names. Account,
 Workspace, Platform, and Product concerns remain separate, and Workspace roles
 do not imply Platform roles.

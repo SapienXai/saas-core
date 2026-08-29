@@ -38,9 +38,21 @@ and never duplicate generic implementations in both repositories.
 
 The optional `onboarding.productSetupPath` is the product handoff after Core
 has created the first Workspace. It must be an internal path; omitted or
-invalid values resolve to `/app`. Core onboarding itself owns only Account,
-Workspace, membership, and the atomic initial subscription setup. An invited
-member can accept access without being forced through owner onboarding.
+invalid values resolve to `/app`. Manual Workspace provisioning remains the
+default. A product can explicitly set
+`onboarding.workspaceProvisioning` to `"deferred"` when its first meaningful
+product setup action should trigger Workspace creation. Core then exposes the
+server-only `ensureInitialWorkspace({ nameHint })` capability: it accepts only
+a generic display-name hint, reuses an authorized existing membership, and
+otherwise performs the normal plan-limited Workspace and owner-membership
+bootstrap with database-owned unique slug generation. The product resource is
+created by product code after the helper returns; Core never names or stores
+that resource. The operation is serialized per account so retries cannot create
+another initial Workspace. An invited member is reused rather than provisioned
+an unnecessary Workspace and still needs the product's own write permission.
+Core onboarding itself owns only Account, Workspace, membership, and the atomic
+initial subscription setup. An invited member can accept access without being
+forced through owner onboarding.
 
 The commercial catalog is product-owned too. A product can define any plan
 keys, prices, feature keys, and usage metric keys; Core does not require a

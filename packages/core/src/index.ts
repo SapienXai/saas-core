@@ -44,6 +44,8 @@ export type ProductIdentity = {
 
 export type ProductOnboarding = {
   productSetupPath?: string | null
+  /** Keep manual Workspace creation as the default; deferred is an explicit product-first handoff. */
+  workspaceProvisioning?: "manual" | "deferred"
 }
 
 export type ProductAuthConfig = {
@@ -112,6 +114,9 @@ export function defineProductConfig<T extends ProductConfigContract>(config: T):
   if (!defaultPlan?.limits || !Object.prototype.hasOwnProperty.call(defaultPlan.limits, "core.workspaces")) throw new Error("The default plan must explicitly define limits.core.workspaces; use null only for intentional unlimited workspaces.")
   const productSetupPath = config.onboarding?.productSetupPath
   if (productSetupPath && (!productSetupPath.startsWith("/") || productSetupPath.startsWith("//"))) throw new Error("Product onboarding path must be an internal path.")
+  const workspaceProvisioning = config.onboarding?.workspaceProvisioning ?? "manual"
+  if (workspaceProvisioning !== "manual" && workspaceProvisioning !== "deferred") throw new Error("Workspace provisioning must be manual or deferred.")
+  if (workspaceProvisioning === "deferred" && !productSetupPath?.trim()) throw new Error("Deferred Workspace provisioning requires a product onboarding path.")
   return config
 }
 

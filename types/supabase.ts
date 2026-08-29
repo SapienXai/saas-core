@@ -1150,6 +1150,13 @@ export type Database = {
           workspace_slug: string
         }[]
       }
+      ensure_initial_workspace: {
+        Args: { target_workspace_id?: string | null; target_workspace_name: string }
+        Returns: {
+          workspace_id: string
+          workspace_slug: string
+        }[]
+      }
       claim_email_delivery_event: {
         Args: { target_event_id: string; target_lease_token: string }
         Returns: {

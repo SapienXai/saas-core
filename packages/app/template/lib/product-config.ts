@@ -25,6 +25,8 @@ export type ProductCatalog = {
 export type ProductOnboardingConfig = {
   /** Optional product-owned setup route after Core onboarding is complete. */
   productSetupPath?: string | null
+  /** Manual Workspace creation is the compatibility default. */
+  workspaceProvisioning?: "manual" | "deferred"
 }
 
 export type ProductAuthConfig = {
@@ -90,4 +92,12 @@ export function getProductOnboardingPath() {
   const configured = PRODUCT_CONFIG.onboarding?.productSetupPath?.trim()
   if (!configured || !configured.startsWith("/") || configured.startsWith("//")) return "/app"
   return configured
+}
+
+export function getWorkspaceProvisioningMode() {
+  return PRODUCT_CONFIG.onboarding?.workspaceProvisioning === "deferred" ? "deferred" as const : "manual" as const
+}
+
+export function isDeferredWorkspaceProvisioning() {
+  return getWorkspaceProvisioningMode() === "deferred"
 }

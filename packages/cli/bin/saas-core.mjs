@@ -146,7 +146,7 @@ export type ProductConfig = {
   themeColor: string
   description: string
   capabilities: Readonly<Record<string, boolean>>
-  onboarding?: { productSetupPath?: string | null }
+  onboarding?: { productSetupPath?: string | null; workspaceProvisioning?: "manual" | "deferred" }
   auth?: ProductAuthConfig
   shell?: ProductShellConfig
   catalog: ProductCatalog

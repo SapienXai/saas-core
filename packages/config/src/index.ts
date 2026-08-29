@@ -22,6 +22,9 @@ export function defineProductConfig(config: SaaSCoreProductConfig): SaaSCoreProd
   const defaultPlan = config.catalog.plans.find((plan) => plan.key === config.catalog.defaultPlanKey)
   if (!defaultPlan?.limits || !Object.prototype.hasOwnProperty.call(defaultPlan.limits, "core.workspaces")) throw new Error("The default plan must explicitly define limits.core.workspaces; use null only for intentional unlimited workspaces.")
   if (config.onboarding?.productSetupPath && (!config.onboarding.productSetupPath.startsWith("/") || config.onboarding.productSetupPath.startsWith("//"))) throw new Error("Product onboarding path must be an internal path.")
+  const workspaceProvisioning = config.onboarding?.workspaceProvisioning ?? "manual"
+  if (workspaceProvisioning !== "manual" && workspaceProvisioning !== "deferred") throw new Error("Workspace provisioning must be manual or deferred.")
+  if (workspaceProvisioning === "deferred" && !config.onboarding?.productSetupPath?.trim()) throw new Error("Deferred Workspace provisioning requires a product onboarding path.")
   return config
 }
 

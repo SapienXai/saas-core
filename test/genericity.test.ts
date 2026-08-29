@@ -38,4 +38,15 @@ describe("generic Core contracts", () => {
     expect(config.onboarding?.productSetupPath).toBe("/projects/setup")
     expect(() => defineCoreProductConfig({ ...config, onboarding: { productSetupPath: "https://example.test" } })).toThrow("internal path")
   })
+
+  it("keeps manual Workspace provisioning as the default and makes deferred setup explicit", () => {
+    const base = {
+      identity: { name: "Manual Proof", slug: "manual-proof" },
+      capabilities: {},
+      catalog: { defaultPlanKey: "default", plans: [{ key: "default", name: "Default", limits: { "core.workspaces": 1 } }], usageMetrics: [] },
+    }
+    expect(defineProductConfig(base).onboarding).toBeUndefined()
+    expect(defineCoreProductConfig({ ...base, onboarding: { productSetupPath: "/projects/setup", workspaceProvisioning: "deferred" } }).onboarding?.workspaceProvisioning).toBe("deferred")
+    expect(() => defineCoreProductConfig({ ...base, onboarding: { workspaceProvisioning: "deferred" } })).toThrow("requires a product onboarding path")
+  })
 })
