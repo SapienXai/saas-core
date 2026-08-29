@@ -1,11 +1,21 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import {
   classifyHostname,
   getCustomerHostnameParts,
+  getTrustedHostFromHeaders,
   HostnameValidationError,
+  isPlatformOwnedHostname,
   normalizeDnsTarget,
   normalizeHostname,
+  parseDevelopmentHostname,
 } from "../lib/domains/hostname"
+
+const originalNodeEnv = process.env.NODE_ENV
+const environment = process.env as Record<string, string | undefined>
+
+afterEach(() => {
+  environment.NODE_ENV = originalNodeEnv
+})
 
 describe("Core hostname classification", () => {
   it("recognizes platform and hosted hosts", () => {
@@ -32,6 +42,23 @@ describe("Core hostname classification", () => {
     expect(classifyHostname("192.168.1.115:3000").kind).toBe("LOCAL_DEVELOPMENT")
   })
 
+  it("treats supported nip.io hosts as production-like platform and Workspace hosts", () => {
+    expect(parseDevelopmentHostname("127.0.0.1.nip.io")).toMatchObject({
+      rootHostname: "127.0.0.1.nip.io",
+      ipAddress: "127.0.0.1",
+      kind: "PLATFORM_ROOT",
+    })
+    expect(classifyHostname("127.0.0.1.nip.io").kind).toBe("PLATFORM_ROOT")
+    expect(classifyHostname("app.127.0.0.1.nip.io")).toMatchObject({ kind: "PLATFORM_APP", workspaceSlug: null })
+    expect(classifyHostname("acme.127.0.0.1.nip.io")).toMatchObject({ kind: "HOSTED_WORKSPACE", workspaceSlug: "acme" })
+    expect(classifyHostname("192.168.1.108.nip.io").kind).toBe("PLATFORM_ROOT")
+    expect(classifyHostname("app.192.168.1.108.nip.io").kind).toBe("PLATFORM_APP")
+    expect(classifyHostname("acme.192.168.1.108.nip.io")).toMatchObject({ kind: "HOSTED_WORKSPACE", workspaceSlug: "acme" })
+    expect(classifyHostname("admin.192.168.1.108.nip.io")).toMatchObject({ kind: "UNKNOWN", reason: "platform-host-label" })
+    expect(classifyHostname("something.nip.io")).toMatchObject({ kind: "UNKNOWN", reason: "unsupported-development-host" })
+    expect(parseDevelopmentHostname("nested.acme.192.168.1.108.nip.io")).toBeNull()
+  })
+
   it("recognizes valid customer domains and rejects platform ownership", () => {
     expect(classifyHostname("tenant.project.example").kind).toBe("CUSTOM_WORKSPACE")
     expect(() => normalizeHostname("https://RESERVE.Example.com/")).not.toThrow()
@@ -50,6 +77,7 @@ describe("Core hostname classification", () => {
       "https://example.com/path",
       "example.com/path",
       "https://example.com?x=1",
+      "acme.192.168.1.108.nip.io",
     ]) {
       expect(() => normalizeHostname(value), value).toThrow(HostnameValidationError)
     }
@@ -78,5 +106,17 @@ describe("Core hostname classification", () => {
     expect(normalizeDnsTarget("https://CNAME.SAAS.EXAMPLE.COM/")).toBe("cname.saas.example.com")
     expect(normalizeDnsTarget("192.0.2.10")).toBeNull()
     expect(normalizeDnsTarget("cname.saas.example.com/path")).toBeNull()
+  })
+
+  it("keeps nip.io out of the persisted customer-domain path", () => {
+    expect(getCustomerHostnameParts("acme.192.168.1.108.nip.io")).toBeNull()
+    expect(() => normalizeHostname("acme.192.168.1.108.nip.io")).toThrow("cannot be connected as customer domains")
+    expect(isPlatformOwnedHostname("acme.192.168.1.108.nip.io")).toBe(true)
+
+    environment.NODE_ENV = "production"
+    expect(classifyHostname("192.168.1.108.nip.io")).toMatchObject({ kind: "UNKNOWN", reason: "unsupported-development-host" })
+    expect(classifyHostname("acme.192.168.1.108.nip.io")).toMatchObject({ kind: "UNKNOWN", reason: "unsupported-development-host" })
+    expect(isPlatformOwnedHostname("acme.192.168.1.108.nip.io")).toBe(false)
+    expect(getTrustedHostFromHeaders(new Headers({ host: "acme.192.168.1.108.nip.io:3000" }))).toBeNull()
   })
 })

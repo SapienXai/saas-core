@@ -3,6 +3,8 @@ export const PLATFORM_HOST_LABELS = new Set([
   "pricing", "help", "support", "status", "mail", "assets", "static",
 ])
 
+export const DEVELOPMENT_NIP_IO_SUFFIX = ".nip.io"
+
 export type HostnameKind =
   | "PLATFORM_ROOT"
   | "PLATFORM_WWW"
@@ -16,6 +18,13 @@ export type HostnameKind =
 export type HostnameClassification = { kind: HostnameKind; hostname: string | null; workspaceSlug: string | null; reason?: string }
 export type CustomerHostnameParts = { hostname: string; isApex: boolean; dnsHost: string }
 export type TrustedRequestHost = { hostname: string; host: string }
+export type DevelopmentHostnameParts = {
+  hostname: string
+  rootHostname: string
+  ipAddress: string
+  kind: "PLATFORM_ROOT" | "PLATFORM_WWW" | "PLATFORM_APP" | "HOSTED_WORKSPACE" | "RESERVED"
+  workspaceSlug: string | null
+}
 
 export class HostnameValidationError extends Error {
   constructor(message: string) { super(message); this.name = "HostnameValidationError" }
@@ -27,15 +36,68 @@ function configuredRootDomain() {
 function configuredAppDomain() {
   return (process.env.SAAS_CORE_APP_DOMAIN || `app.${configuredRootDomain()}`).trim().toLowerCase().replace(/^\.+|\.+$/g, "")
 }
-function isDevelopmentTunnel(hostname: string) { return process.env.NODE_ENV !== "production" && [".ngrok-free.dev", ".ngrok.app", ".ngrok.io", ".nip.io"].some((suffix) => hostname.endsWith(suffix)) }
-function isIPv4(value: string) {
+function isDevelopmentTunnelHostname(hostname: string) { return process.env.NODE_ENV !== "production" && [".ngrok-free.dev", ".ngrok.app", ".ngrok.io"].some((suffix) => hostname.endsWith(suffix)) }
+export function isIPv4(value: string) {
   const parts = value.split(".")
   return parts.length === 4 && parts.every((part) => /^(?:0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)
 }
-function isPrivateIPv4(value: string) {
+export function isLoopbackIPv4(value: string) {
+  return isIPv4(value) && Number(value.split(".")[0]) === 127
+}
+export function isPrivateIPv4(value: string) {
   if (!isIPv4(value)) return false
   const [first, second] = value.split(".").map(Number)
   return first === 10 || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168)
+}
+export function isDevelopmentIPv4(value: string) { return isLoopbackIPv4(value) || isPrivateIPv4(value) }
+export function isNipIoHostname(value: string) {
+  return value.trim().toLowerCase().replace(/\.$/, "").endsWith(DEVELOPMENT_NIP_IO_SUFFIX)
+}
+const WORKSPACE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+
+/**
+ * Parse only the supported private/loopback dotted IPv4 nip.io forms. The
+ * embedded IP is always the development root; a single leading label can be
+ * the app host or a hosted Workspace slug.
+ */
+export function parseDevelopmentHostname(value: string): DevelopmentHostnameParts | null {
+  const hostname = value.trim().toLowerCase().replace(/\.$/, "")
+  if (!isNipIoHostname(hostname) || !isValidHostnameShape(hostname)) return null
+
+  const withoutSuffix = hostname.slice(0, -DEVELOPMENT_NIP_IO_SUFFIX.length)
+  const labels = withoutSuffix.split(".")
+  const ipAddress = labels.slice(-4).join(".")
+  if (!isDevelopmentIPv4(ipAddress)) return null
+
+  const prefix = labels.slice(0, -4)
+  const rootHostname = `${ipAddress}${DEVELOPMENT_NIP_IO_SUFFIX}`
+  if (prefix.length === 0) return { hostname, rootHostname, ipAddress, kind: "PLATFORM_ROOT", workspaceSlug: null }
+  if (prefix.length !== 1) return null
+
+  const label = prefix[0]
+  if (label === "www") return { hostname, rootHostname, ipAddress, kind: "PLATFORM_WWW", workspaceSlug: null }
+  if (label === "app") return { hostname, rootHostname, ipAddress, kind: "PLATFORM_APP", workspaceSlug: null }
+  if (PLATFORM_HOST_LABELS.has(label)) return { hostname, rootHostname, ipAddress, kind: "RESERVED", workspaceSlug: null }
+  if (!WORKSPACE_SLUG_PATTERN.test(label)) return null
+  return { hostname, rootHostname, ipAddress, kind: "HOSTED_WORKSPACE", workspaceSlug: label }
+}
+
+export function isDevelopmentNipIoHostname(value: string) { return Boolean(parseDevelopmentHostname(value)) }
+
+/** Convert a raw private LAN IP into its reachable, hostname-shaped alias. */
+export function toReachableDevelopmentHostname(value: string) {
+  const hostname = value.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")
+  return isPrivateIPv4(hostname) ? `${hostname}${DEVELOPMENT_NIP_IO_SUFFIX}` : hostname
+}
+
+export function isLocalDevelopmentHostname(value: string | null | undefined) {
+  const hostname = value?.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "") || ""
+  return isLoopbackDevelopmentHostname(hostname) || isDevelopmentIPv4(hostname) || isDevelopmentNipIoHostname(hostname)
+}
+
+export function isLoopbackDevelopmentHostname(value: string | null | undefined) {
+  const hostname = value?.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "") || ""
+  return hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "127.0.0.1" || hostname === "::1"
 }
 function isIpAddress(value: string) { return isIPv4(value) || value.includes(":") || value.startsWith("[") || value.endsWith("]") }
 function isValidHostnameShape(value: string) {
@@ -70,6 +132,7 @@ function parseTrustedRequestHost(value: string | null): TrustedRequestHost | nul
 
   const hostname = parseHostname(raw, true, process.env.NODE_ENV !== "production")
   if (!hostname || parsed.hostname.toLowerCase().replace(/\.$/, "") !== hostname) return null
+  if (isNipIoHostname(hostname) && (process.env.NODE_ENV === "production" || !isDevelopmentNipIoHostname(hostname))) return null
   return { hostname, host: parsed.host }
 }
 
@@ -97,6 +160,7 @@ export function getRequestHostname(request: Request) {
 export function normalizeHostname(value: string) {
   const hostname = parseHostname(value, false)
   if (!hostname) throw new HostnameValidationError("Enter a valid hostname such as app.example.com.")
+  if (isNipIoHostname(hostname)) throw new HostnameValidationError("nip.io development hosts cannot be connected as customer domains.")
   const root = configuredRootDomain()
   if (hostname === root || hostname === `www.${root}` || hostname === configuredAppDomain() || hostname.endsWith(`.${root}`)) throw new HostnameValidationError("Platform hostnames cannot be connected as customer domains.")
   return hostname
@@ -105,13 +169,14 @@ export function tryNormalizeHostname(value: string) { try { return normalizeHost
 export function normalizeDnsTarget(value: string) { const hostname = parseHostname(value, false); return hostname && !isIpAddress(hostname) ? hostname : null }
 export function getCustomerHostnameParts(value: string): CustomerHostnameParts | null {
   const hostname = parseHostname(value, false)
-  if (!hostname) return null
+  if (!hostname || isNipIoHostname(hostname)) return null
   const labels = hostname.split(".")
   return { hostname, isApex: labels.length <= 2, dnsHost: labels.length <= 2 ? "@" : labels.slice(0, -2).join(".") }
 }
 export function isPlatformOwnedHostname(value: string) {
   const hostname = parseHostname(value, true)
   if (!hostname) return false
+  if (isNipIoHostname(hostname)) return process.env.NODE_ENV !== "production" && isDevelopmentNipIoHostname(hostname)
   const root = configuredRootDomain()
   return hostname === root || hostname === `www.${root}` || hostname === configuredAppDomain() || hostname.endsWith(`.${root}`)
 }
@@ -122,7 +187,15 @@ export function classifyHostname(value: string): HostnameClassification {
   if (hostname === root) return { kind: "PLATFORM_ROOT", hostname, workspaceSlug: null }
   if (hostname === `www.${root}`) return { kind: "PLATFORM_WWW", hostname, workspaceSlug: null }
   if (hostname === configuredAppDomain()) return { kind: "PLATFORM_APP", hostname, workspaceSlug: null }
-  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "127.0.0.1" || (process.env.NODE_ENV !== "production" && isPrivateIPv4(hostname)) || isDevelopmentTunnel(hostname)) return { kind: "LOCAL_DEVELOPMENT", hostname, workspaceSlug: null }
+  if (process.env.NODE_ENV !== "production") {
+    const development = parseDevelopmentHostname(hostname)
+    if (development) {
+      if (development.kind === "RESERVED") return { kind: "UNKNOWN", hostname, workspaceSlug: null, reason: "platform-host-label" }
+      return { kind: development.kind, hostname, workspaceSlug: development.workspaceSlug }
+    }
+  }
+  if (isNipIoHostname(hostname)) return { kind: "UNKNOWN", hostname, workspaceSlug: null, reason: "unsupported-development-host" }
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "127.0.0.1" || (process.env.NODE_ENV !== "production" && isPrivateIPv4(hostname)) || isDevelopmentTunnelHostname(hostname)) return { kind: "LOCAL_DEVELOPMENT", hostname, workspaceSlug: null }
   if (hostname.endsWith(".vercel.app") || hostname.endsWith(".vercel.sh")) return { kind: "VERCEL_PREVIEW", hostname, workspaceSlug: null }
   if (hostname.endsWith(`.${root}`)) {
     const labels = hostname.slice(0, -(root.length + 1)).split(".")
@@ -131,9 +204,36 @@ export function classifyHostname(value: string): HostnameClassification {
   }
   return { kind: "CUSTOM_WORKSPACE", hostname, workspaceSlug: null }
 }
-export function getTrustedPlatformOrigin(kind: "root" | "app") {
+export type TrustedPlatformOriginOptions = { requestHost?: string | null }
+
+function developmentRequestHost(value: string | null | undefined) {
+  const raw = value?.trim() || ""
+  if (!raw || /^[a-z][a-z\d+.-]*:\/\//i.test(raw) || /[\\/\s?#]/.test(raw)) return null
+  try {
+    const parsed = new URL(`http://${raw}`)
+    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null
+    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "")
+    const development = parseDevelopmentHostname(hostname)
+    const rootHostname = development?.rootHostname || (isPrivateIPv4(hostname) ? `${hostname}${DEVELOPMENT_NIP_IO_SUFFIX}` : null)
+    return rootHostname ? { rootHostname, port: parsed.port } : null
+  } catch {
+    return null
+  }
+}
+
+export function getDevelopmentPlatformOrigin(kind: "root" | "app", requestHost?: string | null) {
+  if (process.env.NODE_ENV === "production") return null
+  const development = developmentRequestHost(requestHost)
+  if (!development) return null
+  const hostname = kind === "app" ? `app.${development.rootHostname}` : development.rootHostname
+  return `http://${hostname}${development.port ? `:${development.port}` : ""}`
+}
+
+export function getTrustedPlatformOrigin(kind: "root" | "app", options: TrustedPlatformOriginOptions = {}) {
+  const developmentOrigin = getDevelopmentPlatformOrigin(kind, options.requestHost)
+  if (developmentOrigin) return developmentOrigin
   const hostname = kind === "app" ? configuredAppDomain() : configuredRootDomain()
-  const isLocal = hostname === "localhost" || hostname.endsWith(".localhost")
+  const isLocal = process.env.NODE_ENV !== "production" && isLocalDevelopmentHostname(hostname)
   return `${isLocal ? "http" : "https"}://${hostname}`
 }
 export function getConfiguredRootDomain() { return configuredRootDomain() }

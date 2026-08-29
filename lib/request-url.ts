@@ -1,4 +1,4 @@
-import { getTrustedRequestHost } from "@/lib/domains/hostname"
+import { getTrustedRequestHost, toReachableDevelopmentHostname } from "@/lib/domains/hostname"
 
 /**
  * Next's development server can build request.url from its bind address
@@ -27,12 +27,7 @@ export function getAuthRedirectOrigin(origin: string) {
   const url = new URL(origin)
   if (process.env.NODE_ENV === "production") return url.origin
 
-  const parts = url.hostname.split(".")
-  const isPrivateIpv4 = parts.length === 4 && parts.every((part) => /^\d+$/.test(part)) && (() => {
-    const [first, second] = parts.map(Number)
-    return first === 10 || (first === 192 && second === 168) || (first === 172 && second >= 16 && second <= 31)
-  })()
-  if (isPrivateIpv4) url.hostname = `${url.hostname}.nip.io`
+  url.hostname = toReachableDevelopmentHostname(url.hostname)
   return url.origin
 }
 

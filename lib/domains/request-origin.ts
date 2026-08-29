@@ -1,7 +1,7 @@
 import "server-only"
 
 import { headers } from "next/headers"
-import { getTrustedHostFromHeaders } from "@/lib/domains/hostname"
+import { getTrustedHostFromHeaders, toReachableDevelopmentHostname } from "@/lib/domains/hostname"
 import { getPlatformOrigin } from "@/lib/platform-urls"
 
 export async function getRequestOrigin() {
@@ -17,8 +17,15 @@ export async function getRequestOrigin() {
     : process.env.NODE_ENV === "production" ? "https:" : "http:"
 
   try {
-    return new URL(`${protocol}//${trustedHost.host}`).origin
+    const hostname = toReachableDevelopmentHostname(trustedHost.hostname)
+    const host = hostname === trustedHost.hostname ? trustedHost.host : hostWithPort(hostname, trustedHost.host)
+    return new URL(`${protocol}//${host}`).origin
   } catch {
     return getPlatformOrigin()
   }
+}
+
+function hostWithPort(hostname: string, host: string) {
+  const port = new URL(`http://${host}`).port
+  return `${hostname}${port ? `:${port}` : ""}`
 }

@@ -1,24 +1,25 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
-import { classifyHostname, getRequestHostname, getTrustedPlatformOrigin } from "@/lib/domains/hostname"
+import { classifyHostname, getRequestHostname, getTrustedPlatformOrigin, getTrustedRequestHost } from "@/lib/domains/hostname"
 import { getRequestUrl } from "@/lib/request-url"
 import { isCanonicalAppPath, normalizeRequestPathname } from "@/lib/route-ownership"
 
 export async function proxy(request: NextRequest) {
   const pathname = normalizeRequestPathname(request.nextUrl.pathname) || "/"
   const requestUrl = getRequestUrl(request)
-  const classification = classifyHostname(getRequestHostname(request) || "")
+  const trustedHost = getTrustedRequestHost(request)
+  const classification = classifyHostname(trustedHost?.hostname || getRequestHostname(request) || "")
   const isTenantHost = classification.kind === "HOSTED_WORKSPACE" || classification.kind === "CUSTOM_WORKSPACE"
 
   if (classification.kind === "PLATFORM_WWW") {
-    const redirectUrl = new URL(pathname + request.nextUrl.search, getTrustedPlatformOrigin("root"))
+    const redirectUrl = new URL(pathname + request.nextUrl.search, getTrustedPlatformOrigin("root", { requestHost: trustedHost?.host }))
     return NextResponse.redirect(redirectUrl, 308)
   }
 
   // Management and authentication have one canonical origin. Local *.localhost testing keeps the direct route.
   if (isTenantHost && isCanonicalAppPath(pathname)) {
-    const redirectUrl = new URL(pathname + request.nextUrl.search, getTrustedPlatformOrigin("app"))
+    const redirectUrl = new URL(pathname + request.nextUrl.search, getTrustedPlatformOrigin("app", { requestHost: trustedHost?.host }))
     return NextResponse.redirect(redirectUrl, 307)
   }
 

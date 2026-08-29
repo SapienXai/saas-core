@@ -54,6 +54,16 @@ before route ownership checks, preventing dot-segment bypasses. `/api`,
 `/_next`, manifest, PWA, and static asset paths remain protected system
 surfaces.
 
+Development nip.io trust is narrow and environment-gated. Only a dotted
+loopback/private IPv4 with at most one leading app, reserved, or Workspace
+label is accepted; unsupported `*.nip.io` hosts are rejected from the trusted
+request-host boundary. In development, a supported Workspace alias resolves
+through the normal hosted Workspace lookup, while the root and app aliases use
+the same canonical platform route model. In production, all nip.io aliases are
+untrusted and cannot masquerade as platform hosts or become persisted customer
+domains. Raw private LAN addresses are converted to nip.io only for reachable
+development Auth/origin targets; the active port is retained.
+
 ## Platform and service roles
 
 Platform Control is a separate membership plane. Platform tables revoke access

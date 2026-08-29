@@ -191,10 +191,15 @@ paths (`/api`, `/_next`, manifest, PWA, sitemap, robots, OpenAPI, service
 worker, and static assets) are protected but are not treated as app-origin
 redirects. All other paths are product-owned, including `/`.
 
-For local development, `*.localhost` retains Core’s existing
-`LOCAL_DEVELOPMENT` classification. Use a controlled configured root domain in
-unit/integration or host-header tests when testing hosted Workspace routing;
-do not assume `workspace.localhost` is a production hosted Workspace.
+For simple local development, `localhost`, raw loopback/LAN addresses, and
+`*.localhost` retain `LOCAL_DEVELOPMENT` semantics. For production-like
+hostname testing, use a supported dotted IPv4 nip.io root:
+`<workspace>.<private-ip>.nip.io` is classified as `HOSTED_WORKSPACE` with the
+leading label as its slug, while `<private-ip>.nip.io` and
+`app.<private-ip>.nip.io` are the root and canonical app equivalents. The
+embedded address must be loopback or private IPv4; arbitrary nip.io hosts are
+not trusted or valid customer domains. nip.io is DNS mapping only, not a
+tunnel, and tests do not require live DNS.
 
 ## Extending the application
 

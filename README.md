@@ -107,9 +107,27 @@ PWA endpoints, and static assets are reserved. Other paths remain product-owned
 public paths. Public resolution reads persisted Workspace/domain state only; it
 does not call Vercel, DNS, or another provider during page rendering.
 
-Local `*.localhost` hosts retain their existing `LOCAL_DEVELOPMENT` semantics.
-Public-host routing tests use a controlled configured root domain rather than
-claiming that localhost subdomains are production Workspace hosts.
+Simple local development remains available through `localhost`, raw loopback/
+LAN addresses, and `*.localhost`; those hosts retain `LOCAL_DEVELOPMENT`
+semantics. When hostname-aware routing should mirror production, use the
+supported dotted IPv4 `nip.io` forms:
+
+```text
+http://127.0.0.1.nip.io:<port>
+http://app.127.0.0.1.nip.io:<port>
+http://demo.127.0.0.1.nip.io:<port>
+
+http://192.168.1.108.nip.io:<port>
+http://app.192.168.1.108.nip.io:<port>
+http://demo.192.168.1.108.nip.io:<port>
+```
+
+Core classifies these as development equivalents of the configured root,
+application, and hosted Workspace hosts. The embedded address must be a
+loopback or private IPv4; arbitrary `something.nip.io` hosts are not trusted
+and nip.io hosts cannot be registered as customer domains. `nip.io` provides
+DNS mapping only; it is not a tunnel and does not expose the machine publicly.
+Public-host tests do not require live nip.io DNS.
 
 ## Source boundary
 

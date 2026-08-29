@@ -62,6 +62,23 @@ describe("public Workspace resolution", () => {
     })
   })
 
+  it("resolves a development nip.io Workspace with the same hosted semantics", async () => {
+    useResponses({ data: workspace, error: null })
+
+    const result = await resolvePublicWorkspace({ hostname: "acme.192.168.1.108.nip.io:3100", pathname: "/beach?workspace=other" })
+    expect(result).toEqual({
+      status: "resolved",
+      context: {
+        workspaceId: workspace.id,
+        workspaceSlug: "acme",
+        workspaceName: "Acme",
+        hostname: "acme.192.168.1.108.nip.io",
+        hostnameKind: "HOSTED_WORKSPACE",
+        pathname: "/beach",
+      },
+    })
+  })
+
   it("fails closed for unknown or non-public hosted Workspaces", async () => {
     useResponses({ data: null, error: null })
     expect(await resolvePublicWorkspace({ hostname: "unknown.example.com", pathname: "/beach" })).toEqual({ status: "not_found" })
@@ -167,6 +184,7 @@ describe("public Workspace resolution", () => {
       { hostname: "example.com", pathname: "/beach" },
       { hostname: "app.example.com", pathname: "/beach" },
       { hostname: "acme.localhost:3000", pathname: "/example" },
+      { hostname: "something.nip.io", pathname: "/example" },
       { hostname: "acme.example.com", pathname: "/app" },
       { hostname: "acme.example.com", pathname: "/api/health" },
     ]) {

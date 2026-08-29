@@ -87,13 +87,32 @@ canonical-app, and reserved system surfaces return `not_public_workspace`.
 extraction boundary with `proxy.ts`. It performs no Vercel API, DNS, provider
 refresh, or reconciliation call during page resolution. Domain management
 continues to own provider reconciliation and only its persisted result is
-consumed by the public resolver. `*.localhost` remains
-`LOCAL_DEVELOPMENT`; controlled root domains are used for deterministic tests.
+consumed by the public resolver.
+
+Development domains have one canonical parser in `lib/domains/hostname.ts`.
+Simple `localhost`, raw loopback/LAN, and `*.localhost` hosts remain
+`LOCAL_DEVELOPMENT`. Supported dotted IPv4 nip.io hosts mirror production
+semantics without a second routing model:
+
+```text
+127.0.0.1.nip.io              → PLATFORM_ROOT
+app.127.0.0.1.nip.io          → PLATFORM_APP
+acme.127.0.0.1.nip.io         → HOSTED_WORKSPACE (slug: acme)
+```
+
+The same forms work for private LAN IPv4 addresses. The parser accepts only a
+loopback/private embedded address and one optional leading label; arbitrary
+`*.nip.io` hosts are rejected from the trusted request boundary and customer
+domain normalization. nip.io is DNS mapping, not a tunnel; ngrok remains the
+separate development-tunnel path. Tests use host strings directly and never
+depend on live DNS.
 
 Core route ownership distinguishes canonical app paths from reserved public
 paths. A tenant/custom host requesting `/app`, `/app/team`, `/manage`,
 `/platform`, `/login`, or another canonical app descendant is redirected to
-`SAAS_CORE_APP_DOMAIN`, preserving the query string. Product-owned public paths
+`SAAS_CORE_APP_DOMAIN`, preserving the query string. On a supported nip.io
+Workspace host, the redirect instead targets `app.<same-development-root>`,
+preserving HTTP, the active port, pathname, and query string. Product-owned public paths
 such as `/beach` are not redirected. Dot-segment normalization uses the
 standard URL parser before these checks, so encoded/dot-segment traversal
 cannot bypass `/app` ownership.

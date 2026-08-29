@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import { classifyHostname, getRequestHostname, getTrustedRequestHost } from "../lib/domains/hostname"
-import { getAuthRedirectOrigin, getRequestUrl } from "../lib/request-url"
+import { getAuthRedirectOrigin, getAuthRedirectUrl, getRequestUrl } from "../lib/request-url"
+
+const originalNodeEnv = process.env.NODE_ENV
+const environment = process.env as Record<string, string | undefined>
+
+afterEach(() => {
+  environment.NODE_ENV = originalNodeEnv
+})
 
 describe("trusted request hostname boundary", () => {
   it("uses the first forwarded host and preserves its port for development URLs", () => {
@@ -40,7 +47,20 @@ describe("trusted request hostname boundary", () => {
   it("uses a same-machine hostname alias for Auth redirects from a LAN host", () => {
     expect(getAuthRedirectOrigin("http://192.168.1.108:3100")).toBe("http://192.168.1.108.nip.io:3100")
     expect(getAuthRedirectOrigin("http://localhost:3100")).toBe("http://localhost:3100")
-    expect(classifyHostname("192.168.1.108.nip.io").kind).toBe("LOCAL_DEVELOPMENT")
+    expect(getAuthRedirectOrigin("http://192.168.1.108.nip.io:3100")).toBe("http://192.168.1.108.nip.io:3100")
+    expect(getAuthRedirectOrigin("http://acme.192.168.1.108.nip.io:3100")).toBe("http://acme.192.168.1.108.nip.io:3100")
+    expect(getAuthRedirectUrl(new Request("http://0.0.0.0:3000/login?next=%2Fapp", {
+      headers: { host: "acme.192.168.1.108.nip.io:3100" },
+    })).toString()).toBe("http://acme.192.168.1.108.nip.io:3100/login?next=%2Fapp")
+    expect(classifyHostname("192.168.1.108.nip.io").kind).toBe("PLATFORM_ROOT")
+    expect(classifyHostname("app.192.168.1.108.nip.io").kind).toBe("PLATFORM_APP")
+    expect(classifyHostname("acme.192.168.1.108.nip.io").kind).toBe("HOSTED_WORKSPACE")
+  })
+
+  it("disables the development alias in production", () => {
+    environment.NODE_ENV = "production"
+    expect(getAuthRedirectOrigin("http://192.168.1.108:3100")).toBe("http://192.168.1.108:3100")
+    expect(classifyHostname("acme.192.168.1.108.nip.io").kind).toBe("UNKNOWN")
   })
 
   it("does not accept credentials, paths, or a scheme as a trusted host", () => {

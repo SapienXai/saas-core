@@ -115,6 +115,11 @@ must preserve `lib/domains/hostname.ts`, `lib/route-ownership.ts`, and
 `lib/public-workspace.ts` as managed files. If a product customizes public
 paths, it must not claim Core canonical app paths or system/static paths.
 
+Development hostname behavior is also centralized there: use `localhost` for
+simple local work and `<private-ip>.nip.io` forms when testing root, app, or
+Workspace host semantics. Keep nip.io separate from ngrok tunnels and do not
+persist nip.io aliases as customer domains.
+
 The schema remains Core `2.0`; this capability uses the existing `workspaces`
 and `workspace_domains` tables and adds no migration or product-entity table.
 Domain provider reconciliation remains in the existing management workflow.

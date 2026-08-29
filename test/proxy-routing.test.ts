@@ -4,12 +4,15 @@ import { proxy } from "../proxy"
 
 const originalRoot = process.env.SAAS_CORE_ROOT_DOMAIN
 const originalApp = process.env.SAAS_CORE_APP_DOMAIN
+const originalNodeEnv = process.env.NODE_ENV
+const environment = process.env as Record<string, string | undefined>
 
 afterEach(() => {
   if (originalRoot === undefined) delete process.env.SAAS_CORE_ROOT_DOMAIN
   else process.env.SAAS_CORE_ROOT_DOMAIN = originalRoot
   if (originalApp === undefined) delete process.env.SAAS_CORE_APP_DOMAIN
   else process.env.SAAS_CORE_APP_DOMAIN = originalApp
+  environment.NODE_ENV = originalNodeEnv
 })
 
 describe("public hostname route ownership in proxy", () => {
@@ -61,5 +64,23 @@ describe("public hostname route ownership in proxy", () => {
     }))
     expect(response.status).toBe(307)
     expect(response.headers.get("location")).toBe("https://app.example.com/app?next=%2Fapp")
+  })
+
+  it("redirects a nip.io Workspace host to its same-port development app host", async () => {
+    environment.NODE_ENV = "development"
+    const response = await proxy(new NextRequest("http://acme.192.168.1.108.nip.io:3100/login?ref=mobile", {
+      headers: { host: "acme.192.168.1.108.nip.io:3100" },
+    }))
+    expect(response.status).toBe(307)
+    expect(response.headers.get("location")).toBe("http://app.192.168.1.108.nip.io:3100/login?ref=mobile")
+  })
+
+  it("redirects a nip.io www host to its same-port development root", async () => {
+    environment.NODE_ENV = "development"
+    const response = await proxy(new NextRequest("http://www.192.168.1.108.nip.io:3100/?ref=mobile", {
+      headers: { host: "www.192.168.1.108.nip.io:3100" },
+    }))
+    expect(response.status).toBe(308)
+    expect(response.headers.get("location")).toBe("http://192.168.1.108.nip.io:3100/?ref=mobile")
   })
 })
