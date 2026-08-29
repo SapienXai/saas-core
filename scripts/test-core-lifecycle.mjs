@@ -10,10 +10,12 @@ const source = path.join(root, "packages/app/template")
 const fixture = await fsTemp("saas-core-lifecycle-")
 const coreA = path.join(fixture, "core-a")
 const coreB = path.join(fixture, "core-b")
+const coreC = path.join(fixture, "core-c")
 const cleanProduct = path.join(fixture, "clean-product")
 const conflictProduct = path.join(fixture, "conflict-product")
 const rollbackProduct = path.join(fixture, "rollback-product")
 const legacyProduct = path.join(fixture, "legacy-product")
+const agentSurfaceProduct = path.join(fixture, "agent-surface-product")
 const localSourceProduct = path.join(fixture, "local-source-product")
 const gitSourceRepository = path.join(fixture, "git-source-repository")
 
@@ -47,6 +49,14 @@ try {
   await writeFile(changedManaged, `${await readFile(changedManaged, "utf8")}\n// Synthetic Core B change.\n`, "utf8")
   await writeFile(path.join(coreB, "app/core-lifecycle-fixture.ts"), "export const lifecycleFixture = true\n", "utf8")
   await rm(path.join(coreB, "app/robots.ts"))
+  await cp(coreB, coreC, { recursive: true })
+  const agentSurfaceFiles = [
+    "components/agent-surface/core-webmcp-tools.tsx",
+    "lib/agent-surface/server.ts",
+    "lib/agent-surface/webmcp.ts",
+  ]
+  for (const relative of agentSurfaceFiles) await rm(path.join(coreA, relative), { force: true })
+  await writeFile(path.join(coreC, "lib/agent-surface/webmcp.ts"), `${await readFile(path.join(coreC, "lib/agent-surface/webmcp.ts"), "utf8")}\n// Synthetic Core C change.\n`, "utf8")
 
   await mkdir(path.join(gitSourceRepository, "packages/app"), { recursive: true })
   await cp(coreB, path.join(gitSourceRepository, "packages/app/template"), { recursive: true })
@@ -82,6 +92,30 @@ try {
   assert(updatedLocalManifest.coreSourceCommit === gitSourceCommit, "local source update did not record the Core Git SHA")
   result = run(coreB, ["doctor", localSourceProduct, "--json"])
   assert(result.status === 0, result.stderr || "local source post-update doctor failed")
+
+  // An existing consumer from before Agent Surface must receive only the new
+  // managed files; its product-owned theme remains byte-for-byte unchanged.
+  result = run(coreA, ["init", "Agent Surface Consumer", agentSurfaceProduct])
+  assert(result.status === 0, result.stderr || "Agent Surface fixture init failed")
+  const agentThemeFile = path.join(agentSurfaceProduct, "styles/product-theme.css")
+  const agentTheme = `${await readFile(agentThemeFile, "utf8")}\n:root { --agent-surface-test-token: #123456; }\n`
+  await writeFile(agentThemeFile, agentTheme, "utf8")
+  result = run(coreB, ["update", agentSurfaceProduct, "--dry-run", "--json"])
+  assert(result.status === 0, result.stderr || "Agent Surface fixture dry-run failed")
+  const agentDryRun = JSON.parse(result.stdout)
+  for (const relative of agentSurfaceFiles) assert(agentDryRun.added.includes(relative), `Agent Surface dry-run omitted ${relative}`)
+  result = run(coreB, ["update", agentSurfaceProduct, "--json"])
+  assert(result.status === 0, result.stderr || result.stdout || "Agent Surface fixture update failed")
+  assert((await readFile(agentThemeFile, "utf8")) === agentTheme, "Agent Surface update overwrote the product-owned theme")
+  for (const relative of agentSurfaceFiles) assert(existsSync(path.join(agentSurfaceProduct, relative)), `Agent Surface update did not add ${relative}`)
+  const agentConflictFile = path.join(agentSurfaceProduct, "lib/agent-surface/webmcp.ts")
+  const agentConflictContent = `${await readFile(agentConflictFile, "utf8")}\n// local managed modification\n`
+  await writeFile(agentConflictFile, agentConflictContent, "utf8")
+  result = run(coreC, ["update", agentSurfaceProduct, "--json"])
+  assert(result.status === 2, "modified Agent Surface managed file did not produce an update conflict")
+  const agentConflictReport = JSON.parse(result.stdout)
+  assert(agentConflictReport.conflicts.includes("lib/agent-surface/webmcp.ts"), "Agent Surface conflict report omitted the modified file")
+  assert((await readFile(agentConflictFile, "utf8")) === agentConflictContent, "Agent Surface conflict overwrote the local modification")
 
   // Simulate a consumer generated before the product shell contract existed.
   // Its product-owned config must survive the update byte-for-byte while the
@@ -158,7 +192,7 @@ try {
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
   assert(result.status === 0, result.stderr || "doctor rejected the consumer after rollback")
 
-  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, rollback: true, rollbackDoctor: true }))
+  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, agentSurfaceUpdate: true, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
 } finally {
   await rm(fixture, { recursive: true, force: true })
 }

@@ -257,6 +257,29 @@ Core continues to own authentication, Workspace membership, billing
 enforcement, platform operator access, outbox delivery, PWA safety, and the
 generic interaction foundation.
 
+## Agent Surface
+
+Agent tools are product-owned capabilities mounted on the page where their
+context is valid. Import `defineAgentTool` from `@sapienx/saas-core`, define
+one JSON Schema-backed contract per capability, and render the managed
+`CoreWebMcpTools` component with that page’s tools. Core handles
+`document.modelContext` feature detection, standard WebMCP annotations,
+registration cleanup, duplicate-name protection, confirmation, and
+`AbortSignal` forwarding. A browser without WebMCP remains a normal usable
+browser page.
+
+Products must declare `returnsUntrustedContent` explicitly, keep mutations
+behind `requiresConfirmation` when appropriate, and enforce authentication,
+Workspace authorization, role, entitlement, and input validation in product
+execution code. For product-owned HTTP endpoints, the managed server helper
+`isSameOriginAgentRequest()` provides a fail-closed browser boundary. It is not
+authentication or Workspace authorization.
+
+Agent Surface is available after a Core update but exposes zero tools until a
+product page opts in. It adds no product configuration requirement and no
+database migration. See [Agent Surface](AGENT-SURFACE.md) for the full
+contract.
+
 For example, a Projects product can define a `projects` table with
 `workspace_id`, its own RLS policy, a `projects` navigation entry, a product
 page, and a `projects` usage meter. None of those require a Core migration;

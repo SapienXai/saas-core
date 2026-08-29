@@ -193,3 +193,20 @@ The baseline is runtime `2.0.0` and Core schema `2.0`. Schema metadata lives in
 `private.core_schema_metadata` and is readable by the CLI only through a
 service-role-only RPC; product catalog changes do not change the schema
 version.
+
+## Agent Surface
+
+Core includes a product-neutral Agent Surface foundation without registering
+any product capabilities. `@sapienx/saas-core` owns `AgentToolDefinition`,
+JSON Schema validation, explicit read/mutation and untrusted-content metadata,
+confirmation semantics, and lifecycle event types. The managed application
+template owns the client-only `CoreWebMcpTools` adapter and the server-only
+`isSameOriginAgentRequest` helper.
+
+Products opt in on individual pages and own the tool definitions, domain
+execution, authentication, Workspace authorization, and any endpoint. The
+adapter uses the current `document.modelContext` imperative WebMCP API when
+available, forwards the WebMCP `AbortSignal`, and aborts registrations on
+unmount. There is no universal Core agent endpoint, automatic registry,
+database table, or remote MCP implementation. See
+[Agent Surface](AGENT-SURFACE.md) for the contract and security boundary.

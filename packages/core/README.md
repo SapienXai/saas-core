@@ -1,5 +1,10 @@
 # @sapienx/saas-core
 
+Generic SaaS Core contracts include product configuration, compatibility
+metadata, and the Agent Surface contract. Use `defineAgentTool()` for a
+validated, transport-neutral capability definition; the managed application
+template supplies the page-scoped WebMCP adapter.
+
 Portable workspace, entitlement, catalog, schema, manifest, and compatibility
 contracts for SaaS Core products. This package contains no Next.js, Supabase
 service-role, Paddle, or product-domain code.

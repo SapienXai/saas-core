@@ -101,6 +101,9 @@ importers:
       '@react-email/render':
         specifier: 1.2.0
         version: 1.2.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@sapienx/saas-core':
+        specifier: workspace:*
+        version: link:packages/core
       '@supabase/ssr':
         specifier: 0.12.4
         version: 0.12.4(@supabase/supabase-js@2.112.3)

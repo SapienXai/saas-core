@@ -34,6 +34,9 @@ billing validation, email delivery, or service-role boundaries.
 - Custom workspace domains with provider verification/reconciliation.
 - Platform Control for workspaces, users, plans, domains, audit, health,
   attention, and controlled overrides.
+- Generic Agent Surface infrastructure: validated tool contracts, page-scoped
+  WebMCP registration, cancellation, confirmation, observability hooks, and
+  same-origin endpoint helpers. Products add all callable capabilities.
 - ReserveVia-derived responsive management shell, collapsed sidebar, mobile
   drawer, workspace switcher, account controls, theme persistence, Radix
   overlays, keyboard/focus behavior, loading states, toasts, and feedback.
@@ -144,6 +147,7 @@ Read the implementation contract in:
 - [Product integration](docs/PRODUCT-INTEGRATION.md)
 - [UI system](docs/UI-SYSTEM.md)
 - [Security](docs/SECURITY.md)
+- [Agent Surface](docs/AGENT-SURFACE.md)
 - [Upgrading](docs/UPGRADING.md)
 
 ## Database

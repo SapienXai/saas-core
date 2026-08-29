@@ -79,6 +79,131 @@ export type ProductConfigContract = {
   shell?: ProductShellConfig
 }
 
+/** A JSON Schema value accepted as the input contract for an agent tool. */
+export type JsonSchema = {
+  readonly $schema?: string
+  readonly type?: string | readonly string[]
+  readonly properties?: Readonly<Record<string, JsonSchema>>
+  readonly required?: readonly string[]
+  readonly items?: JsonSchema | readonly JsonSchema[]
+  readonly [keyword: string]: unknown
+}
+
+export type AgentToolKind = "read" | "mutation"
+
+export type AgentToolExecutionContext = {
+  signal: AbortSignal
+}
+
+export type AgentToolDefinition<Input = unknown, Output = unknown> = {
+  name: string
+  title?: string
+  description: string
+  inputSchema: JsonSchema
+  kind: AgentToolKind
+  returnsUntrustedContent: boolean
+  requiresConfirmation: boolean
+  /** Static product copy only; never derived from tool input. */
+  confirmationMessage?: string
+  execute(input: Input, context: AgentToolExecutionContext): Promise<Output>
+}
+
+export type AgentToolCancellationCode = "confirmation_rejected" | "confirmation_unavailable" | "cancelled"
+
+export type AgentToolCancellation = {
+  ok: false
+  error: {
+    code: AgentToolCancellationCode
+    message: string
+    retryable: boolean
+  }
+}
+
+export type AgentToolExecutionFailure = {
+  ok: false
+  error: {
+    code: "execution_failed"
+    message: "The tool could not be completed."
+  }
+}
+
+export type AgentToolResult<Output> = { ok: true; data: Output } | AgentToolExecutionFailure | AgentToolCancellation
+
+export type AgentSurfaceEvent =
+  | { type: "tool_registered"; toolName: string }
+  | { type: "tool_registration_failed"; toolName: string; errorCode: "duplicate_name" | "registration_failed" }
+  | { type: "tool_execution_started"; toolName: string }
+  | { type: "tool_execution_succeeded"; toolName: string; durationMs: number }
+  | { type: "tool_execution_failed"; toolName: string; durationMs: number; errorCode: "execution_failed" }
+  | { type: "tool_cancelled"; toolName: string; durationMs?: number }
+  | { type: "tool_confirmation_rejected"; toolName: string }
+
+export type AgentSurfaceObserver = (event: AgentSurfaceEvent) => void
+
+const VALID_JSON_SCHEMA_TYPES = new Set(["null", "boolean", "object", "array", "number", "string", "integer"])
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function validateJsonSchemaObject(value: unknown, path = "inputSchema"): asserts value is JsonSchema {
+  if (!isRecord(value)) throw new Error(`${path} must be a JSON Schema object.`)
+
+  if (value.type !== undefined) {
+    const types = typeof value.type === "string" ? [value.type] : value.type
+    if (!Array.isArray(types) || !types.length || types.some((item) => typeof item !== "string" || !VALID_JSON_SCHEMA_TYPES.has(item)) || new Set(types).size !== types.length) {
+      throw new Error(`${path}.type must contain valid JSON Schema types.`)
+    }
+  }
+
+  if (value.properties !== undefined) {
+    if (!isRecord(value.properties)) throw new Error(`${path}.properties must be an object.`)
+    for (const [key, propertySchema] of Object.entries(value.properties)) {
+      validateJsonSchemaObject(propertySchema, `${path}.properties.${key}`)
+    }
+  }
+
+  if (value.required !== undefined) {
+    if (!Array.isArray(value.required) || value.required.some((item) => typeof item !== "string")) throw new Error(`${path}.required must be a string array.`)
+    if (new Set(value.required).size !== value.required.length) throw new Error(`${path}.required must not contain duplicate property names.`)
+  }
+
+  if (value.items !== undefined) {
+    if (Array.isArray(value.items)) {
+      for (const item of value.items) validateJsonSchemaObject(item, `${path}.items`)
+    } else validateJsonSchemaObject(value.items, `${path}.items`)
+  }
+}
+
+export function validateAgentToolDefinition(tool: unknown): asserts tool is AgentToolDefinition {
+  if (!isRecord(tool)) throw new Error("Agent tool definition must be an object.")
+  if (typeof tool.name !== "string" || !tool.name.trim()) throw new Error("Agent tool name is required.")
+  if (typeof tool.description !== "string" || !tool.description.trim()) throw new Error(`Agent tool ${tool.name || "<unknown>"} requires a description.`)
+  if (tool.title !== undefined && (typeof tool.title !== "string" || !tool.title.trim())) throw new Error(`Agent tool ${tool.name} has an invalid title.`)
+  if (tool.kind !== "read" && tool.kind !== "mutation") throw new Error(`Agent tool ${tool.name} must declare kind as read or mutation.`)
+  if (typeof tool.returnsUntrustedContent !== "boolean") throw new Error(`Agent tool ${tool.name} must explicitly declare returnsUntrustedContent.`)
+  if (typeof tool.requiresConfirmation !== "boolean") throw new Error(`Agent tool ${tool.name} must explicitly declare requiresConfirmation.`)
+  if (tool.confirmationMessage !== undefined && (typeof tool.confirmationMessage !== "string" || !tool.confirmationMessage.trim())) throw new Error(`Agent tool ${tool.name} has an invalid confirmation message.`)
+  if (typeof tool.execute !== "function") throw new Error(`Agent tool ${tool.name} requires an execute function.`)
+  validateJsonSchemaObject(tool.inputSchema)
+}
+
+export function validateAgentToolDefinitions(tools: readonly AgentToolDefinition[]): readonly AgentToolDefinition[] {
+  if (!Array.isArray(tools)) throw new Error("Agent tools must be an array.")
+  const names = new Set<string>()
+  for (const tool of tools) {
+    validateAgentToolDefinition(tool)
+    if (names.has(tool.name)) throw new Error(`Duplicate agent tool name: ${tool.name}.`)
+    names.add(tool.name)
+  }
+  return tools
+}
+
+export function defineAgentTool<Input, Output>(tool: AgentToolDefinition<Input, Output>): AgentToolDefinition<Input, Output> {
+  validateAgentToolDefinition(tool)
+  return tool
+}
+
 export type CoreManifest = {
   coreVersion: string
   schemaVersion: string

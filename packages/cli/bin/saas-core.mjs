@@ -204,6 +204,14 @@ export function getProductOnboardingPath() {
   if (!configured || !configured.startsWith("/") || configured.startsWith("//")) return "/app"
   return configured
 }
+
+export function getWorkspaceProvisioningMode() {
+  return PRODUCT_CONFIG.onboarding?.workspaceProvisioning === "deferred" ? "deferred" as const : "manual" as const
+}
+
+export function isDeferredWorkspaceProvisioning() {
+  return getWorkspaceProvisioningMode() === "deferred"
+}
 `, "utf8")
   await writeFile(path.join(directory, "product.catalog.json"), json({
     defaultPlanKey: "default",

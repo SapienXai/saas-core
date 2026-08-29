@@ -52,6 +52,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@sapienx/saas-core": "workspace:*",
     "@hookform/resolvers": "^3.9.1",
     "@paddle/paddle-js": "1.6.4",
     "@paddle/paddle-node-sdk": "3.10.0",

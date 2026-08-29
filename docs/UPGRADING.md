@@ -72,6 +72,27 @@ Product-wide auth and management branding belongs in the product-owned
 selectors; do not edit Core-managed auth/manage components or duplicate the
 Core stylesheet. `styles/product.css` remains for product-route-only styles.
 
+## Agent Surface update
+
+Core updates add the managed Agent Surface files and preserve product-owned
+configuration, routes, styles, capabilities, and migrations. Existing products
+do not need a configuration switch or product tool registry merely to accept
+the update. The new foundation is available but registers zero tools until a
+product page explicitly renders `CoreWebMcpTools` with product-owned tools.
+
+The update adds no database migration and keeps Core schema `2.0`. Validate
+the normal lifecycle before applying it:
+
+```bash
+node packages/cli/bin/saas-core.mjs diff ../product --source . --json
+node packages/cli/bin/saas-core.mjs update ../product --source . --dry-run --json
+```
+
+The dry run should classify the Agent Surface files as Core-managed additions
+or replacements. A locally changed managed Agent Surface file must still block
+the entire update, and a failed apply must still roll back the prior consumer
+state.
+
 Review the generated manifest and run the product’s install, typecheck, test,
 and build commands. Do not copy local `.env` files, `.next`, `node_modules`,
 screenshots, or provider credentials between checkouts.
