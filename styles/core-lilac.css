@@ -931,6 +931,11 @@ body[data-manage-theme="dark"] .management-page-loading .text-muted-foreground {
   color: var(--manage-ink);
 }
 
+.dark .manage-shell [class~="text-slate-700"],
+.dark .manage-shell [class~="text-slate-600"] {
+  color: var(--manage-muted);
+}
+
 body[data-manage-theme="light"] [data-radix-popper-content-wrapper] [role="menu"],
 body[data-manage-theme="light"] [data-radix-popper-content-wrapper] [role="dialog"] {
   border-color: var(--saas-core-line);

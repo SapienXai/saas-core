@@ -75,12 +75,14 @@ Public/auth infrastructure is intentionally small:
 
 /platform            operator overview
 /platform/workspaces /platform/users /platform/billing
-/platform/domains   /platform/health /platform/attention
-/platform/audit     /platform/overrides
+/platform/domains   /platform/health /platform/audit
 ```
 
 The `/manage` routes remain compatibility aliases for the extracted
-management application. There are no product-domain routes in Core.
+management application. The former `/platform/attention` and
+`/platform/overrides` paths remain guarded compatibility routes when a product
+still links to them, but they are not advertised in the default navigation.
+There are no product-domain routes in Core.
 
 The public root always offers `Sign in` and `Create account`. An authenticated
 account is routed to `/app` or `/onboarding`; an explicit platform member with

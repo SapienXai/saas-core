@@ -1,14 +1,36 @@
 import Link from "next/link"
-import { ArrowRight, CheckCircle2, CircleAlert, Layers3, Users, WalletCards } from "lucide-react"
+import { ArrowRight, CheckCircle2, CircleAlert, Layers3, Settings2, Users, WalletCards } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { getManagementContext } from "@/lib/management-context"
 import { getWorkspaceUsage } from "@/lib/entitlements"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { ManageEmptyState, ManageListRow, ManageMetricCard, ManageMetricGrid, ManagePage, ManagePageHeader, ManageSurface } from "@/components/manage/manage-responsive"
+
 export const dynamic = "force-dynamic"
+
 export default async function WorkspaceDashboard() {
-  const context = await getManagementContext(); if (!context) return <div className="p-6 text-sm text-slate-600">Sign in to open a workspace.</div>
-  const workspace = context.currentWorkspace; if (!workspace) return <div className="mx-auto max-w-2xl p-6"><Card><CardHeader><CardTitle>Create your first workspace</CardTitle></CardHeader><CardContent><p className="text-sm text-slate-600">A workspace gives your team a secure place to build.</p><Link href="/onboarding" className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white">Create workspace <ArrowRight className="h-4 w-4" /></Link></CardContent></Card></div>
-  const usage = workspace.usage || await getWorkspaceUsage(workspace.id).catch(() => null); const isReady = Boolean(workspace.workspace?.name && workspace.workspace?.slug)
-  const tiles = [{ label: "Team members", value: usage?.users ?? 0, href: "/app/team", icon: Users }, { label: "Current plan", value: workspace.plan?.name || "Plan not configured", href: "/app/plan", icon: WalletCards }, { label: "Workspace status", value: isReady ? "Ready" : "Needs setup", href: "/app/setup", icon: isReady ? CheckCircle2 : CircleAlert }]
-  return <div className="mx-auto max-w-6xl space-y-6"><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-violet-600 dark:text-violet-300">Workspace overview</p><h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 dark:text-white">{workspace.workspace?.name || "Workspace"}</h2><p className="mt-2 text-sm text-slate-500 dark:text-slate-400">A calm place to manage your team, plan, and product foundation.</p></div><Badge className="rounded-full bg-emerald-50 px-3 py-1.5 text-emerald-700 hover:bg-emerald-50">{isReady ? "Ready" : "Setup needed"}</Badge></div><div className="grid gap-4 md:grid-cols-3">{tiles.map(({ label, value, href, icon: Icon }) => <Link key={label} href={href}><Card className="h-full border-0 bg-white/80 shadow-sm ring-1 ring-slate-200/70 transition hover:-translate-y-0.5 hover:shadow-md dark:bg-white/[0.04] dark:ring-white/10"><CardContent className="p-5"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-200"><Icon className="h-5 w-5" /></span><p className="mt-5 text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</p><p className="mt-1 text-2xl font-bold text-slate-950 dark:text-white">{value}</p></CardContent></Card></Link>)}</div><Card className="border-0 bg-white/80 shadow-sm ring-1 ring-slate-200/70 dark:bg-white/[0.04] dark:ring-white/10"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Layers3 className="h-4 w-4 text-violet-600" />Next actions</CardTitle></CardHeader><CardContent className="grid gap-3 sm:grid-cols-3">{[{ href: "/app/team", title: "Invite your team", body: "Give the right people the right access." }, { href: "/app/setup", title: "Review setup", body: "Check the foundation before adding your domain." }, { href: "/app/settings", title: "Open settings", body: "Keep workspace identity and preferences current." }].map((item) => <Link key={item.href} href={item.href} className="rounded-2xl border border-slate-200/80 p-4 transition hover:border-violet-300 hover:bg-violet-50/50 dark:border-white/10 dark:hover:bg-violet-500/10"><p className="text-sm font-bold text-slate-900 dark:text-white">{item.title}</p><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{item.body}</p></Link>)}</CardContent></Card></div>
+  const context = await getManagementContext()
+  if (!context) return <ManageEmptyState title="Sign in to continue" description="Your workspace management tools are available after authentication." />
+  const workspace = context.currentWorkspace
+  if (!workspace) return <ManagePage><ManagePageHeader eyebrow="Workspace" title="Create your first workspace" description="A workspace gives your team a secure place to build." actions={<Link href="/onboarding" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white transition hover:bg-violet-700">Create workspace <ArrowRight className="h-4 w-4" /></Link>} /><ManageSurface><ManageEmptyState title="Your workspace starts here" description="Set up the shared home for your team and product." /></ManageSurface></ManagePage>
+
+  const usage = workspace.usage || await getWorkspaceUsage(workspace.id).catch(() => null)
+  const name = workspace.workspace?.name || "Workspace"
+  const ready = Boolean(workspace.workspace?.name && workspace.workspace?.slug)
+  return <ManagePage>
+    <ManagePageHeader eyebrow="Workspace overview" title={name} description="A focused cockpit for access, plan and setup." actions={<Badge className={`rounded-full px-3 py-1.5 ${ready ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200" : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200"}`}>{ready ? "Ready" : "Setup needed"}</Badge>} />
+    <ManageMetricGrid>
+      <ManageMetricCard label="Team members" value={usage?.users ?? 0} detail="Manage access" icon={Users} href="/app/team" />
+      <ManageMetricCard label="Current plan" value={workspace.plan?.name || "Not configured"} detail="Plan & usage" icon={WalletCards} href="/app/plan" />
+      <ManageMetricCard label="Workspace" value={ready ? "Ready" : "Needs setup"} detail="Core setup" icon={ready ? CheckCircle2 : CircleAlert} href="/app/setup" />
+      <ManageMetricCard label="Settings" value="Open" detail="Workspace preferences" icon={Settings2} href="/app/settings" />
+    </ManageMetricGrid>
+    <ManageSurface className="overflow-hidden">
+      <div className="border-b border-slate-100 px-3.5 py-3 dark:border-white/10 sm:px-4"><h2 className="text-sm font-semibold text-slate-950 dark:text-white">Next actions</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Keep the workspace ready for daily operations.</p></div>
+      <div className="divide-y divide-slate-100 dark:divide-white/10">
+        <ManageListRow icon={Users} href="/app/team" title="Invite your team" subtitle="Give the right people the right access." />
+        <ManageListRow icon={Layers3} href="/app/setup" title="Review workspace setup" subtitle="Check the foundation before adding your domain." />
+        <ManageListRow icon={Settings2} href="/app/settings" title="Open workspace settings" subtitle="Keep identity and preferences current." />
+      </div>
+    </ManageSurface>
+  </ManagePage>
 }

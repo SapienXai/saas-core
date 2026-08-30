@@ -10,8 +10,6 @@ const DEFAULT_PLATFORM_NAVIGATION: readonly PlatformNavigationItem[] = [
   { key: "domains", label: "Domains", href: "/platform/domains", icon: "globe", match: "prefix" },
   { key: "health", label: "Health", href: "/platform/health", icon: "activity", match: "prefix" },
   { key: "audit", label: "Audit", href: "/platform/audit", icon: "file", match: "prefix" },
-  { key: "attention", label: "Attention", href: "/platform/attention", icon: "alert-circle", match: "prefix" },
-  { key: "overrides", label: "Overrides", href: "/platform/overrides", icon: "settings", match: "prefix", platformRoles: ["platform_owner", "platform_admin"] },
 ]
 const PLATFORM_KEY_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
 const PLATFORM_PATH_PATTERN = /^\/platform(?:\/[a-zA-Z0-9._~!$&'()*+,;=:@%-]+)*$/
