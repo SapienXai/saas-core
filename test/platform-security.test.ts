@@ -13,7 +13,9 @@ describe("platform control hardening", () => {
     const platform = readFileSync("lib/platform-admin.ts", "utf8")
     expect(platform).toContain("requirePlatformRole")
     expect(platform).toContain("platform_audit_logs")
-    expect(platform).not.toContain("auth.admin")
+    expect(platform).toContain("auth.admin.listUsers")
+    expect(platform).not.toContain("auth.admin.createUser")
+    expect(platform).not.toContain("auth.admin.deleteUser")
   })
 
   it("keeps domain refresh scoped to provider reads and audit state", () => {

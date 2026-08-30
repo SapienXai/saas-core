@@ -21,6 +21,11 @@ export function isPlatformRole(value: unknown): value is PlatformRole {
   return typeof value === "string" && PLATFORM_ROLES.includes(value as PlatformRole)
 }
 
+export function formatPlatformRole(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return "Unknown role"
+  return value.trim().replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
 export function platformRoleAllows(role: PlatformRole | null | undefined, allowedRoles: readonly PlatformRole[]) {
   return Boolean(role && allowedRoles.includes(role))
 }

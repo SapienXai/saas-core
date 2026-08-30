@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { getDevMailpitUrl } from "../lib/dev-mailpit"
+import { DEV_MAILPIT_PROXY_PATH, getDevMailpitUrl } from "../lib/dev-mailpit"
 
 const originalNodeEnv = process.env.NODE_ENV
 const originalMailpit = process.env.NEXT_PUBLIC_DEV_MAILPIT_URL
@@ -22,6 +22,15 @@ describe("development Mailpit boundary", () => {
     expect(getDevMailpitUrl("10.0.0.8")).toBe("http://10.0.0.8.nip.io:55624")
     expect(getDevMailpitUrl("172.16.0.8.nip.io")).toBe("http://172.16.0.8.nip.io:55624")
     expect(getDevMailpitUrl("product.example.com")).toBeNull()
+  })
+
+  it("uses the app-origin proxy for an Ngrok development host", () => {
+    environment.NODE_ENV = "test"
+    delete process.env.NEXT_PUBLIC_DEV_MAILPIT_URL
+    expect(getDevMailpitUrl("congenial-limes-badland.ngrok-free.dev")).toBe(DEV_MAILPIT_PROXY_PATH)
+
+    process.env.NEXT_PUBLIC_DEV_MAILPIT_URL = "http://localhost:55524"
+    expect(getDevMailpitUrl("congenial-limes-badland.ngrok-free.dev")).toBe(DEV_MAILPIT_PROXY_PATH)
   })
 
   it("never exposes the development inbox in production", () => {

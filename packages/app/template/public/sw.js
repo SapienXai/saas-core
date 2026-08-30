@@ -1,4 +1,4 @@
-const SAAS_CORE_SW_VERSION = "saas-core-manage-v1"
+const SAAS_CORE_SW_VERSION = "saas-core-manage-v2"
 const SAAS_CORE_STATIC_CACHE = `${SAAS_CORE_SW_VERSION}:static`
 const SAAS_CORE_CACHE_PREFIX = "saas-core-manage-"
 

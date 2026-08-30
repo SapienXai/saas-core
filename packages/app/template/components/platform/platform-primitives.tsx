@@ -3,6 +3,7 @@ import type React from "react"
 import type { LucideIcon } from "lucide-react"
 import { ArrowLeft, ArrowRight, ArrowUpRight, Inbox, MoreHorizontal } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { ManagePageHeader } from "@/components/manage/manage-responsive"
 import { cn } from "@/lib/utils"
 
 export type PlatformStatus = "active" | "suspended" | "archived" | "unknown"
@@ -22,7 +23,7 @@ const severityStyles: Record<PlatformSeverity, string> = {
 }
 
 export function PlatformPageHeader({ eyebrow, title, description, actions }: { eyebrow?: string; title: string; description?: string; actions?: React.ReactNode }) {
-  return <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div className="min-w-0">{eyebrow ? <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{eyebrow}</p> : null}<h2 className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-950 dark:text-white sm:text-3xl">{title}</h2>{description ? <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-400">{description}</p> : null}</div>{actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}</header>
+  return <ManagePageHeader eyebrow={eyebrow} title={title} description={description} actions={actions} />
 }
 
 export function PlatformSectionHeader({ title, description, icon: Icon, action }: { title: string; description?: string; icon?: LucideIcon; action?: React.ReactNode }) {
@@ -36,7 +37,7 @@ export function PlatformStatusBadge({ status, label }: { status?: string | null;
 }
 
 export function PlatformSeverityBadge({ severity }: { severity: PlatformSeverity }) { return <Badge variant="outline" className={cn("border px-2 py-0.5 text-[11px] capitalize", severityStyles[severity])}>{severity}</Badge> }
-export function PlatformSurface({ className, children }: { className?: string; children: React.ReactNode }) { return <section className={cn("rounded-2xl border border-slate-200/80 bg-white dark:border-white/10 dark:bg-white/[0.04]", className)}>{children}</section> }
+export function PlatformSurface({ className, children }: { className?: string; children: React.ReactNode }) { return <section className={cn("min-w-0 rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]", className)}>{children}</section> }
 export function PlatformEmptyState({ title = "Nothing here yet", description, icon: Icon = Inbox }: { title?: string; description?: string; icon?: LucideIcon }) { return <div className="flex flex-col items-center justify-center px-5 py-12 text-center"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-white/[0.06] dark:text-slate-500"><Icon className="h-5 w-5" /></span><p className="mt-3 text-sm font-semibold text-slate-700 dark:text-slate-300">{title}</p>{description ? <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">{description}</p> : null}</div> }
 
 export function PlatformEntityCard({ icon: Icon, iconClassName, title, subtitle, badges, facts, href, action, children }: { icon: LucideIcon; iconClassName?: string; title: string; subtitle?: string; badges?: React.ReactNode; facts?: Array<{ label: string; value: React.ReactNode }>; href?: string; action?: React.ReactNode; children?: React.ReactNode }) {

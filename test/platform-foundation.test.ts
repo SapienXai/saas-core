@@ -1,8 +1,17 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { getActivePlatformNavigationKey, isPlatformNavigationVisible, resolvePlatformNavigationConfig } from "@/lib/platform-navigation"
+import { formatPlatformRole } from "@/lib/platform-types"
+import { formatPlatformTimestamp } from "@/components/platform/platform-generic"
 
 describe("platform administration foundation", () => {
+  it("keeps platform records readable without changing their stored values", () => {
+    expect(formatPlatformRole("platform_owner")).toBe("Platform Owner")
+    expect(formatPlatformRole("billing-admin")).toBe("Billing Admin")
+    expect(formatPlatformRole(null)).toBe("Unknown role")
+    expect(formatPlatformTimestamp("2026-08-30T11:55:22.885604+00:00")).toBe("30 Aug 2026, 11:55 UTC")
+  })
+
   it("resolves product platform entries without widening role visibility", () => {
     const navigation = resolvePlatformNavigationConfig({
       platformNavigation: [

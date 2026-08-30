@@ -3,6 +3,7 @@ import "server-only"
 import { requirePlatformRole, requirePlatformWriteAccess } from "@/lib/platform-authorization"
 import { createServiceRoleClient } from "@/lib/supabase"
 import { audit } from "@/lib/platform-audit"
+import { formatPlatformRole } from "@/lib/platform-types"
 
 const service = () => createServiceRoleClient() as any
 export async function getPlatformOverview() {
@@ -13,7 +14,50 @@ export async function getPlatformOverview() {
   return { role, counts: { workspaces: workspaces.count || 0, users: users.count || 0, subscriptions: subscriptions.count || 0, domains: domains.count || 0, events24h: events.count || 0 } }
 }
 export async function listPlatformWorkspaces(query = "") { await requirePlatformRole(); const db = service(); let request = db.from("workspaces").select("id, name, slug, status, created_at").order("created_at", { ascending: false }).limit(100); if (query) request = request.or(`name.ilike.%${query}%,slug.ilike.%${query}%`); const { data, error } = await request; if (error) throw new Error(error.message); return data || [] }
-export async function listPlatformUsers(query = "") { await requirePlatformRole(); const db = service(); const { data, error } = await db.from("workspace_members").select("user_id, workspace_id, role, created_at").order("created_at", { ascending: false }).limit(100); if (error) throw new Error(error.message); const rows = data || []; const filtered = query ? rows.filter((row: any) => row.user_id.toLowerCase().includes(query.toLowerCase())) : rows; return filtered }
+export async function listPlatformUsers(query = "") {
+  await requirePlatformRole()
+  const db = service()
+  const { data, error } = await db.from("workspace_members").select("user_id, workspace_id, role, created_at").order("created_at", { ascending: false }).limit(100)
+  if (error) throw new Error(error.message)
+
+  const rows = data || []
+  const workspaceIds = [...new Set(rows.map((row: any) => row.workspace_id).filter(Boolean))]
+  const [workspaceResult, authResult] = await Promise.all([
+    workspaceIds.length ? db.from("workspaces").select("id, name, slug").in("id", workspaceIds) : Promise.resolve({ data: [], error: null }),
+    db.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+  ])
+
+  if (workspaceResult.error) console.error("Error resolving platform workspace labels:", workspaceResult.error.message)
+  if (authResult.error) console.error("Error resolving platform user labels:", authResult.error.message)
+
+  const workspaces = new Map<string, any>((workspaceResult.data || []).map((workspace: any) => [workspace.id, workspace]))
+  const users = new Map<string, any>((authResult.data?.users || []).map((user: any) => [user.id, user]))
+  const enriched = rows.map((row: any) => {
+    const user = users.get(row.user_id)
+    const metadata = user?.user_metadata && typeof user.user_metadata === "object" ? user.user_metadata : {}
+    const name = [metadata.full_name, metadata.name, metadata.display_name, metadata.username, metadata.preferred_username]
+      .find((value): value is string => typeof value === "string" && value.trim().length > 0)
+      ?.trim() || null
+    const email = typeof user?.email === "string" && user.email.trim() ? user.email.trim() : null
+    const workspace = workspaces.get(row.workspace_id)
+    const workspaceName = typeof workspace?.name === "string" && workspace.name.trim() ? workspace.name.trim() : null
+    const workspaceSlug = typeof workspace?.slug === "string" && workspace.slug.trim() ? workspace.slug.trim() : null
+    return {
+      ...row,
+      user_label: name || email || "Unknown user",
+      user_email: name && email ? email : null,
+      workspace_label: workspaceName || workspaceSlug || "Unknown workspace",
+      workspace_slug: workspaceName && workspaceSlug ? workspaceSlug : null,
+      role_label: formatPlatformRole(row.role),
+    }
+  })
+
+  const value = query.trim().toLowerCase()
+  if (!value) return enriched
+  return enriched.filter((row: any) => [row.user_id, row.user_label, row.user_email, row.workspace_id, row.workspace_label, row.workspace_slug, row.role, row.role_label]
+    .filter((field) => typeof field === "string")
+    .some((field) => field.toLowerCase().includes(value)))
+}
 export async function listPlatformDomains() { await requirePlatformRole(); const { data, error } = await service().from("workspace_domains").select("id, workspace_id, hostname, status, verification_state, provider_verified, dns_configured, last_checked_at").order("created_at", { ascending: false }).limit(100); if (error) throw new Error(error.message); return data || [] }
 export async function listPlatformAuditLogs() { await requirePlatformRole(); const { data, error } = await service().from("platform_audit_logs").select("id, actor_user_id, action, entity_type, entity_id, reason, created_at").order("created_at", { ascending: false }).limit(100); if (error) throw new Error(error.message); return data || [] }
 export async function listPlatformPlans() { await requirePlatformRole(); const { data, error } = await service().from("plans").select("key, name, active, sort_order, features, limits, metadata").order("sort_order"); if (error) throw new Error(error.message); return data || [] }
@@ -25,7 +69,7 @@ export async function searchPlatformEntities(query: string) {
   const [workspaces, users, domains] = await Promise.all([listPlatformWorkspaces(value), listPlatformUsers(value), listPlatformDomains()])
   const groups = [
     { type: "Workspaces", items: workspaces.slice(0, 8).map((row: any) => ({ id: row.id, title: row.name, subtitle: row.slug, href: `/platform/workspaces?query=${encodeURIComponent(row.slug)}` })) },
-    { type: "Users", items: users.slice(0, 8).map((row: any) => ({ id: row.user_id, title: row.user_id, subtitle: `${row.role} · ${row.workspace_id}`, href: `/platform/users?query=${encodeURIComponent(row.user_id)}` })) },
+    { type: "Users", items: users.slice(0, 8).map((row: any) => ({ id: row.user_id, title: row.user_label, subtitle: [row.user_email, row.role_label, row.workspace_label].filter(Boolean).join(" · "), href: `/platform/users?query=${encodeURIComponent(row.user_email || row.user_label)}` })) },
     { type: "Domains", items: domains.filter((row: any) => row.hostname.toLowerCase().includes(value.toLowerCase())).slice(0, 8).map((row: any) => ({ id: row.id, title: row.hostname, subtitle: row.status, href: "/platform/domains" })) },
   ]
   return { groups: groups.filter((group) => group.items.length) }
