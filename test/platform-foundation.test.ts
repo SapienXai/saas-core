@@ -1,7 +1,27 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
+import { getActivePlatformNavigationKey, isPlatformNavigationVisible, resolvePlatformNavigationConfig } from "@/lib/platform-navigation"
 
 describe("platform administration foundation", () => {
+  it("resolves product platform entries without widening role visibility", () => {
+    const navigation = resolvePlatformNavigationConfig({
+      platformNavigation: [
+        { key: "catalog", label: "Catalog", href: "/platform/catalog", icon: "music", match: "prefix", platformRoles: ["platform_owner", "platform_admin"], legacyPaths: ["/catalog-admin"] },
+        { key: "unsafe", label: "Unsafe", href: "/app/anything" },
+        { key: "billing", label: "Duplicate billing", href: "/platform/billing", platformRoles: ["support"] },
+      ],
+    })
+    const catalog = navigation.find((item) => item.key === "catalog")
+    const billing = navigation.find((item) => item.key === "billing")
+    expect(catalog).toBeDefined()
+    expect(isPlatformNavigationVisible(catalog!, "platform_admin")).toBe(true)
+    expect(isPlatformNavigationVisible(catalog!, "support")).toBe(false)
+    expect(isPlatformNavigationVisible(billing!, "support")).toBe(false)
+    expect(getActivePlatformNavigationKey("/platform/catalog/tracks/new", navigation)).toBe("catalog")
+    expect(getActivePlatformNavigationKey("/catalog-admin/tracks/new", navigation)).toBe("catalog")
+    expect(navigation.some((item) => item.key === "unsafe")).toBe(false)
+  })
+
   it("keeps platform authorization data server-controlled in the migration", () => {
     const migration = readFileSync("supabase/migrations/20260827204359_saas_core_v2_baseline.sql", "utf8")
     expect(migration).toContain("create table public.platform_members")

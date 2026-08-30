@@ -71,12 +71,27 @@ export type ProductShellConfig = {
   navigation?: readonly ProductShellNavigationItem[]
 }
 
+export type CorePlatformRole = "platform_owner" | "platform_admin" | "support" | "auditor" | "billing_admin"
+
+export type ProductPlatformNavigationItem = {
+  key: string
+  label: string
+  href: string
+  icon?: string
+  match?: "exact" | "prefix"
+  platformRoles?: readonly CorePlatformRole[]
+  /** Optional product-owned paths kept as compatibility aliases for this surface. */
+  legacyPaths?: readonly string[]
+}
+
 export type ProductConfigContract = {
   identity: ProductIdentity
   catalog: ProductCatalog
   onboarding?: ProductOnboarding
   auth?: ProductAuthConfig
   shell?: ProductShellConfig
+  /** Product-owned platform surfaces rendered inside the shared management shell. */
+  platformNavigation?: readonly ProductPlatformNavigationItem[]
 }
 
 /** A JSON Schema value accepted as the input contract for an agent tool. */

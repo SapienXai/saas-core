@@ -3,7 +3,10 @@ import type { Viewport } from "next"
 import { redirect } from "next/navigation"
 import { AuthorizationError } from "@/lib/authorization"
 import { requirePlatformRole } from "@/lib/platform-authorization"
-import { PlatformShell } from "@/components/platform/platform-shell"
+import { ManageLayoutClient } from "@/app/manage/manage-layout-client"
+import { getManagementLayoutData } from "@/app/manage/layout"
+import { getPwaIconAssetUrl } from "@/lib/pwa"
+import { toInitialContext } from "@/lib/management-layout-data"
 
 export const dynamic = "force-dynamic"
 
@@ -21,5 +24,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     if (error instanceof AuthorizationError && error.code === "UNAUTHENTICATED") redirect("/login?redirect=/platform")
     redirect("/app")
   }
-  return <PlatformShell>{children}</PlatformShell>
+  const { context, branding } = await getManagementLayoutData()
+  const clientBranding = { ...branding, iconUrl: getPwaIconAssetUrl(branding) }
+  return <ManageLayoutClient initialBranding={clientBranding} initialContext={toInitialContext(context)}>{children}</ManageLayoutClient>
 }

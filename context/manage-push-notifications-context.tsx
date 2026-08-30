@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { toast } from "sonner"
 import { isManagementPwaOrigin } from "@/lib/pwa-origin"
 import { useLanguage } from "@/context/language-context"
+import { useManageContext } from "@/context/manage-context"
 
 export type ManagePushNotificationStatus =
   | "checking"
@@ -45,11 +46,16 @@ function toApplicationServerKey(rawPublicKey: string) {
 
 export function ManagePushNotificationsProvider({ children }: { children: ReactNode }) {
   const { getTranslation } = useLanguage()
+  const { currentWorkspace } = useManageContext()
   const t = getTranslation
   const [status, setStatus] = useState<ManagePushNotificationStatus>("disabled")
   const [message, setMessage] = useState<string | null>(null)
 
   const checkEligibility = useCallback(async () => {
+    if (!currentWorkspace) {
+      setStatus("ineligible")
+      throw new Error(t("manage.push.planError"))
+    }
     if (!isManagementPwaOrigin(window.location.hostname)) {
       setStatus("unsupported")
       throw new Error(t("manage.push.originError"))
@@ -74,7 +80,7 @@ export function ManagePushNotificationsProvider({ children }: { children: ReactN
       throw new Error(t("manage.push.unconfiguredError"))
     }
     return data as { eligible: true; configured: true; subscription: boolean }
-  }, [t])
+  }, [currentWorkspace, t])
 
   useEffect(() => {
     let active = true

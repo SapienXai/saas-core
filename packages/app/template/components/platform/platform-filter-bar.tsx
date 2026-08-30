@@ -10,7 +10,7 @@ export type PlatformFilterOption = { value: string; label: string }
 export type PlatformFilterConfig = { key: string; label: string; options: PlatformFilterOption[] }
 
 function FilterSelect({ filter, value, onChange }: { filter: PlatformFilterConfig; value: string; onChange: (value: string) => void }) {
-  return <label className="grid min-w-0 gap-1.5 text-[11px] font-semibold text-slate-500"><span>{filter.label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="min-h-10 min-w-0 rounded-xl border border-white/10 bg-white/[0.05] px-3 text-xs font-semibold text-white outline-none focus:border-violet-400"><>{filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</></select></label>
+  return <label className="grid min-w-0 gap-1.5 text-[11px] font-semibold text-slate-500"><span>{filter.label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="min-h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 outline-none focus:border-violet-400 dark:border-white/10 dark:bg-white/[0.05] dark:text-white"><>{filter.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</></select></label>
 }
 
 export function PlatformFilterBar({ filters, values }: { filters: PlatformFilterConfig[]; values: Record<string, string> }) {

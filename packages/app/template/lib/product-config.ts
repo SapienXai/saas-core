@@ -1,4 +1,5 @@
 import productCatalog from "@/product.catalog.json"
+import type { PlatformRole } from "./platform-types"
 
 export type ProductPlanDefinition = {
   key: string
@@ -50,6 +51,17 @@ export type ProductShellConfig = {
   navigation?: readonly ProductShellNavigationItem[]
 }
 
+export type ProductPlatformNavigationItem = {
+  key: string
+  label: string
+  href: string
+  icon?: string
+  match?: "exact" | "prefix"
+  platformRoles?: readonly PlatformRole[]
+  /** Optional product-owned paths kept as compatibility aliases for this surface. */
+  legacyPaths?: readonly string[]
+}
+
 export type ProductConfig = {
   name: string
   slug: string
@@ -61,6 +73,8 @@ export type ProductConfig = {
   onboarding?: ProductOnboardingConfig
   auth?: ProductAuthConfig
   shell?: ProductShellConfig
+  /** Product-owned platform surfaces rendered inside the Core management shell. */
+  platformNavigation?: readonly ProductPlatformNavigationItem[]
   /** Product-owned commercial catalog. Core only evaluates its stable keys. */
   catalog: ProductCatalog
 }
@@ -85,6 +99,7 @@ export const PRODUCT_CONFIG: ProductConfig = {
     pwa: true,
   },
   onboarding: { productSetupPath: "/app" },
+  platformNavigation: [],
   catalog: productCatalog as ProductCatalog,
 }
 

@@ -11,19 +11,25 @@ import { useManagePushNotifications } from "@/context/manage-push-notifications-
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
 import { getActiveProductNavigationKey, isProductNavigationVisible, resolveProductShell } from "@/lib/product-shell"
+import { getActivePlatformNavigationKey, isPlatformNavigationVisible, resolvePlatformNavigation } from "@/lib/platform-navigation"
 
 export function ManageHeader({ user, toggleSidebar }: { user: { id: string; email: string; name: string }; toggleSidebar: () => void }) {
-  const pathname = usePathname(); const router = useRouter(); const { role, currentWorkspace } = useManageContext(); useManagePushNotifications(); const [isOnline, setIsOnline] = useState(true); const [showNotifications, setShowNotifications] = useState(false); const [isSigningOut, setIsSigningOut] = useState(false)
+  const pathname = usePathname(); const router = useRouter(); const { role, platformRole, currentWorkspace } = useManageContext(); useManagePushNotifications(); const [isOnline, setIsOnline] = useState(true); const [showNotifications, setShowNotifications] = useState(false); const [isSigningOut, setIsSigningOut] = useState(false)
   useEffect(() => { const update = () => setIsOnline(navigator.onLine); update(); window.addEventListener("online", update); window.addEventListener("offline", update); return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update) } }, [])
   const productShell = useMemo(() => resolveProductShell(), [])
   const visibleProductNavigation = useMemo(() => productShell.navigation.filter((item) => isProductNavigationVisible(item, currentWorkspace?.role || role, currentWorkspace?.plan?.features)), [currentWorkspace?.plan?.features, currentWorkspace?.role, productShell, role])
   const activeProductNavigationKey = getActiveProductNavigationKey(pathname, visibleProductNavigation)
+  const platformNavigation = useMemo(() => resolvePlatformNavigation().filter((item) => isPlatformNavigationVisible(item, platformRole)), [platformRole])
+  const activePlatformNavigationKey = getActivePlatformNavigationKey(pathname, platformNavigation)
+  const activePlatformItem = platformNavigation.find((item) => item.key === activePlatformNavigationKey)
+  const isPlatformRoute = pathname === "/platform" || pathname.startsWith("/platform/") || Boolean(activePlatformItem)
   const pageTitle = useMemo(() => {
     const activeProductItem = visibleProductNavigation.find((item) => item.key === activeProductNavigationKey)
+    if (activePlatformItem) return activePlatformItem.label
     if (pathname === productShell.homePath && productShell.homePath !== "/app") return productShell.homeLabel || PRODUCT_CONFIG.name
     if (activeProductItem) return activeProductItem.label
-    return pathname === "/app" || pathname === "/manage" ? "Workspace" : pathname.includes("/team") ? "Team" : pathname.includes("/plan") ? "Plan & usage" : pathname.includes("/domains") ? "Domains" : pathname.includes("/pwa") ? "Management app" : pathname.includes("/settings") ? "Settings" : pathname.includes("/platform") ? "Platform" : PRODUCT_CONFIG.name
-  }, [activeProductNavigationKey, pathname, productShell, visibleProductNavigation])
+    return pathname === "/app" || pathname === "/manage" ? "Workspace" : pathname.includes("/team") ? "Team" : pathname.includes("/plan") ? "Plan & usage" : pathname.includes("/domains") ? "Domains" : pathname.includes("/pwa") ? "Management app" : pathname.includes("/settings") ? "Settings" : isPlatformRoute ? "Platform" : PRODUCT_CONFIG.name
+  }, [activePlatformItem, activeProductNavigationKey, isPlatformRoute, pathname, productShell, visibleProductNavigation])
   useEffect(() => { document.title = `${pageTitle} | ${PRODUCT_CONFIG.name}` }, [pageTitle])
   const handleSignOut = useCallback(async () => {
     setIsSigningOut(true)
@@ -37,8 +43,8 @@ export function ManageHeader({ user, toggleSidebar }: { user: { id: string; emai
       <div className="flex h-14 items-center justify-between px-3 sm:h-16 sm:px-5">
         <div className="flex min-w-0 items-center gap-2">
           <Button variant="ghost" size="icon" onClick={toggleSidebar} className="mr-1 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 md:hidden" aria-label="Open navigation"><Menu className="h-5 w-5" /></Button>
-          <button type="button" onClick={() => router.push("/app")} className="min-w-0 text-left transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500" aria-label="Open workspace">
-            <div className="flex min-w-0 items-center gap-1.5"><p className="min-w-0 truncate text-[8px] font-bold uppercase leading-none tracking-[0.14em] text-slate-400 sm:text-[9px]">{currentWorkspace?.workspace?.name || "Workspace"}</p>{currentWorkspace?.plan?.name && <span className="inline-flex h-4 items-center rounded-md border border-violet-200 bg-violet-50 px-1.5 text-[8px] font-bold uppercase tracking-[0.08em] text-violet-700">{currentWorkspace.plan.name}</span>}</div>
+          <button type="button" onClick={() => router.push(isPlatformRoute ? "/platform" : "/app")} className="min-w-0 text-left transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500" aria-label={isPlatformRoute ? "Open platform" : "Open workspace"}>
+            <div className="flex min-w-0 items-center gap-1.5"><p className="min-w-0 truncate text-[8px] font-bold uppercase leading-none tracking-[0.14em] text-slate-400 sm:text-[9px]">{isPlatformRoute ? "Platform · All workspaces" : currentWorkspace?.workspace?.name || "Workspace"}</p>{!isPlatformRoute && currentWorkspace?.plan?.name && <span className="inline-flex h-4 items-center rounded-md border border-violet-200 bg-violet-50 px-1.5 text-[8px] font-bold uppercase tracking-[0.08em] text-violet-700">{currentWorkspace.plan.name}</span>}</div>
             <h1 className="mt-0.5 truncate text-base font-bold leading-none tracking-tight text-slate-950 dark:text-white sm:text-lg">{pageTitle}</h1>
           </button>
           <Badge variant="outline" className={`ml-2 hidden h-6 gap-1 rounded-full px-2 text-[10px] font-bold uppercase sm:inline-flex ${isOnline ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-800"}`}>{isOnline ? <Wifi className="h-2.5 w-2.5" /> : <WifiOff className="h-2.5 w-2.5" />}{isOnline ? "Online" : "Offline"}</Badge>

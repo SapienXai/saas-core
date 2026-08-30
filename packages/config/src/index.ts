@@ -1,4 +1,4 @@
-import type { ProductAuthConfig, ProductCatalog, ProductIdentity, ProductOnboarding, ProductShellConfig, ProductShellNavigationItem } from "@sapienx/saas-core"
+import type { ProductAuthConfig, ProductCatalog, ProductIdentity, ProductOnboarding, ProductPlatformNavigationItem, ProductShellConfig, ProductShellNavigationItem } from "@sapienx/saas-core"
 
 export type ProductCapabilityConfig = Readonly<Record<string, boolean>>
 export type ProductOnboardingConfig = ProductOnboarding
@@ -10,6 +10,7 @@ export type SaaSCoreProductConfig = {
   onboarding?: ProductOnboardingConfig
   auth?: ProductAuthConfig
   shell?: ProductShellConfig
+  platformNavigation?: readonly ProductPlatformNavigationItem[]
   navigation?: readonly { label: string; href: string; icon?: string }[]
 }
 
@@ -32,4 +33,4 @@ export function validateProductCatalog(catalog: ProductCatalog) {
   return defineProductConfig({ identity: { name: "Catalog validation", slug: "catalog-validation" }, capabilities: {}, catalog }).catalog
 }
 
-export type { ProductAuthConfig, ProductCatalog, ProductIdentity, ProductShellConfig, ProductShellNavigationItem }
+export type { ProductAuthConfig, ProductCatalog, ProductIdentity, ProductPlatformNavigationItem, ProductShellConfig, ProductShellNavigationItem }

@@ -8,7 +8,7 @@ import { toInitialContext } from "@/lib/management-layout-data"
 
 export const dynamic = "force-dynamic"
 
-const getManagementLayoutData = cache(async function getManagementLayoutData() {
+export const getManagementLayoutData = cache(async function getManagementLayoutData() {
   const context = await getManagementContext()
   if (!context?.currentWorkspace?.id) return { context, branding: getGenericPwaBranding() }
 

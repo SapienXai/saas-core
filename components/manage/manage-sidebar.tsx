@@ -8,7 +8,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Activity, Archive, ArrowUpRight, BarChart3, Briefcase, CalendarDays, Check, ChevronDown, ChevronRight, Crown, FileText, Folder, Globe2, Layers3, LayoutDashboard, List, LogOut, Moon, Package, PanelLeftClose, PanelLeftOpen, Plus, Settings2, Shield, Smartphone, Sun, Users, X, WalletCards, type LucideIcon } from "lucide-react"
+import { Activity, AlertCircle, Archive, ArrowUpRight, BarChart3, Briefcase, CalendarDays, Check, ChevronDown, ChevronRight, Crown, FileText, Folder, Globe2, Layers3, LayoutDashboard, List, LogOut, Moon, Music2, Package, PanelLeftClose, PanelLeftOpen, Plus, Settings2, Smartphone, Sun, Users, WalletCards, X, type LucideIcon } from "lucide-react"
 import { useLanguage } from "@/context/language-context"
 import { useManageContext } from "@/context/manage-context"
 import { cn } from "@/lib/utils"
@@ -19,6 +19,7 @@ import { localeConfig, type SupportedLanguage } from "@/i18n"
 import { getPlanNavigationHref } from "@/lib/plan-navigation"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
 import { getActiveProductNavigationKey, isProductHomeActive, isProductNavigationVisible, resolveProductShell } from "@/lib/product-shell"
+import { getActivePlatformNavigationKey, isPlatformNavigationVisible, resolvePlatformNavigation } from "@/lib/platform-navigation"
 
 const SETTINGS_GROUP_STORAGE_KEY = "saas-core:manage:sidebar-settings-open"
 const LEGACY_TOOLS_GROUP_STORAGE_KEY = "saas-core:manage:sidebar-tools-open"
@@ -46,10 +47,15 @@ const PRODUCT_NAVIGATION_ICONS: Record<string, LucideIcon> = {
   file: FileText,
   folder: Folder,
   layers: Layers3,
+  "layout-dashboard": LayoutDashboard,
   list: List,
+  music: Music2,
   package: Package,
   settings: Settings2,
   users: Users,
+  "wallet-cards": WalletCards,
+  globe: Globe2,
+  "alert-circle": AlertCircle,
 }
 
 function workspaceRoleLabel(role: string | null, getTranslation: ReturnType<typeof useLanguage>["getTranslation"]) {
@@ -128,20 +134,23 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const mobileSettingsListRef = useRef<HTMLDivElement>(null)
 
   const isActive = (path: string) => pathname === path || pathname.startsWith(`${path}/`)
+  const hasWorkspaceScope = Boolean(currentWorkspace?.id)
   const productShell = resolveProductShell()
-  const visibleProductNavigation = productShell.navigation.filter((item) => isProductNavigationVisible(item, currentWorkspace?.role || role, currentWorkspace?.plan?.features))
+  const visibleProductNavigation = hasWorkspaceScope ? productShell.navigation.filter((item) => isProductNavigationVisible(item, currentWorkspace?.role || role, currentWorkspace?.plan?.features)) : []
   const activeProductNavigationKey = getActiveProductNavigationKey(pathname, visibleProductNavigation)
+  const platformNavigation = resolvePlatformNavigation()
+  const visiblePlatformNavigation = platformRole ? platformNavigation.filter((item) => isPlatformNavigationVisible(item, platformRole)) : []
+  const activePlatformNavigationKey = getActivePlatformNavigationKey(pathname, visiblePlatformNavigation)
   const navigation: SidebarNavigationItem[] = [
     { key: "home", name: productShell.homeLabel || getTranslation("manage.sidebar.dashboard"), href: productShell.homePath, icon: LayoutDashboard, current: isProductHomeActive(pathname, productShell.homePath) && !activeProductNavigationKey, disabled: false },
     ...visibleProductNavigation.map((item) => ({ key: item.key, name: item.label, href: item.href, icon: PRODUCT_NAVIGATION_ICONS[item.icon] || Layers3, current: activeProductNavigationKey === item.key, disabled: false })),
   ]
-  const settingsNavigation: SidebarNavigationItem[] = [
+  const settingsNavigation: SidebarNavigationItem[] = hasWorkspaceScope ? [
     { key: "team", name: getTranslation("manage.sidebar.team"), href: "/app/team", icon: Users, current: isActive("/app/team"), disabled: !isDomainAdmin },
     { key: "plan", name: getTranslation("manage.sidebar.planUsage"), href: "/app/plan", icon: WalletCards, current: isActive("/app/plan"), disabled: isStaff },
     { key: "domains", name: getTranslation("manage.sidebar.domains"), href: "/app/domains", icon: Globe2, current: isActive("/app/domains"), disabled: !isDomainAdmin },
     { key: "pwa", name: getTranslation("manage.sidebar.managementApp"), href: "/app/pwa", icon: Smartphone, current: isActive("/app/pwa"), disabled: false },
-    ...(platformRole ? [{ key: "platform", name: getTranslation("manage.sidebar.platformControl"), href: "/platform", icon: Shield, current: isActive("/platform"), disabled: false }] : []),
-  ]
+  ] : []
   const availableSettingsNavigation = settingsNavigation.filter((item) => !item.disabled)
   const hasActiveSetting = availableSettingsNavigation.some((item) => item.current)
 
@@ -243,9 +252,9 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
       </div>
 
       <ScrollArea className={cn("min-h-0 flex-1", mobile ? "py-3" : "py-5", compact ? "px-1.5" : "px-3")}>
-        {!compact && <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{getTranslation("manage.common.workspace")}</p>}
+        {!compact && hasWorkspaceScope && <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{getTranslation("manage.common.workspace")}</p>}
         <TooltipProvider delayDuration={180}>
-          <nav className="manage-sidebar-nav space-y-1.5">
+          {hasWorkspaceScope && <nav className="manage-sidebar-nav space-y-1.5">
             {navigation.map((item) => {
               const Icon = item.icon
               const itemClass = cn(
@@ -271,8 +280,9 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
                 </Tooltip>
               )
             })}
-          </nav>
-          <div className="manage-sidebar-settings-group mt-3">
+          </nav>}
+          {visiblePlatformNavigation.length > 0 && <div className={cn("manage-sidebar-platform-group", hasWorkspaceScope ? "mt-5 border-t border-slate-200/80 pt-4 dark:border-white/10" : "mt-1")}><p className={cn("px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-600 dark:text-violet-300", compact && "sr-only")}>Platform</p><nav className="manage-sidebar-platform-nav space-y-1.5">{visiblePlatformNavigation.map((item) => { const Icon = PRODUCT_NAVIGATION_ICONS[item.icon] || Layers3; const current = activePlatformNavigationKey === item.key; const itemClass = cn("group flex min-w-0 items-center text-sm font-semibold transition-all duration-200", compact ? "mx-auto h-10 w-10 min-h-0 justify-center rounded-xl px-0" : "min-h-11 w-full gap-3 rounded-xl px-3", current ? "bg-violet-600 text-white shadow-md shadow-violet-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/[0.07] dark:hover:text-white"); const itemContent = <><span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", current ? "bg-white/15" : "bg-slate-100 text-slate-500 group-hover:bg-white dark:bg-white/5 dark:text-slate-400")}><Icon className="h-4 w-4" /></span>{!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}{!compact && current && <ChevronRight className="h-4 w-4 shrink-0 opacity-70" />}</>; const itemElement = <Link key={item.key} href={`${item.href}?lang=${currentLang}`} className={itemClass} aria-current={current ? "page" : undefined} onClick={mobile ? onClose : undefined}>{itemContent}</Link>; return compact ? <Tooltip key={item.key}><TooltipTrigger asChild>{itemElement}</TooltipTrigger><TooltipContent side="right" sideOffset={10} className="manage-sidebar-tooltip">{item.label}</TooltipContent></Tooltip> : itemElement })}</nav></div>}
+          {availableSettingsNavigation.length > 0 && <div className="manage-sidebar-settings-group mt-3">
             {(() => {
               const settingsGroupButton = (
                 <button
@@ -327,7 +337,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
                 })}
               </div>
             )}
-          </div>
+          </div>}
         </TooltipProvider>
       </ScrollArea>
 
@@ -450,7 +460,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
       <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
         <SheetContent side="left" className="h-[100dvh] w-[min(20rem,86vw)] border-0 bg-transparent p-0 shadow-2xl">
           <SheetTitle className="sr-only">{getTranslation("common.navigationMenu")}</SheetTitle>
-          <SheetDescription className="sr-only">{getTranslation("manage.common.workspaceNavigation")}</SheetDescription>
+          <SheetDescription className="sr-only">{getTranslation(hasWorkspaceScope ? "manage.common.workspaceNavigation" : "manage.common.platformNavigation")}</SheetDescription>
           <div className={cn("h-full", isDark && "dark")}>
             {content(true)}
           </div>

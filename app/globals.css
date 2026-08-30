@@ -97,76 +97,6 @@ body[data-manage-theme="dark"] [role="dialog"] select {
   color: #f8fafc;
 }
 
-/* Platform Control has an independent preference, including for portalled
-   dialogs and menus. */
-.platform-root {
-  min-height: 100vh;
-  min-height: 100dvh;
-}
-
-.platform-root[data-platform-theme="light"] [class*="bg-slate-950"] {
-  background-color: #f8fafc;
-}
-
-.platform-root[data-platform-theme="light"] [class*="bg-white/"],
-.platform-root[data-platform-theme="light"] [class*="border-white/"] {
-  border-color: rgba(15, 23, 42, 0.12);
-  background-color: rgba(15, 23, 42, 0.035);
-}
-
-.platform-root[data-platform-theme="light"] [class~="text-white"],
-.platform-root[data-platform-theme="light"] [class~="text-slate-100"] {
-  color: #0f172a;
-}
-
-.platform-root[data-platform-theme="light"] [class~="text-slate-200"] { color: #1e293b; }
-.platform-root[data-platform-theme="light"] [class~="text-slate-300"] { color: #334155; }
-.platform-root[data-platform-theme="light"] [class~="text-slate-400"],
-.platform-root[data-platform-theme="light"] [class~="text-slate-500"] { color: #64748b; }
-.platform-root[data-platform-theme="light"] [class~="text-slate-600"] { color: #475569; }
-
-html:has(.platform-root[data-platform-theme="light"]) body [role="dialog"],
-html:has(.platform-root[data-platform-theme="light"]) body [data-radix-popper-content-wrapper] > * {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  --accent: 210 40% 96%;
-  --accent-foreground: 222 47% 11%;
-  --border: 214 32% 91%;
-  --input: 214 32% 82%;
-  background-color: #fff !important;
-  color: #0f172a !important;
-  border-color: #e2e8f0 !important;
-}
-
-html:has(.platform-root[data-platform-theme="dark"]) body,
-body:has(.platform-root[data-platform-theme="dark"]) {
-  background-color: #020617;
-}
-
-html:has(.platform-root[data-platform-theme="dark"]) body [role="dialog"],
-html:has(.platform-root[data-platform-theme="dark"]) body [data-radix-popper-content-wrapper] > * {
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
-  --card: 222 47% 13%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222 47% 13%;
-  --popover-foreground: 210 40% 98%;
-  --muted: 217 33% 17%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 217 33% 19%;
-  --accent-foreground: 210 40% 98%;
-  --border: 217 33% 24%;
-  --input: 217 33% 24%;
-  background-color: #0f172a !important;
-  color: #f8fafc !important;
-}
-
 @media (max-width: 768px) {
   html,
   body {
@@ -174,10 +104,6 @@ html:has(.platform-root[data-platform-theme="dark"]) body [data-radix-popper-con
     overflow-x: hidden;
   }
 
-  .platform-root main.max-w-7xl.mx-auto {
-    max-width: 100%;
-    padding-inline: 0.75rem;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {

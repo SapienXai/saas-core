@@ -43,17 +43,23 @@ const KNOWN_ICON_KEYS = new Set([
   "file",
   "folder",
   "layers",
+  "layout-dashboard",
   "list",
+  "music",
   "package",
   "settings",
   "users",
+  "wallet-cards",
+  "globe",
+  "alert-circle",
 ])
 
 function normalizeInternalAppPath(value: unknown) {
   if (typeof value !== "string") return null
   const path = value.trim()
   if (!path || path.length > 160 || /[\u0000-\u001f\u007f\\?#]/.test(path) || path.includes("//")) return null
-  if (path !== "/app" && !path.startsWith("/app/")) return null
+  if (!path.startsWith("/")) return null
+  if (path === "/") return null
   if (path.split("/").some((segment) => segment === "." || segment === "..")) return null
   return path.replace(/\/$/, "") || "/app"
 }
