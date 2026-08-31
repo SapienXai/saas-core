@@ -8,6 +8,7 @@ import { ManageEmptyState, ManageSurface, ManageToolbar } from "@/components/man
 import type { PlatformUserRecord } from "@/lib/platform-admin"
 import { bulkDeletePlatformUsersAction, bulkSetPlatformUserStatusAction, createPlatformUserAction, createPlatformUserRecoveryLinkAction, deletePlatformUserAction, resendPlatformUserInviteAction, updatePlatformUserAction } from "@/app/platform/users/actions"
 import { PlatformStatusBadge } from "@/components/platform/platform-primitives"
+import { useConfirmationDialog } from "@/components/ui/confirmation-dialog"
 
 const roles = ["platform_owner", "platform_admin", "billing_admin", "support", "auditor"] as const
 type Panel = { mode: "create" } | { mode: "edit"; row: PlatformUserRecord } | null
@@ -23,15 +24,47 @@ export function PlatformUserManagement({ rows, query, role = "", status = "" }: 
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState<{ ok: boolean; text: string; link?: string | null } | null>(null)
   const [form, setForm] = useState({ email: "", name: "", role: "platform_admin", status: "active", password: "", reason: "" })
+  const { showConfirmation, ConfirmationDialogComponent } = useConfirmationDialog()
   const allSelected = rows.length > 0 && rows.every((row) => selected.includes(row.id))
 
   const openCreate = () => { setMessage(null); setForm({ email: "", name: "", role: "platform_admin", status: "active", password: "", reason: "" }); setPanel({ mode: "create" }) }
   const openEdit = (row: PlatformUserRecord) => { setMessage(null); setForm({ email: row.email || "", name: row.name || "", role: row.platform_role || "platform_admin", status: row.platform_status === "suspended" ? "suspended" : "active", password: "", reason: "" }); setPanel({ mode: "edit", row }) }
   const run = (action: (data: FormData) => Promise<any>, data: FormData, close = false) => startTransition(async () => { const result = await action(data); setMessage({ ok: result.success, text: result.message, link: result.recoveryLink }); if (result.success) { if (close) setPanel(null); setSelected([]); router.refresh() } })
   const submitPanel = (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); const data = new FormData(); for (const [key, value] of Object.entries(form)) data.set(key, value); if (panel?.mode === "edit") { data.set("userId", panel.row.id); run(updatePlatformUserAction, data, true) } else run(createPlatformUserAction, data, true) }
-  const bulk = (nextStatus: "active" | "suspended") => { if (!selected.length || !window.confirm(`Apply ${nextStatus} to ${selected.length} selected users?`)) return; const data = new FormData(); selected.forEach((id) => data.append("userId", id)); data.set("status", nextStatus); data.set("reason", `Bulk ${nextStatus} from Platform Users.`); run(bulkSetPlatformUserStatusAction, data) }
-  const bulkDelete = () => { if (!selected.length || !window.confirm(`Delete ${selected.length} selected users? This cannot be undone.`)) return; const data = new FormData(); selected.forEach((id) => data.append("userId", id)); data.set("reason", "Bulk deletion from Platform Users."); run(bulkDeletePlatformUsersAction, data) }
-  const deleteOne = (row: PlatformUserRecord) => { if (row.is_current_user || !window.confirm(`Delete ${row.user_label}? This cannot be undone.`)) return; const data = new FormData(); data.set("userId", row.id); data.set("reason", "Deleted from Platform Users."); run(deletePlatformUserAction, data) }
+  const bulk = (nextStatus: "active" | "suspended") => {
+    if (!selected.length) return
+    showConfirmation({
+      title: `${nextStatus === "suspended" ? "Suspend" : "Activate"} ${selected.length} selected users?`,
+      description: nextStatus === "suspended" ? "Suspended users lose platform access until an operator activates them again." : "Selected users will regain their platform access.",
+      confirmText: nextStatus === "suspended" ? "Suspend users" : "Activate users",
+      variant: nextStatus === "suspended" ? "destructive" : "default",
+      onConfirm: () => {
+        const data = new FormData(); selected.forEach((id) => data.append("userId", id)); data.set("status", nextStatus); data.set("reason", `Bulk ${nextStatus} from Platform Users.`); run(bulkSetPlatformUserStatusAction, data)
+      },
+    })
+  }
+  const bulkDelete = () => {
+    if (!selected.length) return
+    showConfirmation({
+      title: `Delete ${selected.length} selected users?`,
+      description: "This permanently removes the selected accounts and their platform access. This action cannot be undone.",
+      confirmText: "Delete users",
+      variant: "destructive",
+      onConfirm: () => {
+        const data = new FormData(); selected.forEach((id) => data.append("userId", id)); data.set("reason", "Bulk deletion from Platform Users."); run(bulkDeletePlatformUsersAction, data)
+      },
+    })
+  }
+  const deleteOne = (row: PlatformUserRecord) => {
+    if (row.is_current_user) return
+    showConfirmation({
+      title: `Delete ${row.user_label}?`,
+      description: "This permanently removes the account and its platform access. This action cannot be undone.",
+      confirmText: "Delete user",
+      variant: "destructive",
+      onConfirm: () => { const data = new FormData(); data.set("userId", row.id); data.set("reason", "Deleted from Platform Users."); run(deletePlatformUserAction, data) },
+    })
+  }
   const recover = (row: PlatformUserRecord) => { const data = new FormData(); data.set("userId", row.id); run(createPlatformUserRecoveryLinkAction, data) }
   const resend = (row: PlatformUserRecord) => { const data = new FormData(); data.set("userId", row.id); run(resendPlatformUserInviteAction, data) }
   const toggle = (row: PlatformUserRecord) => { if (row.platform_status === "none") return openEdit(row); const data = new FormData(); data.set("userId", row.id); data.set("email", row.email || ""); data.set("name", row.name || ""); data.set("role", row.platform_role || "platform_admin"); data.set("status", row.platform_status === "suspended" ? "active" : "suspended"); data.set("reason", `Status changed from Platform Users.`); run(updatePlatformUserAction, data) }
@@ -50,5 +83,6 @@ export function PlatformUserManagement({ rows, query, role = "", status = "" }: 
       </>}
     </ManageSurface>
     {panel ? <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-2 backdrop-blur-[2px] sm:items-center sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPanel(null) }}><section role="dialog" aria-modal="true" aria-labelledby="platform-user-panel-title" className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-[1.5rem] bg-white p-5 shadow-2xl dark:bg-slate-950 sm:max-h-[calc(100dvh-3rem)] sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-600">Platform Control</p><h2 id="platform-user-panel-title" className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{panel.mode === "create" ? "Add platform user" : "User details"}</h2><p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{panel.mode === "create" ? "Create an account and assign platform access in one step." : "Keep identity and access changes together."}</p></div><button type="button" onClick={() => setPanel(null)} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06]" aria-label="Close"><MoreHorizontal className="h-5 w-5 rotate-90" /></button></div><form onSubmit={submitPanel} className="mt-6 space-y-4"><Field label="Email" name="email" value={form.email} onChange={(value) => setForm((current) => ({ ...current, email: value }))} type="email" required /><Field label="Display name" name="name" value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} placeholder="Optional" /><div className="grid gap-4 sm:grid-cols-2"><label className="block space-y-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200"><span>Platform role</span><select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal dark:border-white/10 dark:bg-white/[0.04] dark:text-white">{roles.map((item) => <option key={item} value={item}>{item.replaceAll("_", " ")}</option>)}</select></label><label className="block space-y-1.5 text-sm font-semibold text-slate-800 dark:text-slate-200"><span>Access status</span><select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal dark:border-white/10 dark:bg-white/[0.04] dark:text-white"><option value="active">Active</option><option value="suspended">Suspended</option></select></label></div>{panel.mode === "create" ? <Field label="Initial password" name="password" value={form.password} onChange={(value) => setForm((current) => ({ ...current, password: value }))} type="password" placeholder="Leave blank to send an invite" /> : null}<Field label="Reason" name="reason" value={form.reason} onChange={(value) => setForm((current) => ({ ...current, reason: value }))} required placeholder="Why is this access changing?" /><div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setPanel(null)} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-bold dark:border-white/10">Cancel</button><button type="submit" disabled={pending} className="min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-bold text-white disabled:opacity-50">{pending ? "Saving…" : panel.mode === "create" ? "Create user" : "Save changes"}</button></div></form></section></div> : null}
+    {ConfirmationDialogComponent}
   </div>
 }
