@@ -58,8 +58,8 @@ export function LoginForm() {
           <PasswordField id="login-password" name="password" label={getTranslation("auth.password")} placeholder={getTranslation("auth.passwordPlaceholder")} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
         </AuthField>
         <div className="auth-form-meta"><Link href="/forgot-password" className="auth-muted-link">{getTranslation("auth.forgotPassword")}</Link></div>
-        <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
         <Button type="submit" loading={submitting} className="auth-primary-button">{submitting ? getTranslation("auth.signingIn") : getTranslation("auth.signInAction")}</Button>
+        <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
       </form>
     </AuthShell>
   )
