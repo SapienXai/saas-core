@@ -23,7 +23,7 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
   const branding = initialBranding
   const pathname = usePathname()
   const router = useRouter()
-  const { user, loading, currentWorkspace } = useManageContext()
+  const { user, loading, platformRole, currentWorkspace } = useManageContext()
   const { getTranslation } = useLanguage()
   const { setTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -196,7 +196,12 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
     setSidebarOpen((prev) => !prev)
   }
 
-  if (loading && !currentWorkspace) {
+  // Platform staff can legitimately have no workspace membership. Keep the
+  // shell available for that scope instead of replacing the whole page with a
+  // workspace-only loading state while role data settles on the client.
+  const hasManagementIdentity = Boolean(user.id || platformRole || currentWorkspace?.id)
+
+  if (loading && !hasManagementIdentity) {
     return <ManagementPageLoading label="Loading your workspace..." />
   }
 
