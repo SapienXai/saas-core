@@ -1,6 +1,18 @@
 export const CORE_VERSION = "2.1.0"
 export const CORE_SCHEMA_VERSION = "2.0"
 
+export * from "./billing.js"
+
+import {
+  isBillingInterval,
+  resolvePlanOrder,
+  validateBillingPolicy,
+  validateBillingPresentation,
+  type ProductBillingConfig,
+  type ProductBillingPolicy,
+  type ProductBillingPresentation,
+} from "./billing.js"
+
 export type CoreFeatureKey = string
 export type CoreLimitKey = string
 export type CoreUsageMetricKey = string
@@ -15,6 +27,9 @@ export type ProductPlan = {
   key: string
   name: string
   description?: string
+  active?: boolean
+  sort_order?: number
+  sortOrder?: number
   prices?: Readonly<Record<string, CorePrice>>
   features?: Readonly<Record<CoreFeatureKey, boolean>>
   limits?: Readonly<Record<CoreLimitKey, number | null>>
@@ -31,6 +46,11 @@ export type ProductCatalog = {
   defaultPlanKey: string
   plans: readonly ProductPlan[]
   usageMetrics?: readonly ProductUsageMetric[]
+  /** Optional additive policy; omitted catalogs retain the existing defaults. */
+  billing?: ProductBillingConfig
+  billingPolicy?: ProductBillingConfig
+  presentation?: ProductBillingPresentation
+  billingPresentation?: ProductBillingPresentation
 }
 
 export type ProductIdentity = {
@@ -87,6 +107,9 @@ export type ProductPlatformNavigationItem = {
 export type ProductConfigContract = {
   identity: ProductIdentity
   catalog: ProductCatalog
+  billing?: ProductBillingConfig
+  billingPolicy?: ProductBillingConfig
+  billingPresentation?: ProductBillingPresentation
   onboarding?: ProductOnboarding
   auth?: ProductAuthConfig
   shell?: ProductShellConfig
@@ -156,6 +179,8 @@ export type AgentSurfaceEvent =
 export type AgentSurfaceObserver = (event: AgentSurfaceEvent) => void
 
 const VALID_JSON_SCHEMA_TYPES = new Set(["null", "boolean", "object", "array", "number", "string", "integer"])
+const PRODUCT_PLAN_KEY_PATTERN = /^[a-z][a-z0-9_-]{0,63}$/
+const PRODUCT_BILLING_KEY_PATTERN = /^[a-z][a-z0-9_.-]{0,63}$/
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -241,17 +266,129 @@ export type CompatibilityResult = {
   detail: string
 }
 
-export function defineProductConfig<T extends ProductConfigContract>(config: T): T {
-  if (!config.identity.slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(config.identity.slug)) throw new Error("Product slug must be kebab-case.")
-  if (!config.identity.name.trim()) throw new Error("Product name is required.")
-  const keys = new Set<string>()
-  for (const plan of config.catalog.plans) {
-    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(plan.key) || keys.has(plan.key)) throw new Error(`Invalid or duplicate product plan key: ${plan.key}`)
-    keys.add(plan.key)
+function validateStringKeyMap(value: unknown, path: string, valueValidator: (candidate: unknown) => boolean, valueDescription: string) {
+  if (value === undefined) return
+  if (!isRecord(value)) throw new Error(`${path} must be an object keyed by product keys.`)
+  for (const [key, candidate] of Object.entries(value)) {
+    if (!PRODUCT_BILLING_KEY_PATTERN.test(key)) throw new Error(`${path}.${key} is not a valid product key.`)
+    if (!valueValidator(candidate)) throw new Error(`${path}.${key} must be ${valueDescription}.`)
   }
-  if (!config.catalog.defaultPlanKey || !keys.has(config.catalog.defaultPlanKey)) throw new Error("The product catalog must define an existing default plan key.")
-  const defaultPlan = config.catalog.plans.find((plan) => plan.key === config.catalog.defaultPlanKey)
-  if (!defaultPlan?.limits || !Object.prototype.hasOwnProperty.call(defaultPlan.limits, "core.workspaces")) throw new Error("The default plan must explicitly define limits.core.workspaces; use null only for intentional unlimited workspaces.")
+}
+
+function validateProductPlan(plan: unknown, index: number, keys: Set<string>) {
+  const path = `catalog.plans[${index}]`
+  if (!isRecord(plan)) throw new Error(`${path} must be an object.`)
+  if (typeof plan.key !== "string" || !PRODUCT_PLAN_KEY_PATTERN.test(plan.key) || keys.has(plan.key)) throw new Error(`Invalid or duplicate product plan key: ${String(plan.key)}`)
+  if (typeof plan.name !== "string" || !plan.name.trim()) throw new Error(`Plan ${plan.key} must have a display name.`)
+  if (plan.active !== undefined && typeof plan.active !== "boolean") throw new Error(`Plan ${plan.key} active must be a boolean.`)
+  for (const sortKey of ["sort_order", "sortOrder"]) {
+    if (plan[sortKey] !== undefined && (!Number.isSafeInteger(plan[sortKey]) || Number(plan[sortKey]) < 0)) throw new Error(`Plan ${plan.key} ${sortKey} must be a non-negative integer.`)
+  }
+  if (plan.description !== undefined && (typeof plan.description !== "string" || !plan.description.trim())) throw new Error(`Plan ${plan.key} description must be non-empty copy.`)
+  if (plan.prices !== undefined) {
+    if (!isRecord(plan.prices)) throw new Error(`Plan ${plan.key} prices must be an object keyed by billing interval.`)
+    for (const [interval, price] of Object.entries(plan.prices)) {
+      if (!isBillingInterval(interval)) throw new Error(`Plan ${plan.key} has an unsupported billing interval: ${interval}.`)
+      if (!isRecord(price)) throw new Error(`Plan ${plan.key} price ${interval} must be an object.`)
+      if (typeof price.amount !== "number" && price.amount !== null || typeof price.amount === "number" && (!Number.isFinite(price.amount) || price.amount < 0)) throw new Error(`Plan ${plan.key} price ${interval} amount must be a non-negative number or null.`)
+      if (typeof price.currency !== "string" || !/^[A-Z]{3}$/.test(price.currency)) throw new Error(`Plan ${plan.key} price ${interval} currency must be an uppercase ISO-4217 code.`)
+      if (price.providerPriceId !== undefined && (typeof price.providerPriceId !== "string" || !price.providerPriceId.trim())) throw new Error(`Plan ${plan.key} price ${interval} providerPriceId must be non-empty copy.`)
+    }
+  }
+  validateStringKeyMap(plan.features, `${path}.features`, (candidate) => typeof candidate === "boolean", "a boolean")
+  validateStringKeyMap(plan.limits, `${path}.limits`, (candidate) => candidate === null || typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0, "a non-negative integer or null")
+  if (plan.metadata !== undefined && !isRecord(plan.metadata)) throw new Error(`${path}.metadata must be an object.`)
+  keys.add(plan.key)
+}
+
+function validateUsageMetrics(value: unknown) {
+  if (value === undefined) return
+  if (!Array.isArray(value)) throw new Error("catalog.usageMetrics must be an array.")
+  const keys = new Set<string>()
+  for (const [index, metric] of value.entries()) {
+    if (!isRecord(metric) || typeof metric.key !== "string" || !PRODUCT_BILLING_KEY_PATTERN.test(metric.key) || keys.has(metric.key)) throw new Error(`Invalid or duplicate product usage metric at index ${index}.`)
+    if (typeof metric.name !== "string" || !metric.name.trim()) throw new Error(`Product usage metric ${metric.key} must have a display name.`)
+    if (metric.unit !== undefined && (typeof metric.unit !== "string" || !metric.unit.trim())) throw new Error(`Product usage metric ${metric.key} unit must be non-empty copy.`)
+    keys.add(metric.key)
+  }
+}
+
+function validateBillingPresentationReferences(catalog: ProductCatalog, presentation: ProductBillingPresentation, path: string) {
+  validateBillingPresentation(presentation, path)
+  if (presentation.planOrder) resolvePlanOrder(catalog.plans.map((plan) => plan.key), presentation.planOrder)
+  const featureKeys = new Set(catalog.plans.flatMap((plan) => Object.keys(plan.features || {})))
+  const limitKeys = new Set(catalog.plans.flatMap((plan) => Object.keys(plan.limits || {})))
+  for (const key of presentation.featureKeys || []) if (!featureKeys.has(key)) throw new Error(`${path}.featureKeys references an undefined feature key: ${key}.`)
+  for (const key of presentation.limitKeys || []) if (!limitKeys.has(key)) throw new Error(`${path}.limitKeys references an undefined limit key: ${key}.`)
+  for (const row of [...(presentation.comparison || []), ...(presentation.comparisonRows || [])]) {
+    if (row.kind === "feature" && row.featureKey && !featureKeys.has(row.featureKey)) throw new Error(`${path}.comparison references an undefined feature key: ${row.featureKey}.`)
+    if (row.kind === "limit" && row.limitKey && !limitKeys.has(row.limitKey)) throw new Error(`${path}.comparison references an undefined limit key: ${row.limitKey}.`)
+  }
+  for (const key of Object.keys(presentation.plans || {})) if (!catalog.plans.some((plan) => plan.key === key)) throw new Error(`${path}.plans references an undefined plan key: ${key}.`)
+}
+
+function validateBillingAliases(catalog: ProductCatalog) {
+  const policies = [
+    ["catalog.billing", catalog.billing],
+    ["catalog.billingPolicy", catalog.billingPolicy],
+  ] as const
+  for (const [path, policy] of policies) {
+    if (policy === undefined) continue
+    validateBillingPolicy(policy, path)
+    if (policy.presentation !== undefined) validateBillingPresentationReferences(catalog, policy.presentation, `${path}.presentation`)
+    if (policy.defaultPlanKey !== undefined && policy.defaultPlanKey !== catalog.defaultPlanKey) throw new Error(`${path}.defaultPlanKey must match catalog.defaultPlanKey.`)
+    if (policy.fallbackPlanKey !== undefined && !catalog.plans.some((plan) => plan.key === policy.fallbackPlanKey)) throw new Error(`${path}.fallbackPlanKey must identify an existing plan.`)
+    if (policy.defaultInterval && policy.supportedIntervals && !policy.supportedIntervals.includes(policy.defaultInterval)) throw new Error(`${path}.defaultInterval must be listed in supportedIntervals.`)
+  }
+  const presentations = [
+    ["catalog.presentation", catalog.presentation],
+    ["catalog.billingPresentation", catalog.billingPresentation],
+  ] as const
+  for (const [path, presentation] of presentations) {
+    if (presentation === undefined) continue
+    validateBillingPresentationReferences(catalog, presentation, path)
+  }
+}
+
+export function validateProductCatalog(value: unknown): ProductCatalog {
+  if (!isRecord(value)) throw new Error("Product catalog must be an object.")
+  if (typeof value.defaultPlanKey !== "string" || !PRODUCT_PLAN_KEY_PATTERN.test(value.defaultPlanKey)) throw new Error("The product catalog must define a valid default plan key.")
+  if (!Array.isArray(value.plans)) throw new Error("The product catalog must define a plans array.")
+  const keys = new Set<string>()
+  for (const [index, plan] of value.plans.entries()) validateProductPlan(plan, index, keys)
+  if (!keys.has(value.defaultPlanKey)) throw new Error("The product catalog must define an existing default plan key.")
+  const defaultPlan = value.plans.find((plan) => isRecord(plan) && plan.key === value.defaultPlanKey)
+  if (!isRecord(defaultPlan?.limits) || !Object.prototype.hasOwnProperty.call(defaultPlan.limits, "core.workspaces")) throw new Error("The default plan must explicitly define limits.core.workspaces; use null only for intentional unlimited workspaces.")
+  validateUsageMetrics(value.usageMetrics)
+  validateBillingAliases(value as ProductCatalog)
+  return value as ProductCatalog
+}
+
+export function defineProductConfig<T extends ProductConfigContract>(config: T): T {
+  if (!isRecord(config)) throw new Error("Product config must be an object.")
+  if (!isRecord(config.identity)) throw new Error("Product identity is required.")
+  if (typeof config.identity.slug !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(config.identity.slug)) throw new Error("Product slug must be kebab-case.")
+  if (typeof config.identity.name !== "string" || !config.identity.name.trim()) throw new Error("Product name is required.")
+  validateProductCatalog(config.catalog)
+  for (const [path, policy] of [["billing", config.billing], ["billingPolicy", config.billingPolicy]] as const) {
+    if (policy === undefined) continue
+    validateBillingPolicy(policy, path)
+    if (policy.presentation !== undefined) validateBillingPresentation(policy.presentation, `${path}.presentation`)
+    if (policy.defaultPlanKey !== undefined && policy.defaultPlanKey !== config.catalog.defaultPlanKey) throw new Error(`${path}.defaultPlanKey must match catalog.defaultPlanKey.`)
+  }
+  if (config.billingPresentation !== undefined) {
+    validateBillingPresentationReferences(config.catalog, config.billingPresentation, "billingPresentation")
+    if (config.billingPresentation.planOrder) resolvePlanOrder(config.catalog.plans.map((plan) => plan.key), config.billingPresentation.planOrder)
+    const featureKeys = new Set(config.catalog.plans.flatMap((plan) => Object.keys(plan.features || {})))
+    const limitKeys = new Set(config.catalog.plans.flatMap((plan) => Object.keys(plan.limits || {})))
+    for (const key of config.billingPresentation.featureKeys || []) if (!featureKeys.has(key)) throw new Error(`billingPresentation.featureKeys references an undefined feature key: ${key}.`)
+    for (const key of config.billingPresentation.limitKeys || []) if (!limitKeys.has(key)) throw new Error(`billingPresentation.limitKeys references an undefined limit key: ${key}.`)
+    for (const row of [...(config.billingPresentation.comparison || []), ...(config.billingPresentation.comparisonRows || [])]) {
+      if (row.kind === "feature" && row.featureKey && !featureKeys.has(row.featureKey)) throw new Error(`billingPresentation.comparison references an undefined feature key: ${row.featureKey}.`)
+      if (row.kind === "limit" && row.limitKey && !limitKeys.has(row.limitKey)) throw new Error(`billingPresentation.comparison references an undefined limit key: ${row.limitKey}.`)
+    }
+    for (const key of Object.keys(config.billingPresentation.plans || {})) if (!config.catalog.plans.some((plan) => plan.key === key)) throw new Error(`billingPresentation.plans references an undefined plan key: ${key}.`)
+  }
   const productSetupPath = config.onboarding?.productSetupPath
   if (productSetupPath && (!productSetupPath.startsWith("/") || productSetupPath.startsWith("//"))) throw new Error("Product onboarding path must be an internal path.")
   const workspaceProvisioning = config.onboarding?.workspaceProvisioning ?? "manual"
