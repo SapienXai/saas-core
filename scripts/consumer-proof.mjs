@@ -59,14 +59,29 @@ function downgradeToLegacyConsumer(directory, agentSurfaceFiles) {
 const packedExportProbe = `
 import { readFileSync } from "node:fs"
 import * as core from "@sapienx/saas-core"
+import { defineProductConfig } from "@sapienx/saas-core-config"
 for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions"]) {
   if (typeof core[name] !== "function") throw new Error("Missing packed runtime export: " + name)
 }
 if (core.CORE_VERSION !== "${RELEASE_VERSION}" || core.CORE_SCHEMA_VERSION !== "${SCHEMA_VERSION}") throw new Error("Packed Core version metadata is incorrect.")
 core.validateAgentToolDefinitions([])
+if (core.BILLING_INTERVALS.join(",") !== "month,year" || core.getBillingProrationMode("upgrade") !== "immediate" || core.getBillingProrationMode("downgrade") !== "next_period") throw new Error("Packed billing interval or proration contract is incorrect.")
+if (core.resolveBillingRetry({ outcome: "unknown" }) !== "reconcile") throw new Error("Packed billing unknown-outcome contract is incorrect.")
+if (core.resolveEffectiveBillingPlan({ status: "canceled", purchasedPlanKey: "paid", fallbackPlanKey: "free" }) !== "free") throw new Error("Packed billing fallback contract is incorrect.")
+const packedProductConfig = defineProductConfig({
+  identity: { name: "Packed Proof", slug: "packed-proof" },
+  capabilities: { billing: true },
+  catalog: { defaultPlanKey: "starter", plans: [{ key: "starter", name: "Starter", features: { exports: true }, limits: { "core.workspaces": 1 } }], usageMetrics: [] },
+  billing: { defaultPlanKey: "starter", fallbackPlanKey: "starter", supportedIntervals: ["month", "year"], defaultInterval: "month", presentation: { planOrder: ["starter"], copy: { title: "Choose a plan" } } },
+})
+if (packedProductConfig.billing?.defaultPlanKey !== "starter") throw new Error("Packed product billing configuration contract is incorrect.")
 const declarations = readFileSync(new URL("./index.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
+const billingDeclarations = readFileSync(new URL("./billing.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
 for (const name of ["JsonSchema", "AgentToolDefinition", "AgentSurfaceEvent", "AgentSurfaceObserver"]) {
   if (!declarations.includes("export type " + name)) throw new Error("Missing packed type export: " + name)
+}
+for (const name of ["ProductBillingPolicy", "BillingOperationOutcome", "BillingTransitionDecision"]) {
+  if (!billingDeclarations.includes("export type " + name)) throw new Error("Missing packed billing type export: " + name)
 }
 `
 
@@ -96,6 +111,10 @@ function localSupabaseEnvironment() {
 
 async function configuredShellBrowserProof(port, supabaseEnvironment) {
   if (!supabaseEnvironment) return false
+  if (!existsSync(chromium.executablePath())) {
+    console.warn("Configured-shell browser proof skipped: Playwright Chromium is not installed.")
+    return false
+  }
   const service = createClient(supabaseEnvironment.SUPABASE_URL, supabaseEnvironment.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   const password = "CoreConsumer!2026-password"
   const email = `consumer-shell-${Date.now()}-${process.pid}@example.test`
@@ -149,6 +168,7 @@ async function configuredShellBrowserProof(port, supabaseEnvironment) {
 
 async function bootAndSmoke(cwd, port, configured = false, supabaseEnvironment = null) {
   const diagnostics = []
+  let browserShell = false
   const serverArgs = configured && supabaseEnvironment ? ["run", "dev", "--", "--port", String(port)] : ["run", "start", "--", "-p", String(port)]
   const server = spawn("npm", serverArgs, { cwd, env: { ...npmEnvironment, ...(supabaseEnvironment || {}) }, stdio: ["ignore", "pipe", "pipe"] })
   server.stdout.on("data", (chunk) => diagnostics.push(String(chunk)))
@@ -172,8 +192,9 @@ async function bootAndSmoke(cwd, port, configured = false, supabaseEnvironment =
       const response = await fetch(`http://127.0.0.1:${port}${pathname}`)
       if (response.status >= 500) throw new Error(`Generated consumer returned ${response.status} for ${pathname}.`)
     }
-    if (configured && supabaseEnvironment) await configuredShellBrowserProof(port, supabaseEnvironment)
+    if (configured && supabaseEnvironment) browserShell = await configuredShellBrowserProof(port, supabaseEnvironment)
     else if (configured) console.warn("Configured-shell browser proof skipped: the isolated local Supabase project is not running.")
+    return browserShell
   } finally {
     server.kill("SIGTERM")
   }
@@ -201,7 +222,26 @@ try {
   if (generatedPackage.devDependencies["@sapienx/saas-core-cli"] !== `^${RELEASE_VERSION}`) throw new Error("Core CLI was not emitted as a 2.1.0 tooling dependency.")
   for (const name of ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]) if (!generatedPackage.dependencies[name]) throw new Error(`Missing runtime Core dependency: ${name}`)
   const agentSurfaceFiles = ["components/agent-surface/core-webmcp-tools.tsx", "lib/agent-surface/server.ts", "lib/agent-surface/webmcp.ts"]
+  const billingManagedFiles = [
+    "app/api/billing/paddle/webhook/route.ts",
+    "app/api/cron/billing/lifecycle/route.ts",
+    "app/manage/plan/actions.ts",
+    "app/manage/plan/page.tsx",
+    "app/platform/billing/page.tsx",
+    "components/manage/billing-success-experience.tsx",
+    "components/manage/paddle-billing-actions.tsx",
+    "components/manage/plan-feature-preview.tsx",
+    "components/manage/scheduled-plan-change-banner.tsx",
+    "lib/billing/lifecycle.ts",
+    "lib/billing/paddle-client.ts",
+    "lib/billing/persistence.ts",
+    "lib/billing/price-mapping.ts",
+    "lib/billing/reconciliation.ts",
+    "lib/billing/webhook.ts",
+    "lib/entitlements.ts",
+  ]
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing Agent Surface file: ${relative}`)
+  for (const relative of billingManagedFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing managed billing file: ${relative}`)
   run(process.execPath, [packageCli, "doctor", product], root)
   const supabaseEnvironment = localSupabaseEnvironment()
   writeFileSync(path.join(product, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
@@ -212,11 +252,12 @@ try {
   run(process.execPath, ["--input-type=module", "-e", packedExportProbe], product)
   run(installedCli, ["init", "Packed CLI Proof", packedProduct], product)
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed CLI consumer is missing Agent Surface file: ${relative}`)
+  for (const relative of billingManagedFiles) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed CLI consumer is missing managed billing file: ${relative}`)
   run(installedCli, ["doctor", packedProduct], packedProduct)
   const legacyThemeFile = path.join(packedProduct, "styles/product-theme.css")
   const legacyTheme = `${readFileSync(legacyThemeFile, "utf8")}\n:root { --legacy-upgrade-proof: #123456; }\n`
   writeFileSync(legacyThemeFile, legacyTheme, "utf8")
-  downgradeToLegacyConsumer(packedProduct, agentSurfaceFiles)
+  downgradeToLegacyConsumer(packedProduct, [...agentSurfaceFiles, ...billingManagedFiles])
   const legacyDiff = JSON.parse(runOutput(installedCli, ["diff", packedProduct, "--json"], packedProduct, {}, 2))
   if (!legacyDiff.versionDrift.includes(`Core version ${LEGACY_VERSION} → ${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy runtime upgrade.")
   if (legacyDiff.schemaDrift.length || legacyDiff.packageDrift.length !== 4 || legacyDiff.packageDrift.some((item) => item.actual !== `^${LEGACY_VERSION}` || item.expected !== `^${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy package movement while preserving schema 2.0.")
@@ -226,6 +267,7 @@ try {
   const upgradedLegacyPackage = JSON.parse(readFileSync(path.join(packedProduct, "package.json"), "utf8"))
   if (runtimePackages.some((name) => upgradedLegacyPackage.dependencies[name] !== `^${RELEASE_VERSION}`) || toolingPackages.some((name) => upgradedLegacyPackage.devDependencies[name] !== `^${RELEASE_VERSION}`)) throw new Error("Packed legacy consumer package.json was not upgraded to ^2.1.0.")
   if (readFileSync(legacyThemeFile, "utf8") !== legacyTheme) throw new Error("Packed legacy update overwrote the product-owned theme.")
+  for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed legacy update did not restore managed file: ${relative}`)
   writeFileSync(path.join(packedProduct, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
   run("npm", ["install", "--ignore-scripts", "--audit=false", "--fund=false"], packedProduct)
   const legacyInstalledCli = path.join(packedProduct, "node_modules/.bin/saas-core")
@@ -237,7 +279,7 @@ try {
   run("npm", ["test"], product)
   run("npm", ["run", "typecheck"], product)
   run("npm", ["run", "build"], product, supabaseEnvironment || {})
-  await bootAndSmoke(product, 3217, true, supabaseEnvironment)
+  const browserShell = await bootAndSmoke(product, 3217, true, supabaseEnvironment)
   renameSync(product, relocated)
 
   const relocatedCli = path.join(relocated, "node_modules/.bin/saas-core")
@@ -249,13 +291,13 @@ try {
   run(relocatedCli, ["doctor", relocated], relocated)
   run("npm", ["test"], relocated)
   run("npm", ["run", "build"], relocated, supabaseEnvironment || {})
-  await bootAndSmoke(relocated, 3218, true, supabaseEnvironment)
+  const relocatedBrowserShell = await bootAndSmoke(relocated, 3218, true, supabaseEnvironment)
   run(relocatedCli, ["update", relocated], relocated)
   run(relocatedCli, ["doctor", relocated], relocated)
   const packageJson = JSON.parse(readFileSync(path.join(relocated, "package.json"), "utf8"))
   const persistedPackage = JSON.stringify(packageJson)
   if (/file:|link:|workspace:|registry\.url|\/Users\/|\/private\//.test(persistedPackage) || persistedPackage.includes(root)) throw new Error("Generated consumer contains a local dependency path.")
-  console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", packedExports: true, freshConsumer: `${RELEASE_VERSION} / schema ${SCHEMA_VERSION}`, legacyConsumerUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, legacyProductOwnedPreserved: true, legacyTypecheck: true, legacyTests: true, legacyBuild: true, configuredShell: true, browserShell: Boolean(supabaseEnvironment), relocation: true, frozenInstall: true }))
+  console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", packedExports: true, packedBillingContract: true, freshConsumer: `${RELEASE_VERSION} / schema ${SCHEMA_VERSION}`, legacyConsumerUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, billingManagedUpdate: true, legacyProductOwnedPreserved: true, legacyTypecheck: true, legacyTests: true, legacyBuild: true, configuredShell: true, browserShell: browserShell && relocatedBrowserShell, relocation: true, frozenInstall: true }))
 } finally {
   registryProcess.kill("SIGTERM")
   rmSync(product, { recursive: true, force: true })

@@ -60,7 +60,25 @@ try {
     "lib/agent-surface/server.ts",
     "lib/agent-surface/webmcp.ts",
   ]
-  for (const relative of agentSurfaceFiles) await rm(path.join(coreA, relative), { force: true })
+  const billingManagedFiles = [
+    "app/api/billing/paddle/webhook/route.ts",
+    "app/api/cron/billing/lifecycle/route.ts",
+    "app/manage/plan/actions.ts",
+    "app/manage/plan/page.tsx",
+    "app/platform/billing/page.tsx",
+    "components/manage/billing-success-experience.tsx",
+    "components/manage/paddle-billing-actions.tsx",
+    "components/manage/plan-feature-preview.tsx",
+    "components/manage/scheduled-plan-change-banner.tsx",
+    "lib/billing/lifecycle.ts",
+    "lib/billing/paddle-client.ts",
+    "lib/billing/persistence.ts",
+    "lib/billing/price-mapping.ts",
+    "lib/billing/reconciliation.ts",
+    "lib/billing/webhook.ts",
+    "lib/entitlements.ts",
+  ]
+  for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) await rm(path.join(coreA, relative), { force: true })
   await writeFile(path.join(coreC, "lib/agent-surface/webmcp.ts"), `${await readFile(path.join(coreC, "lib/agent-surface/webmcp.ts"), "utf8")}\n// Synthetic Core C change.\n`, "utf8")
 
   await mkdir(path.join(gitSourceRepository, "packages/app"), { recursive: true })
@@ -118,7 +136,7 @@ try {
   agentLegacyManifest.templateVersion = LEGACY_VERSION
   agentLegacyManifest.schemaVersion = SCHEMA_VERSION
   agentLegacyManifest.packageVersions = Object.fromEntries([...runtimePackages, ...toolingPackages].map((name) => [name, `^${LEGACY_VERSION}`]))
-  for (const relative of agentSurfaceFiles) {
+  for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) {
     await rm(path.join(agentSurfaceProduct, relative), { force: true })
     delete agentLegacyManifest.managedFiles[relative]
   }
@@ -133,13 +151,13 @@ try {
   result = run(coreB, ["update", agentSurfaceProduct, "--dry-run", "--json"])
   assert(result.status === 0, result.stderr || "Agent Surface fixture dry-run failed")
   const agentDryRun = JSON.parse(result.stdout)
-  for (const relative of agentSurfaceFiles) assert(agentDryRun.added.includes(relative), `Agent Surface dry-run omitted ${relative}`)
+  for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) assert(agentDryRun.added.includes(relative), `Managed billing/surface dry-run omitted ${relative}`)
   assert(agentDryRun.updated.includes("package.json"), "Agent Surface dry-run omitted the package version movement")
   result = run(coreB, ["update", agentSurfaceProduct, "--json"])
   assert(result.status === 0, result.stderr || result.stdout || "Agent Surface fixture update failed")
   assert((await readFile(agentThemeFile, "utf8")) === agentTheme, "Agent Surface update overwrote the product-owned theme")
   for (const relative of agentProductFiles) assert((await readFile(path.join(agentSurfaceProduct, relative), "utf8")) === agentProductBefore[relative], `Agent Surface update changed product-owned file ${relative}`)
-  for (const relative of agentSurfaceFiles) assert(existsSync(path.join(agentSurfaceProduct, relative)), `Agent Surface update did not add ${relative}`)
+  for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) assert(existsSync(path.join(agentSurfaceProduct, relative)), `Managed billing/surface update did not add ${relative}`)
   const upgradedAgentPackage = JSON.parse(await readFile(legacyPackageFile, "utf8"))
   for (const name of runtimePackages) assert(upgradedAgentPackage.dependencies[name] === `^${RELEASE_VERSION}`, `Agent Surface update did not advance ${name}`)
   for (const name of toolingPackages) assert(upgradedAgentPackage.devDependencies[name] === `^${RELEASE_VERSION}`, `Agent Surface update did not advance ${name}`)
@@ -231,7 +249,7 @@ try {
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
   assert(result.status === 0, result.stderr || "doctor rejected the consumer after rollback")
 
-  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, agentSurfaceUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
+  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, agentSurfaceUpdate: true, billingManagedUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
 } finally {
   await rm(fixture, { recursive: true, force: true })
 }

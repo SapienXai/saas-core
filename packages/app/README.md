@@ -12,3 +12,9 @@ template source; generated products receive its source files and do not need
 this package at runtime. Its `templateDependencies` field is packaging metadata
 for the materialized application, not a runtime dependency list for this
 template-carrier package.
+
+The managed template carries the Core billing route and lifecycle projection,
+workspace-scoped persistence and entitlement helpers, and the plan and
+confirmed-success surfaces. Products provide their own catalog, provider
+mapping, and domain usage writes while the managed files retain authorization,
+webhook, recovery, and rollback behavior.

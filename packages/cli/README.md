@@ -28,3 +28,9 @@ The CLI is tooling, not application runtime. Generated consumers place it in
 as a runtime dependency after materialization. `update` preflights the complete
 plan, blocks on managed conflicts, creates an independent backup, validates
 the result, and rolls back automatically if an apply or validation step fails.
+
+`pnpm run core:pack` produces the five release tarballs used by the disposable
+consumer proof. The packed CLI carries the managed billing routes, persistence,
+entitlement, plan UI, and lifecycle files; a legacy consumer receives those
+files during `update` while its catalog, styles, routes, migrations, and domain
+files remain product-owned.

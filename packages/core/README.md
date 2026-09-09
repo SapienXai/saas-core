@@ -7,6 +7,13 @@ metadata, and the Agent Surface contract. Use `defineAgentTool()` for a
 validated, transport-neutral capability definition; the managed application
 template supplies the page-scoped WebMCP adapter.
 
+Billing is provider-neutral at this boundary. The package exports the
+interval, status, transition, outcome, proration, retry, effective-plan, and
+presentation contracts, plus deterministic helpers such as
+`resolveBillingPolicy()`, `resolveEffectiveBillingPlan()`, and
+`resolveBillingRetry()`. A consumer can pack and validate these exports
+without loading a provider SDK or making a network call.
+
 Portable workspace, entitlement, catalog, schema, manifest, and compatibility
 contracts for SaaS Core products. This package contains no Next.js, Supabase
 service-role, Paddle, or product-domain code.

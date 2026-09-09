@@ -20,6 +20,14 @@ pnpm diff -- ./my-product
 pnpm update -- ./my-product
 ```
 
+The billing release boundary is documented in
+[`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md), with separate
+consumer migration checklists in
+[`CONSUMER-FOLLOWUPS.md`](./CONSUMER-FOLLOWUPS.md). Read those documents with
+the product team before applying a billing update; they define the provider
+history, legacy custom-data, catalog, usage, conflict, sandbox, and rollback
+evidence each consumer must supply.
+
 When both repositories are checked out locally, point the existing lifecycle
 tool at the canonical Core source instead of publishing packages first:
 
