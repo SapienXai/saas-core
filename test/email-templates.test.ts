@@ -30,6 +30,7 @@ describe("Core account email templates", () => {
     for (const template of [confirmation, recovery]) {
       expect(template).toContain("{{ .RedirectTo }}")
       expect(template).toContain("{{ .TokenHash }}")
+      expect(template).not.toContain("{{ .ConfirmationURL }}")
       expect(template).toContain("If the button does not work")
       expect(template).toContain("viewport")
       expect(template).toContain("email-content")

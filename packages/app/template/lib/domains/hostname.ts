@@ -40,6 +40,10 @@ export function isDevelopmentTunnelHostname(value: string) {
   const hostname = value.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")
   return process.env.NODE_ENV !== "production" && ["ngrok-free.dev", "ngrok.app", "ngrok.io"].some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`))
 }
+export function isDevelopmentLanHostname(value: string) {
+  const hostname = value.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")
+  return process.env.NODE_ENV !== "production" && hostname.endsWith(".local")
+}
 export function isIPv4(value: string) {
   const parts = value.split(".")
   return parts.length === 4 && parts.every((part) => /^(?:0|[1-9]\d{0,2})$/.test(part) && Number(part) <= 255)
@@ -95,7 +99,7 @@ export function toReachableDevelopmentHostname(value: string) {
 
 export function isLocalDevelopmentHostname(value: string | null | undefined) {
   const hostname = value?.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "") || ""
-  return isLoopbackDevelopmentHostname(hostname) || isDevelopmentIPv4(hostname) || isDevelopmentNipIoHostname(hostname)
+  return isLoopbackDevelopmentHostname(hostname) || isDevelopmentIPv4(hostname) || isDevelopmentNipIoHostname(hostname) || isDevelopmentLanHostname(hostname)
 }
 
 export function isLoopbackDevelopmentHostname(value: string | null | undefined) {
@@ -198,7 +202,7 @@ export function classifyHostname(value: string): HostnameClassification {
     }
   }
   if (isNipIoHostname(hostname)) return { kind: "UNKNOWN", hostname, workspaceSlug: null, reason: "unsupported-development-host" }
-  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "127.0.0.1" || (process.env.NODE_ENV !== "production" && isPrivateIPv4(hostname)) || isDevelopmentTunnelHostname(hostname)) return { kind: "LOCAL_DEVELOPMENT", hostname, workspaceSlug: null }
+  if (isLocalDevelopmentHostname(hostname) || isDevelopmentTunnelHostname(hostname)) return { kind: "LOCAL_DEVELOPMENT", hostname, workspaceSlug: null }
   if (hostname.endsWith(".vercel.app") || hostname.endsWith(".vercel.sh")) return { kind: "VERCEL_PREVIEW", hostname, workspaceSlug: null }
   if (hostname.endsWith(`.${root}`)) {
     const labels = hostname.slice(0, -(root.length + 1)).split(".")

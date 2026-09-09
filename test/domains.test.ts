@@ -40,6 +40,8 @@ describe("Core hostname classification", () => {
     expect(classifyHostname("localhost:3000").kind).toBe("LOCAL_DEVELOPMENT")
     expect(classifyHostname("127.0.0.1:3000").kind).toBe("LOCAL_DEVELOPMENT")
     expect(classifyHostname("192.168.1.115:3000").kind).toBe("LOCAL_DEVELOPMENT")
+    expect(classifyHostname("placedj.local:1355").kind).toBe("LOCAL_DEVELOPMENT")
+    expect(classifyHostname("placedj.local").kind).toBe("LOCAL_DEVELOPMENT")
   })
 
   it("treats supported nip.io hosts as production-like platform and Workspace hosts", () => {
