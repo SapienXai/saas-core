@@ -8,8 +8,8 @@ import { chromium } from "@playwright/test"
 const root = process.cwd()
 const packageCli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const artifacts = path.join(root, "artifacts")
-const RELEASE_VERSION = "2.1.0"
-const LEGACY_VERSION = "2.0.0"
+const RELEASE_VERSION = "2.2.0"
+const LEGACY_VERSION = "2.1.0"
 const SCHEMA_VERSION = "2.0"
 const runtimePackages = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
 const toolingPackages = ["@sapienx/saas-core-cli"]
@@ -219,7 +219,7 @@ try {
   if (!generatedSeed.includes("'default'") || !generatedSeed.includes("'{\"core.workspaces\":1,\"core.members\":null}'::jsonb")) throw new Error("Generated consumer seed does not bootstrap the neutral default plan and its explicit workspace limit.")
   const generatedPackage = JSON.parse(readFileSync(path.join(product, "package.json"), "utf8"))
   if (generatedPackage.dependencies["@sapienx/saas-core-cli"] || generatedPackage.dependencies["@sapienx/saas-core-app"]) throw new Error("Tooling/template-only Core packages were emitted as runtime dependencies.")
-  if (generatedPackage.devDependencies["@sapienx/saas-core-cli"] !== `^${RELEASE_VERSION}`) throw new Error("Core CLI was not emitted as a 2.1.0 tooling dependency.")
+  if (generatedPackage.devDependencies["@sapienx/saas-core-cli"] !== `^${RELEASE_VERSION}`) throw new Error(`Core CLI was not emitted as a ${RELEASE_VERSION} tooling dependency.`)
   for (const name of ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]) if (!generatedPackage.dependencies[name]) throw new Error(`Missing runtime Core dependency: ${name}`)
   const agentSurfaceFiles = ["components/agent-surface/core-webmcp-tools.tsx", "lib/agent-surface/server.ts", "lib/agent-surface/webmcp.ts"]
   const billingManagedFiles = [
@@ -261,11 +261,16 @@ try {
   const legacyDiff = JSON.parse(runOutput(installedCli, ["diff", packedProduct, "--json"], packedProduct, {}, 2))
   if (!legacyDiff.versionDrift.includes(`Core version ${LEGACY_VERSION} → ${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy runtime upgrade.")
   if (legacyDiff.schemaDrift.length || legacyDiff.packageDrift.length !== 4 || legacyDiff.packageDrift.some((item) => item.actual !== `^${LEGACY_VERSION}` || item.expected !== `^${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy package movement while preserving schema 2.0.")
-  run(installedCli, ["update", packedProduct], packedProduct)
+  for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!legacyDiff.coreDrift.includes(`A ${relative}`)) throw new Error(`Packed CLI legacy diff omitted managed billing/surface addition ${relative}.`)
+  const legacyDryRun = JSON.parse(runOutput(installedCli, ["update", packedProduct, "--dry-run", "--json"], packedProduct))
+  for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!legacyDryRun.added.includes(relative)) throw new Error(`Packed CLI legacy dry-run omitted managed billing/surface addition ${relative}.`)
+  if (!legacyDryRun.updated.includes("package.json")) throw new Error("Packed CLI legacy dry-run omitted the package version movement.")
+  const legacyApply = JSON.parse(runOutput(installedCli, ["update", packedProduct, "--json"], packedProduct))
+  if (JSON.stringify(legacyApply.updated) !== JSON.stringify(legacyDryRun.updated) || JSON.stringify(legacyApply.added) !== JSON.stringify(legacyDryRun.added) || JSON.stringify(legacyApply.removed) !== JSON.stringify(legacyDryRun.removed)) throw new Error("Packed CLI legacy dry-run plan did not match the real update plan.")
   const upgradedLegacyManifest = JSON.parse(readFileSync(path.join(packedProduct, ".saas-core-manifest.json"), "utf8"))
-  if (upgradedLegacyManifest.coreVersion !== RELEASE_VERSION || upgradedLegacyManifest.schemaVersion !== SCHEMA_VERSION || Object.values(upgradedLegacyManifest.packageVersions).some((value) => value !== `^${RELEASE_VERSION}`)) throw new Error("Packed legacy consumer manifest was not upgraded to Core 2.1.0 / schema 2.0.")
+  if (upgradedLegacyManifest.coreVersion !== RELEASE_VERSION || upgradedLegacyManifest.schemaVersion !== SCHEMA_VERSION || Object.values(upgradedLegacyManifest.packageVersions).some((value) => value !== `^${RELEASE_VERSION}`)) throw new Error(`Packed legacy consumer manifest was not upgraded to Core ${RELEASE_VERSION} / schema ${SCHEMA_VERSION}.`)
   const upgradedLegacyPackage = JSON.parse(readFileSync(path.join(packedProduct, "package.json"), "utf8"))
-  if (runtimePackages.some((name) => upgradedLegacyPackage.dependencies[name] !== `^${RELEASE_VERSION}`) || toolingPackages.some((name) => upgradedLegacyPackage.devDependencies[name] !== `^${RELEASE_VERSION}`)) throw new Error("Packed legacy consumer package.json was not upgraded to ^2.1.0.")
+  if (runtimePackages.some((name) => upgradedLegacyPackage.dependencies[name] !== `^${RELEASE_VERSION}`) || toolingPackages.some((name) => upgradedLegacyPackage.devDependencies[name] !== `^${RELEASE_VERSION}`)) throw new Error(`Packed legacy consumer package.json was not upgraded to ^${RELEASE_VERSION}.`)
   if (readFileSync(legacyThemeFile, "utf8") !== legacyTheme) throw new Error("Packed legacy update overwrote the product-owned theme.")
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed legacy update did not restore managed file: ${relative}`)
   writeFileSync(path.join(packedProduct, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")

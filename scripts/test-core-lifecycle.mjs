@@ -7,8 +7,8 @@ import path from "node:path"
 const root = process.cwd()
 const cli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const source = path.join(root, "packages/app/template")
-const RELEASE_VERSION = "2.1.0"
-const LEGACY_VERSION = "2.0.0"
+const RELEASE_VERSION = "2.2.0"
+const LEGACY_VERSION = "2.1.0"
 const SCHEMA_VERSION = "2.0"
 const runtimePackages = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
 const toolingPackages = ["@sapienx/saas-core-cli"]
@@ -147,6 +147,7 @@ try {
   assert(agentDiff.versionDrift.includes(`Core version ${LEGACY_VERSION} → ${RELEASE_VERSION}`), "Agent Surface diff did not report the runtime upgrade")
   assert(agentDiff.schemaDrift.length === 0 && agentDiff.versionDrift.every((item) => !item.includes("Schema")), "Agent Surface version upgrade incorrectly changed the schema")
   assert(agentDiff.packageDrift.length === 4 && agentDiff.packageDrift.every((item) => item.actual === `^${LEGACY_VERSION}` && item.expected === `^${RELEASE_VERSION}`), "Agent Surface diff did not report all package movements")
+  for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) assert(agentDiff.coreDrift.includes(`A ${relative}`), `Agent Surface diff omitted managed billing/surface addition ${relative}`)
   assert(agentDiff.coreDrift.every((item) => !agentProductFiles.some((relative) => item.endsWith(` ${relative}`))), "Agent Surface diff proposed product-owned changes")
   result = run(coreB, ["update", agentSurfaceProduct, "--dry-run", "--json"])
   assert(result.status === 0, result.stderr || "Agent Surface fixture dry-run failed")
@@ -155,6 +156,8 @@ try {
   assert(agentDryRun.updated.includes("package.json"), "Agent Surface dry-run omitted the package version movement")
   result = run(coreB, ["update", agentSurfaceProduct, "--json"])
   assert(result.status === 0, result.stderr || result.stdout || "Agent Surface fixture update failed")
+  const agentApply = JSON.parse(result.stdout)
+  assert(JSON.stringify(agentApply.updated) === JSON.stringify(agentDryRun.updated) && JSON.stringify(agentApply.added) === JSON.stringify(agentDryRun.added) && JSON.stringify(agentApply.removed) === JSON.stringify(agentDryRun.removed), "Agent Surface dry-run plan did not match the real update plan")
   assert((await readFile(agentThemeFile, "utf8")) === agentTheme, "Agent Surface update overwrote the product-owned theme")
   for (const relative of agentProductFiles) assert((await readFile(path.join(agentSurfaceProduct, relative), "utf8")) === agentProductBefore[relative], `Agent Surface update changed product-owned file ${relative}`)
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) assert(existsSync(path.join(agentSurfaceProduct, relative)), `Managed billing/surface update did not add ${relative}`)
