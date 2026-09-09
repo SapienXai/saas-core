@@ -16,6 +16,7 @@ const DEFAULT_TEMPLATE_ROOT = process.env.SAAS_CORE_TEMPLATE ? path.resolve(proc
 const RUNTIME_CORE_PACKAGES = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
 const TOOLING_CORE_PACKAGES = ["@sapienx/saas-core-cli"]
 const CORE_PACKAGES = [...RUNTIME_CORE_PACKAGES, ...TOOLING_CORE_PACKAGES]
+const REQUIRED_BILLING_MIGRATION = "supabase/migrations/20260909094344_reusable_billing_persistence.sql"
 const IGNORED_FILES = new Set(["next-env.d.ts", ".gitignore", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"])
 const PRODUCT_PREFIXES = ["src/product/", "app/(product)/", "app/product/", "components/product/", "supabase/migrations/product/"]
 const PRODUCT_FILES = new Set(["lib/product-config.ts", "product.catalog.json", "styles/product-theme.css", "styles/product.css", "app/page.tsx", "app/manage/page.tsx", "supabase/config.toml", "supabase/seed.sql"])
@@ -308,7 +309,7 @@ async function databaseSchemaCheck() {
   }
 }
 
-async function healthChecks(directory, manifest) {
+async function healthChecks(directory, manifest, sourceRoot = DEFAULT_TEMPLATE_ROOT) {
   const checks = []
   const add = (category, status, detail) => checks.push({ category, status, detail })
   if (!manifest) add("MANIFEST", "ERROR", "Missing or invalid .saas-core-manifest.json")
@@ -328,6 +329,13 @@ async function healthChecks(directory, manifest) {
   else add("PACKAGE", "INFO", "Core package versions are compatible and portable.")
   if (!existsSync(path.join(directory, "supabase/migrations"))) add("SCHEMA", "ERROR", "Supabase migration directory is missing.")
   else add("SCHEMA", "INFO", "Core migration directory is present.")
+  const sourceMigration = path.join(sourceRoot, REQUIRED_BILLING_MIGRATION)
+  const consumerMigration = path.join(directory, REQUIRED_BILLING_MIGRATION)
+  if (!existsSync(sourceMigration)) add("SCHEMA", "ERROR", `Required reusable billing migration source is missing from Core template: ${REQUIRED_BILLING_MIGRATION}`)
+  else if (!existsSync(consumerMigration)) add("SCHEMA", "ERROR", `Required reusable billing migration is missing from the consumer: ${REQUIRED_BILLING_MIGRATION}`)
+  else if (hash(await readFile(sourceMigration, "utf8")) !== hash(await readFile(consumerMigration, "utf8"))) add("SCHEMA", "ERROR", `Required reusable billing migration differs from the Core source: ${REQUIRED_BILLING_MIGRATION}`)
+  else if (!manifest?.managedFiles?.[REQUIRED_BILLING_MIGRATION]) add("SCHEMA", "ERROR", `Required reusable billing migration is not recorded as Core-managed: ${REQUIRED_BILLING_MIGRATION}`)
+  else add("SCHEMA", "INFO", `Reusable billing migration source is ready and Core-managed: ${REQUIRED_BILLING_MIGRATION}`)
   const database = await databaseSchemaCheck()
   add("DATABASE", database.status, database.detail)
   const catalog = productConfigValid(directory)
@@ -356,7 +364,7 @@ function printChecks(checks, asJson) {
 
 async function doctor(options) {
   const directory = targetDirectory(options.positional[0])
-  const checks = await healthChecks(directory, readManifestSync(directory))
+  const checks = await healthChecks(directory, readManifestSync(directory), resolveTemplateRoot(options.source))
   printChecks(checks, options.json)
   if (checks.some((item) => item.status === "ERROR")) process.exitCode = 1
 }

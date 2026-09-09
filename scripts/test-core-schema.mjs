@@ -6,6 +6,9 @@ const migrationPath = path.join(root, "supabase/migrations/20260827204359_saas_c
 const migration = await readFile(migrationPath, "utf8")
 const persistenceMigrationPath = path.join(root, "supabase/migrations/20260909094344_reusable_billing_persistence.sql")
 const persistenceMigration = await readFile(persistenceMigrationPath, "utf8")
+const templatePersistenceMigration = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260909094344_reusable_billing_persistence.sql"), "utf8")
+const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
+if (persistenceMigration !== templatePersistenceMigration) throw new Error("Root and template reusable billing migrations are not byte-for-byte identical.")
 const tables = [
   "plans", "workspaces", "workspace_members", "workspace_invitations", "workspace_subscriptions",
   "workspace_usage_periods", "billing_provider_prices", "billing_webhook_events", "billing_checkout_sessions",
@@ -61,11 +64,39 @@ const persistenceFunctions = [
   "update_billing_mutation_transition",
   "consume_billing_transition",
 ]
+const runtimeFunctions = [
+  ["upsert_billing_provider_account", "upsertBillingProviderAccount"],
+  ["claim_billing_webhook_event", "claimBillingWebhookEvent"],
+  ["finalize_billing_webhook_event", "finalizeBillingWebhookEvent"],
+  ["record_billing_mutation_transition", "recordBillingMutationTransition"],
+  ["update_billing_mutation_transition", "updateBillingMutationTransition"],
+  ["consume_billing_transition", "consumeBillingTransition"],
+]
 for (const functionName of persistenceFunctions) {
   if (!persistenceMigration.includes(`create or replace function public.${functionName}(`)) throw new Error(`Missing persistence function: ${functionName}`)
   if (!persistenceMigration.includes(`revoke all on function public.${functionName}(`)) throw new Error(`Persistence function is not revoked from public roles: ${functionName}`)
   if (!persistenceMigration.includes(`grant execute on function public.${functionName}(`)) throw new Error(`Persistence function is not granted to service_role: ${functionName}`)
 }
+for (const [sqlName, runtimeName] of runtimeFunctions) {
+  if (!persistenceMigration.includes(`create or replace function public.${sqlName}(`)) throw new Error(`Missing SQL/RPC boundary for runtime operation: ${runtimeName}`)
+  if (!runtimePersistence.includes(`export async function ${runtimeName}(`)) throw new Error(`Runtime persistence wrapper is missing: ${runtimeName}`)
+}
+const schemaCoordinates = [
+  "workspace_id uuid not null references public.workspaces(id) on delete cascade",
+  "provider text not null",
+  "environment text not null check (environment in ('sandbox', 'live'))",
+  "provider_account_id text not null",
+  "unique (workspace_id, provider, environment)",
+  "unique (provider, environment, provider_account_id)",
+  "unique (provider, environment, transition_key)",
+  "unique (mutation_id, kind)",
+  "unique (workspace_id, user_id, transition_id)",
+]
+for (const coordinate of schemaCoordinates) if (!persistenceMigration.includes(coordinate)) throw new Error(`Missing billing schema coordinate: ${coordinate}`)
+const retryFields = ["max_attempts integer not null", "next_attempt_at timestamptz", "lease_token uuid", "lease_until timestamptz", "last_error_code text", "last_error_message text"]
+for (const field of retryFields) if (!persistenceMigration.includes(field)) throw new Error(`Missing webhook lease/retry field: ${field}`)
+const transitionFields = ["attempts integer not null", "max_attempts integer not null", "next_attempt_at timestamptz", "last_attempt_at timestamptz", "provider_reference text", "outcome jsonb not null"]
+for (const field of transitionFields) if (!persistenceMigration.includes(field)) throw new Error(`Missing mutation transition field: ${field}`)
 if (persistenceMigration.includes("security definer") || persistenceFunctions.some((functionName) => {
   const start = persistenceMigration.indexOf(`create or replace function public.${functionName}(`)
   const end = persistenceMigration.indexOf("$$;", start)

@@ -10,6 +10,7 @@ const source = path.join(root, "packages/app/template")
 const RELEASE_VERSION = "2.2.0"
 const LEGACY_VERSION = "2.1.0"
 const SCHEMA_VERSION = "2.0"
+const billingMigration = "supabase/migrations/20260909094344_reusable_billing_persistence.sql"
 const runtimePackages = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
 const toolingPackages = ["@sapienx/saas-core-cli"]
 const fixture = await fsTemp("saas-core-lifecycle-")
@@ -61,6 +62,7 @@ try {
     "lib/agent-surface/webmcp.ts",
   ]
   const billingManagedFiles = [
+    billingMigration,
     "app/api/billing/paddle/webhook/route.ts",
     "app/api/cron/billing/lifecycle/route.ts",
     "app/manage/plan/actions.ts",
@@ -201,6 +203,11 @@ try {
   result = run(coreA, ["init", "Lifecycle Clean", cleanProduct])
   assert(result.status === 0, result.stderr || "clean init failed")
   await writeFile(path.join(cleanProduct, "app/page.tsx"), `${await readFile(path.join(cleanProduct, "app/page.tsx"), "utf8")}\n// product-owned customization\n`, "utf8")
+  const productMigrationRelative = "supabase/migrations/product/20990909000000_product-owned-proof.sql"
+  const productMigrationFile = path.join(cleanProduct, productMigrationRelative)
+  await mkdir(path.dirname(productMigrationFile), { recursive: true })
+  const productMigrationContent = "-- Product-owned migration fixture\ncreate table if not exists public.product_owned_proof (id uuid primary key);\n"
+  await writeFile(productMigrationFile, productMigrationContent, "utf8")
   await writeFile(path.join(cleanProduct, "product.catalog.json"), JSON.stringify({ defaultPlanKey: "hobby", plans: [{ key: "hobby", name: "Hobby", prices: { month: { amount: 7, currency: "EUR" } }, limits: { "core.workspaces": 2 } }], usageMetrics: [{ key: "projects", name: "Projects" }] }, null, 2) + "\n", "utf8")
   const cleanPackage = JSON.parse(await readFile(path.join(cleanProduct, "package.json"), "utf8"))
   cleanPackage.dependencies["@sapienx/saas-core-ui"] = "^1.0.0"
@@ -208,19 +215,24 @@ try {
   result = run(coreB, ["update", cleanProduct, "--dry-run", "--json"])
   assert(result.status === 0, result.stderr || "dry-run failed")
   const dryRun = JSON.parse(result.stdout)
-  assert(dryRun.updated.includes("app/error.tsx") && dryRun.updated.includes("package.json") && dryRun.added.includes("app/core-lifecycle-fixture.ts") && dryRun.removed.includes("app/robots.ts"), "dry-run did not report changed/added/removed managed files and package drift")
+  assert(dryRun.updated.includes("app/error.tsx") && dryRun.updated.includes("package.json") && dryRun.added.includes("app/core-lifecycle-fixture.ts") && dryRun.added.includes(billingMigration) && dryRun.removed.includes("app/robots.ts"), "dry-run did not report changed/added/removed managed files, billing migration, and package drift")
   result = run(coreB, ["update", cleanProduct, "--json"])
   assert(result.status === 0, `${result.stderr || result.stdout || "clean update failed"}`)
   const cleanReport = JSON.parse(result.stdout)
   assert(cleanReport.backup && existsSync(cleanReport.backup), "clean update did not create a backup")
   assert(JSON.stringify(cleanReport.updated) === JSON.stringify(dryRun.updated) && JSON.stringify(cleanReport.added) === JSON.stringify(dryRun.added) && JSON.stringify(cleanReport.removed) === JSON.stringify(dryRun.removed), "dry-run plan did not match the real update plan")
   assert((await readFile(path.join(cleanProduct, "app/page.tsx"), "utf8")).includes("product-owned customization"), "product customization was overwritten")
+  assert((await readFile(productMigrationFile, "utf8")) === productMigrationContent, "update changed a product-owned migration")
   result = run(coreB, ["doctor", cleanProduct, "--json"])
   assert(result.status === 0, result.stderr || "post-update doctor failed")
 
   result = run(coreA, ["init", "Lifecycle Conflict", conflictProduct])
   assert(result.status === 0, result.stderr || "conflict init failed")
   const conflictFile = path.join(conflictProduct, "app/error.tsx")
+  const conflictMigrationFile = path.join(conflictProduct, billingMigration)
+  await mkdir(path.dirname(conflictMigrationFile), { recursive: true })
+  const conflictMigrationContent = "-- locally supplied migration with the same Core path\n"
+  await writeFile(conflictMigrationFile, conflictMigrationContent, "utf8")
   const conflictRobotsBefore = await readFile(path.join(conflictProduct, "app/robots.ts"), "utf8")
   const conflictPackageBefore = await readFile(path.join(conflictProduct, "package.json"), "utf8")
   const conflictManifestBefore = await readFile(path.join(conflictProduct, ".saas-core-manifest.json"), "utf8")
@@ -230,7 +242,9 @@ try {
   assert(result.status === 2, "managed modification did not produce an update conflict")
   const conflictReport = JSON.parse(result.stdout)
   assert(conflictReport.conflicts.includes("app/error.tsx"), "conflict report omitted modified managed file")
+  assert(conflictReport.conflicts.includes(billingMigration), "conflict report omitted same-path Core migration")
   assert((await readFile(conflictFile, "utf8")) === localContent, "conflicting managed file was overwritten")
+  assert((await readFile(conflictMigrationFile, "utf8")) === conflictMigrationContent, "same-path Core migration conflict was overwritten")
   assert((await readFile(path.join(conflictProduct, "app/robots.ts"), "utf8")) === conflictRobotsBefore, "conflict update partially removed an unrelated managed file")
   assert((await readFile(path.join(conflictProduct, "package.json"), "utf8")) === conflictPackageBefore, "conflict update partially changed package.json")
   assert((await readFile(path.join(conflictProduct, ".saas-core-manifest.json"), "utf8")) === conflictManifestBefore, "conflict update partially changed the manifest")
@@ -249,8 +263,9 @@ try {
   assert((await readFile(path.join(rollbackProduct, "package.json"), "utf8")) === rollbackPackageBefore, "rollback did not restore package.json")
   assert((await readFile(path.join(rollbackProduct, ".saas-core-manifest.json"), "utf8")) === rollbackManifestBefore, "rollback did not restore the manifest")
   assert(!existsSync(path.join(rollbackProduct, "app/core-lifecycle-fixture.ts")), "rollback left a newly added Core file behind")
+  assert(!existsSync(path.join(rollbackProduct, billingMigration)), "rollback left the newly added reusable billing migration behind")
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
-  assert(result.status === 0, result.stderr || "doctor rejected the consumer after rollback")
+  assert(result.status !== 0 && result.stdout.includes("Required reusable billing migration source is missing"), "doctor did not expose the missing migration source after rollback")
 
   console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, agentSurfaceUpdate: true, billingManagedUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
 } finally {

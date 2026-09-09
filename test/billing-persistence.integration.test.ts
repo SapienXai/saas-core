@@ -19,15 +19,45 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 const integration = url && anonKey && serviceRoleKey ? describe : describe.skip
 
 describe("durable billing persistence fixture", () => {
-  it("keeps the additive schema generic and names the retry/consumption boundaries", async () => {
-    const migration = await readFile(path.join(process.cwd(), "supabase/migrations/20260909094344_reusable_billing_persistence.sql"), "utf8")
+  it("keeps root and template delivery byte-identical and couples runtime names to the additive schema", async () => {
+    const rootPath = path.join(process.cwd(), "supabase/migrations/20260909094344_reusable_billing_persistence.sql")
+    const templatePath = path.join(process.cwd(), "packages/app/template/supabase/migrations/20260909094344_reusable_billing_persistence.sql")
+    const runtimePath = path.join(process.cwd(), "lib/billing/persistence.ts")
+    const [migration, templateMigration, runtime] = await Promise.all([readFile(rootPath, "utf8"), readFile(templatePath, "utf8"), readFile(runtimePath, "utf8")])
+    expect(templateMigration).toBe(migration)
     expect(migration).toContain("create table public.billing_provider_accounts")
     expect(migration).toContain("create table public.billing_mutation_transitions")
     expect(migration).toContain("create table public.billing_transition_consumptions")
+    expect(migration).toContain("unique (workspace_id, provider, environment)")
+    expect(migration).toContain("unique (provider, environment, provider_account_id)")
+    expect(migration).toContain("provider_customer_id text")
+    expect(migration).toContain("unique (provider, environment, transition_key)")
+    expect(migration).toContain("unique (mutation_id, kind)")
+    expect(migration).toContain("unique (workspace_id, user_id, transition_id)")
+    expect(migration).toContain("billing_webhook_events_provider_environment_event_key")
+    for (const field of ["max_attempts integer not null", "next_attempt_at timestamptz", "lease_token uuid", "lease_until timestamptz", "last_error_code text", "last_error_message text"]) expect(migration).toContain(field)
     expect(migration).toContain("target_allow_reclaim boolean default false")
     expect(migration).toContain("UNKNOWN_OUTCOME_REQUIRES_RECONCILIATION")
-    expect(migration.toLowerCase()).not.toContain("paddle")
-    expect(migration.toLowerCase()).not.toContain("restaurant")
+    for (const [sqlName, runtimeName] of [
+      ["upsert_billing_provider_account", "upsertBillingProviderAccount"],
+      ["claim_billing_webhook_event", "claimBillingWebhookEvent"],
+      ["finalize_billing_webhook_event", "finalizeBillingWebhookEvent"],
+      ["record_billing_mutation_transition", "recordBillingMutationTransition"],
+      ["update_billing_mutation_transition", "updateBillingMutationTransition"],
+      ["consume_billing_transition", "consumeBillingTransition"],
+    ]) {
+      expect(migration).toContain(`create or replace function public.${sqlName}(`)
+      expect(runtime).toContain(`export async function ${runtimeName}(`)
+      expect(migration).toContain(`grant execute on function public.${sqlName}(`)
+      expect(migration).toContain(`revoke all on function public.${sqlName}(`)
+    }
+    for (const table of ["billing_provider_accounts", "billing_mutation_transitions", "billing_transition_consumptions"]) {
+      expect(migration).toContain(`alter table public.${table} enable row level security`)
+      expect(migration).toContain(`public.${table}`)
+    }
+    expect(migration).toContain("from public, anon, authenticated")
+    expect(migration).toContain("to service_role")
+    expect(migration.toLowerCase()).not.toMatch(/paddle|restaurant|reservation|seating/)
   })
 })
 

@@ -11,6 +11,7 @@ const artifacts = path.join(root, "artifacts")
 const RELEASE_VERSION = "2.2.0"
 const LEGACY_VERSION = "2.1.0"
 const SCHEMA_VERSION = "2.0"
+const billingMigration = "supabase/migrations/20260909094344_reusable_billing_persistence.sql"
 const runtimePackages = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
 const toolingPackages = ["@sapienx/saas-core-cli"]
 const npmCache = mkdtempSync(path.join(os.tmpdir(), "saas-core-npm-cache-"))
@@ -223,6 +224,7 @@ try {
   for (const name of ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]) if (!generatedPackage.dependencies[name]) throw new Error(`Missing runtime Core dependency: ${name}`)
   const agentSurfaceFiles = ["components/agent-surface/core-webmcp-tools.tsx", "lib/agent-surface/server.ts", "lib/agent-surface/webmcp.ts"]
   const billingManagedFiles = [
+    billingMigration,
     "app/api/billing/paddle/webhook/route.ts",
     "app/api/cron/billing/lifecycle/route.ts",
     "app/manage/plan/actions.ts",
@@ -242,6 +244,12 @@ try {
   ]
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing Agent Surface file: ${relative}`)
   for (const relative of billingManagedFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing managed billing file: ${relative}`)
+  const freshManifest = JSON.parse(readFileSync(path.join(product, ".saas-core-manifest.json"), "utf8"))
+  if (!freshManifest.managedFiles[billingMigration]) throw new Error("Fresh consumer manifest did not record the reusable billing migration as Core-managed.")
+  const productMigrationRelative = "supabase/migrations/product/20990909000000_product-owned-proof.sql"
+  mkdirSync(path.dirname(path.join(product, productMigrationRelative)), { recursive: true })
+  const productMigration = "-- Product-owned migration fixture\ncreate table if not exists public.product_owned_proof (id uuid primary key);\n"
+  writeFileSync(path.join(product, productMigrationRelative), productMigration, "utf8")
   run(process.execPath, [packageCli, "doctor", product], root)
   const supabaseEnvironment = localSupabaseEnvironment()
   writeFileSync(path.join(product, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
@@ -257,6 +265,8 @@ try {
   const legacyThemeFile = path.join(packedProduct, "styles/product-theme.css")
   const legacyTheme = `${readFileSync(legacyThemeFile, "utf8")}\n:root { --legacy-upgrade-proof: #123456; }\n`
   writeFileSync(legacyThemeFile, legacyTheme, "utf8")
+  mkdirSync(path.dirname(path.join(packedProduct, productMigrationRelative)), { recursive: true })
+  writeFileSync(path.join(packedProduct, productMigrationRelative), productMigration, "utf8")
   downgradeToLegacyConsumer(packedProduct, [...agentSurfaceFiles, ...billingManagedFiles])
   const legacyDiff = JSON.parse(runOutput(installedCli, ["diff", packedProduct, "--json"], packedProduct, {}, 2))
   if (!legacyDiff.versionDrift.includes(`Core version ${LEGACY_VERSION} → ${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy runtime upgrade.")
@@ -272,6 +282,7 @@ try {
   const upgradedLegacyPackage = JSON.parse(readFileSync(path.join(packedProduct, "package.json"), "utf8"))
   if (runtimePackages.some((name) => upgradedLegacyPackage.dependencies[name] !== `^${RELEASE_VERSION}`) || toolingPackages.some((name) => upgradedLegacyPackage.devDependencies[name] !== `^${RELEASE_VERSION}`)) throw new Error(`Packed legacy consumer package.json was not upgraded to ^${RELEASE_VERSION}.`)
   if (readFileSync(legacyThemeFile, "utf8") !== legacyTheme) throw new Error("Packed legacy update overwrote the product-owned theme.")
+  if (readFileSync(path.join(packedProduct, productMigrationRelative), "utf8") !== productMigration) throw new Error("Packed consumer update changed a product-owned migration.")
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed legacy update did not restore managed file: ${relative}`)
   writeFileSync(path.join(packedProduct, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
   run("npm", ["install", "--ignore-scripts", "--audit=false", "--fund=false"], packedProduct)
@@ -293,6 +304,7 @@ try {
   rmSync(path.join(relocated, "node_modules"), { recursive: true, force: true })
   run("npm", ["ci", "--ignore-scripts", "--audit=false", "--fund=false"], relocated)
   if (!existsSync(relocatedCli)) throw new Error("Packed Core CLI was not restored by frozen install.")
+  if (!existsSync(path.join(relocated, billingMigration))) throw new Error("Relocation or frozen install lost the reusable billing migration.")
   run(relocatedCli, ["doctor", relocated], relocated)
   run("npm", ["test"], relocated)
   run("npm", ["run", "build"], relocated, supabaseEnvironment || {})
