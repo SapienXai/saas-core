@@ -5,8 +5,12 @@ ready to expose page capabilities to browser agents. It does not expose any
 product capability by itself.
 
 Agent Surface is included in the current `2.2.0` Core runtime/package release.
-Core schema remains `2.0`; this runtime capability requires no database
-migration.
+Core schema compatibility coordinate remains `2.0`. The release carries the
+additive, Core-managed source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql`; Agent
+Surface itself has no schema-specific SQL. Package packing and CLI
+`init`/`update` deliver the source but never execute SQL, and each consumer
+owns its controlled apply and verification.
 
 The boundary is deliberately small:
 
@@ -203,10 +207,14 @@ result.
 
 ## Lifecycle and upgrades
 
-Agent Surface browser files are Core-managed template files. The normal
-manifest/update lifecycle delivers them to existing consumers, preserves
-product-owned paths, and retains conflict and rollback protections. The
-feature adds no migration and leaves the Core schema version unchanged.
+Agent Surface browser files and
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` are
+Core-managed template files. The normal manifest/update lifecycle delivers
+them to existing consumers, preserves product-owned paths including
+`supabase/migrations/product/**`, and retains conflict and rollback
+protections. The CLI delivers source and metadata only; consumers apply and
+verify the migration through their own database process while the schema
+compatibility coordinate remains `2.0`.
 
 ```bash
 node packages/cli/bin/saas-core.mjs diff ../product --source . --json
@@ -214,8 +222,12 @@ node packages/cli/bin/saas-core.mjs update ../product --source . --dry-run --jso
 ```
 
 The dry run should show only new or changed Core-managed files and any normal
-Core package metadata. It must not overwrite product configuration, product
-routes, product capabilities, product styles, or product migrations.
+Core package metadata, including the billing migration source when the
+consumer does not have it. It must not overwrite product configuration, product
+routes, product capabilities, product styles, or product migrations. A same-
+path consumer file at the Core migration path is a conflict and blocks the
+update before mutation; a failed update restores metadata and removes newly
+added Core files.
 
 Portable pack/fresh-consumer checks must continue to show no checkout paths,
 `file:` dependencies, temporary tarball paths, or local registry URLs. A

@@ -1,13 +1,19 @@
 # @sapienx/saas-core-cli
 
-Current package release: `2.2.0`; Core schema remains `2.0`. The CLI is the
-tooling boundary for the coordinated minor release and does not apply Core
-database migrations.
+Current package release: `2.2.0`; Core schema compatibility coordinate remains
+`2.0`. The CLI is the source-delivery and readiness boundary for the
+coordinated release. It carries the Core-managed source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` through
+package packing, `init`, and `update`, but never executes SQL. Each consumer
+owns the controlled migration apply and verification workstream.
 
 Portable `init`, `doctor`, `diff`, and `update` commands for a SaaS Core
 consumer. The CLI ships the canonical `@sapienx/saas-core-app` template at
-pack time, records managed-file hashes, detects product-versus-Core ownership,
-backs up safe updates, and preserves conflicts instead of overwriting them.
+pack time, including the billing migration source, records managed-file
+hashes, detects product-versus-Core ownership, backs up safe updates, and
+preserves conflicts instead of overwriting them. `doctor` reports Core source,
+consumer, and manifest readiness separately from its credential-dependent
+database metadata check; absent server credentials are a warning.
 
 For local multi-repository development, `diff` and `update` accept an explicit
 Core repository or template source:
@@ -35,6 +41,10 @@ the result, and rolls back automatically if an apply or validation step fails.
 
 `pnpm run core:pack` produces the five release tarballs used by the disposable
 consumer proof. The packed CLI carries the managed billing routes, persistence,
-entitlement, plan UI, and lifecycle files; a legacy consumer receives those
-files during `update` while its catalog, styles, routes, migrations, and domain
-files remain product-owned.
+entitlement, plan UI, lifecycle files, and
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql`; a legacy
+consumer receives those files during `update` while its catalog, styles,
+routes, product-owned migrations under `supabase/migrations/product/**`, and
+domain files remain product-owned. A same-path local file at the Core migration
+path blocks the update before mutation, and a failed update restores package
+and manifest metadata while removing newly added Core files.

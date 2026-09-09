@@ -1,8 +1,12 @@
 # `@sapienx/saas-core-app`
 
-Current package release: `2.2.0`; Core schema remains `2.0`. This package is the
-template carrier for the coordinated minor release and adds no database
-migration by itself.
+Current package release: `2.2.0`; Core schema compatibility coordinate remains
+`2.0`. This package is the template carrier for the coordinated release and
+includes the additive, Core-managed source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` (stored
+under `template/` in this package).
+The CLI delivers that source to consumers during `init`/`update` and never
+executes SQL; each consumer owns controlled application and verification.
 
 This package carries the portable application template extracted from the
 production management implementation. The CLI materializes its
@@ -18,7 +22,9 @@ for the materialized application, not a runtime dependency list for this
 template-carrier package.
 
 The managed template carries the Core billing route and lifecycle projection,
-workspace-scoped persistence and entitlement helpers, and the plan and
-confirmed-success surfaces. Products provide their own catalog, provider
-mapping, and domain usage writes while the managed files retain authorization,
-webhook, recovery, and rollback behavior.
+workspace-scoped persistence and entitlement helpers, the plan and
+confirmed-success surfaces, and the Core migration source named above. Products
+provide their own catalog, provider mapping, and domain usage writes while the
+managed files retain authorization, webhook, recovery, and rollback behavior.
+Product-owned migrations under `supabase/migrations/product/**` remain outside
+the managed template update set and are preserved.

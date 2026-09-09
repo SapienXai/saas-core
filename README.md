@@ -7,9 +7,14 @@ operator control plane, and interaction system remain; the restaurant and
 reservation product domain does not.
 
 The current Core runtime and coordinated package release is `2.2.0`. The Core
-database schema remains `2.0`; this is a backward-compatible minor release with
-no Core database migration. The release boundary and its validation evidence
-are recorded in [docs/RELEASE-2.2.md](docs/RELEASE-2.2.md).
+schema compatibility coordinate remains `2.0`, and this release delivers the
+additive, Core-managed migration source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` in the
+repository and canonical application template. Package packing and the CLI
+deliver that source to consumers; `init` and `update` never execute SQL. Each
+consumer owns the controlled apply and verification workstream. The release
+boundary and its validation evidence are recorded in
+[docs/RELEASE-2.2.md](docs/RELEASE-2.2.md).
 
 The governing model is:
 
@@ -168,6 +173,16 @@ default-plan setting. `bootstrap_initial_workspace` never guesses a plan from
 sort order; catalog synchronization must first persist an explicit active
 `defaultPlanKey`.
 
+The additive, provider-neutral billing persistence source is
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql`. It is
+Core-managed and is shipped from the repository root and
+`packages/app/template`; `@sapienx/saas-core-app` and the packed CLI carry it
+through `init` and `update`. Those commands copy and hash the source for the
+consumer manifest but never apply SQL. A consumer must run its own controlled
+migration process and verify the result. Product-owned migrations under
+`supabase/migrations/product/**` remain outside the managed set and survive
+Core updates.
+
 Every public Core table has RLS enabled. Workspace access is expressed through
 membership predicates; platform and delivery tables are server-only. Product
 migrations must add an intentional `workspace_id` boundary and their own
@@ -219,7 +234,8 @@ persists the explicit active default plan atomically.
 
 Fresh products receive a neutral, zero-price development catalog with one
 `default` plan. It is deliberately product-owned and may be replaced without
-a Core migration. Its default plan explicitly includes
+changing the Core schema or the Core-managed migration source. Its default plan
+explicitly includes
 `limits.core.workspaces: 1`; `null` means intentional unlimited capacity.
 Catalog synchronization persists `defaultPlanKey` in private Core settings and
 rejects a missing, inactive, or structurally incomplete default. Workspace
@@ -271,12 +287,15 @@ They do not write `file:` dependencies, absolute checkout paths, temporary
 tarball paths, or local registry URLs into generated products. The generated
 consumer proof uses a clearly non-domain-specific Projects fixture.
 
-`doctor` verifies manifest, package, ownership, catalog, portability, and—when
-server-only Supabase credentials are available—the actual `2.0` Core schema
-metadata. Without those credentials it reports a warning rather than claiming
-verification. `update` plans completely before mutation, blocks on modified
-managed files, creates a self-contained backup, validates, and rolls back the
-consumer automatically if apply or validation fails. The controlled
+`doctor` reports Core source readiness, consumer presence and hash readiness,
+and manifest ownership/readiness as separate checks. It verifies actual `2.0`
+schema metadata only when server-only Supabase credentials are available;
+without those credentials the database check is a warning, while missing or
+changed migration source, consumer, or manifest state is an error. `update`
+plans completely before mutation, blocks on modified managed files, creates a
+self-contained backup, validates, and rolls back the consumer automatically if
+apply or validation fails. Rollback restores metadata and replaced files and
+removes newly added Core files, including the billing migration. The controlled
 `2.1.0` → `2.2.0` consumer proof covers packed exports, managed billing delivery,
 product-owned preservation, relocation, and a second frozen install/build.
 

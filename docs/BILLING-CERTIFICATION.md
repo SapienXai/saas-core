@@ -1,11 +1,14 @@
 # Reusable billing certification
 
 This document records the local release-boundary review for the coordinated
-SaaS Core runtime/package release `2.2.0` and Core schema `2.0`. It certifies
-the packed Core contract, reusable billing boundary, and managed-template
-lifecycle proof, including the controlled `2.1.0` → `2.2.0` upgrade. It does
-not certify either consumer's migration or a live payment rollout. The release
-overview is [RELEASE-2.2.md](./RELEASE-2.2.md).
+SaaS Core runtime/package release `2.2.0` and Core schema compatibility
+coordinate `2.0`. The release delivers the additive, Core-managed migration
+source `supabase/migrations/20260909094344_reusable_billing_persistence.sql`
+from both the repository root and the canonical application template. It
+certifies the packed Core contract, reusable billing boundary, and managed-
+template lifecycle proof, including the controlled `2.1.0` → `2.2.0` upgrade.
+It does not certify either consumer's migration apply/verification or a live
+payment rollout. The release overview is [RELEASE-2.2.md](./RELEASE-2.2.md).
 
 The audited reference commits are ReserveVia
 `92ffa98dd22e785d90959b292c341de1e57e6873` (`fix(ui): streamline public brand
@@ -20,13 +23,15 @@ later product-owned working-tree changes, which are outside this certification.
 ### 1. What does Core own?
 
 Core owns the provider-neutral billing contract, runtime and schema
-compatibility coordinates, workspace-scoped provider mapping, checkout and
-mutation journal boundaries, verified webhook projection, reconciliation,
-past-due grace and effective-plan policy, generic entitlements, billing
-actions, and the managed plan and confirmed-success surfaces. The application
-template owns the server routes and UI integration; the Core package exports
-pure types and deterministic helpers. Paddle remains behind the managed server
-adapter and is never called by the browser or by the provider-neutral package.
+compatibility coordinates, the additive migration source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
+workspace-scoped provider mapping, checkout and mutation journal boundaries,
+verified webhook projection, reconciliation, past-due grace and effective-plan
+policy, generic entitlements, billing actions, and the managed plan and
+confirmed-success surfaces. The application template carries the source and
+the server routes/UI integration; the Core package exports pure types and
+deterministic helpers. Paddle remains behind the managed server adapter and is
+never called by the browser or by the provider-neutral package.
 
 Each product owns its identity, plan keys, prices, provider price mappings,
 feature and limit keys, usage metrics, presentation copy, routes, styles,
@@ -64,26 +69,35 @@ checkout engine is not part of the integration.
 
 ### 4. How are package and schema compatibility handled?
 
-The current coordinates are runtime `2.2.0` and schema `2.0`. All five Core
-packages use the runtime coordinate, while the CLI is a tooling dependency and
-the application package is only a template carrier. `doctor` checks manifest,
-package, migration, catalog, and (when server credentials are present) live
-schema metadata. `diff` reports a runtime movement separately from schema
+The current coordinates are runtime `2.2.0` and schema compatibility coordinate
+`2.0`. All five Core packages use the runtime coordinate, while the CLI is a
+tooling dependency and the application package is the template carrier for the
+managed migration source. Package packing and CLI `init`/`update` deliver
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` as source
+and never execute SQL. The consumer owns migration ordering, application, and
+database verification. `doctor` reports source readiness, consumer presence
+and hash readiness, and manifest ownership/readiness separately; its database
+metadata check runs only with server credentials. Missing credentials produce a
+database warning, while missing or changed source, consumer, or manifest state
+produces an error. `diff` reports runtime movement separately from schema
 movement; the controlled legacy fixture upgrades package versions and runtime
-metadata from `2.1.0` to `2.2.0` while keeping schema `2.0`. The updater does
-not rewrite consumer lockfiles or apply database migrations.
+metadata from `2.1.0` to `2.2.0` while keeping compatibility coordinate `2.0`.
+The updater does not rewrite consumer lockfiles or apply SQL.
 
 ### 5. How do managed ownership and conflicts work?
 
 The CLI records hashes for Core-managed template files and product-owned path
-boundaries in `.saas-core-manifest.json`. Product catalogs, styles, routes,
-migrations, and domain files are excluded from managed replacement. An
-untouched managed file is backed up and updated. A locally modified managed
-file blocks the entire update before mutation and is reported as a conflict.
-An apply or post-update validation failure restores the independent backup,
-including package and manifest state, and removes newly added managed files.
-The lifecycle fixture and packed consumer proof cover dry-run/apply parity,
-product preservation, conflict isolation, rollback, and relocation.
+boundaries in `.saas-core-manifest.json`. The billing source at
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` is
+Core-managed; product catalogs, styles, routes, migrations under
+`supabase/migrations/product/**`, and domain files are excluded from managed
+replacement. An untouched managed file is backed up and updated. A locally
+modified managed file, including a same-path consumer file at the Core billing
+migration path, blocks the entire update before mutation and is reported as a
+conflict. An apply or post-update validation failure restores the independent
+backup, including package and manifest state, and removes newly added managed
+files. The lifecycle fixture and packed consumer proof cover dry-run/apply
+parity, product preservation, conflict isolation, rollback, and relocation.
 
 ### 6. How were billing, webhook, and persistence proofs run?
 
@@ -93,13 +107,15 @@ policy, durable webhook leases and retry states, unknown outcomes, and
 exactly-once transition consumption. The catalog and schema-doctor fixtures
 exercise explicit defaults, product keys, usage metrics, RLS metadata, and
 schema mismatch handling. `core:pack` builds and packs the Core, config, UI,
-app, and CLI artifacts. `core:consumer-proof` installs those tarballs through
-a disposable local registry, executes packed billing exports and config
-validation, initializes a fresh consumer, upgrades a legacy consumer with the
-managed billing files, and verifies product-owned preservation. The same
-proof relocates the consumer and repeats a frozen install and build; the
-focused lifecycle fixture also checks dry-run/apply parity, conflict
-isolation, and rollback.
+app, and CLI artifacts, carrying the Core-managed billing migration source.
+`core:consumer-proof` installs those tarballs through a disposable local
+registry, executes packed billing exports and config validation, initializes a
+fresh consumer, upgrades a legacy consumer with the managed billing files, and
+verifies product-owned preservation. The same proof relocates the consumer and
+repeats a frozen install and build; the focused lifecycle fixture also checks
+source delivery, dry-run/apply parity, same-path conflict isolation, rollback,
+and removal of a newly added migration source on rollback. No CLI step applies
+SQL; consumer apply and database verification remain a separate workstream.
 
 No live Paddle request, provider mutation, production database write, deploy,
 push, merge, or secret change is included in these checks.
@@ -108,9 +124,12 @@ push, merge, or secret change is included in these checks.
 
 The local Supabase shell proof and browser shell proof are conditional on a
 running isolated local Supabase project with service credentials; they are
-reported as skipped when that environment is unavailable. `doctor` reports a
-warning when server-only schema credentials are absent. The full root build and
-typecheck currently remain blocked by pre-existing template platform user
+reported as skipped when that environment is unavailable. `doctor` keeps its
+source, consumer, and manifest readiness checks independent from the
+credential-dependent database check: absent server-only schema credentials
+produce a warning, while missing or mismatched database metadata produces an
+error. The full root build and typecheck currently remain blocked by
+pre-existing template platform user
 errors: the template platform user actions/page import helpers and
 `platform-user-management` exports are missing. Full lint also sees generated
 `supabase/.temp` code from local services. These failures are outside the

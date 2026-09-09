@@ -6,8 +6,12 @@ The old SaaS Core implementation is preserved locally on
 the read-only canonical source used for extraction.
 
 The current coordinated runtime and package release is `2.2.0` on Core schema
-`2.0`. It is a backward-compatible minor release with no Core database
-migration. The release evidence and certification boundary are recorded in
+compatibility coordinate `2.0`. It delivers the additive, Core-managed source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` in the
+repository root and canonical application template. Package packing and CLI
+`init`/`update` deliver the source but never execute SQL; each consumer owns
+the controlled apply and verification workstream. The release evidence and
+certification boundary are recorded in
 [`RELEASE-2.2.md`](./RELEASE-2.2.md) and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
@@ -46,9 +50,11 @@ node ../saas-core/packages/cli/bin/saas-core.mjs update ../PlaceDJ --source ../s
 The `--source` flag is a local-development override. It accepts a Core
 repository (resolving `packages/app/template`) or a template directory and
 does not alter release installation semantics. The command still reads the
-consumer manifest, blocks locally modified managed files, preserves every
+consumer manifest, delivers the Core-managed migration source alongside other
+managed files, blocks locally modified managed files, preserves every
 product-owned path, creates the normal backup and runs the normal validation
-and rollback path. It does not apply database migrations or rewrite a lockfile.
+and rollback path. It copies source and metadata only: it never executes SQL or
+rewrites a lockfile.
 When the source is a Git checkout, the update records only its 40-character
 `coreSourceCommit` in the manifest, never the local filesystem path. This is
 an optional field, so older manifests remain backward-compatible; a direct
@@ -94,8 +100,13 @@ do not need a configuration switch or product tool registry merely to accept
 the update. The new foundation is available but registers zero tools until a
 product page explicitly renders `CoreWebMcpTools` with product-owned tools.
 
-The update adds no database migration and keeps Core schema `2.0`. Validate
-the normal lifecycle before applying it:
+The Agent Surface has no schema-specific SQL. The same update also carries the
+Core-managed billing source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql`, while
+the Core schema compatibility coordinate stays `2.0`. The CLI copies the
+source, never executes SQL, and leaves the consumer to apply and verify it
+through its own migration process. Validate the normal lifecycle before
+applying it:
 
 ```bash
 node packages/cli/bin/saas-core.mjs diff ../product --source . --json
@@ -113,10 +124,17 @@ screenshots, or provider credentials between checkouts.
 
 ## Database changes
 
-The baseline migration is clean and independent. New Core migrations must
-contain only generic platform changes. Product migrations follow it and add
-Workspace-scoped tables with RLS. Never point a clean Core reset at a live
-ReserveVia database, and never rewrite the source product’s migration history.
+The baseline migration is clean and independent. The `2.2.0` release adds the
+generic, provider-neutral Core-managed source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql`; it is
+additive and is present in both the repository root and
+`packages/app/template`. Its delivery preserves the schema compatibility
+coordinate `2.0`. Product migrations under `supabase/migrations/product/**`
+follow the Core source, add Workspace-scoped tables with RLS, and remain
+product-owned. CLI `init`/`update` and package packing deliver migration source
+only; the consumer controls ordering, SQL application, verification, and any
+rollback of its database state. Never point a clean Core reset at a live
+ReserveVia database, and never rewrite the source product's migration history.
 
 For every schema update:
 
@@ -128,15 +146,16 @@ For every schema update:
 5. scan the generated consumer for absolute paths, `file:` dependencies, and
    product vocabulary.
 
-Core runtime version and Core schema version are separate compatibility
-coordinates. The current runtime is `2.2.0` and the Core schema remains `2.0`;
-the controlled `2.1.0` → `2.2.0` package update and reusable billing delivery
-required a backward-compatible minor package release, not a schema migration.
-`doctor` verifies the actual database metadata when `SUPABASE_URL` and a server-only
-`SUPABASE_SERVICE_ROLE_KEY` are available, and reports a warning when those
-credentials are absent. It reports an error when metadata is missing or
-mismatched. Changing a product catalog, default plan, or usage metric does not
-require a Core migration.
+Core runtime version and schema compatibility coordinate are separate. The
+current runtime is `2.2.0` and the compatibility coordinate remains `2.0` even
+though the release delivers the additive billing persistence source. `doctor`
+reports Core source readiness, consumer presence/hash readiness, and manifest
+ownership/readiness separately. It verifies actual schema metadata only when
+`SUPABASE_URL` and a server-only `SUPABASE_SERVICE_ROLE_KEY` are available;
+absent credentials produce a database warning, while missing or mismatched
+metadata is an error. A consumer must apply and verify the delivered migration
+through its own controlled process. Changing a product catalog, default plan,
+or usage metric does not alter the Core schema or migration source.
 
 ## Public Workspace routing
 
@@ -157,9 +176,10 @@ simple local work and `<private-ip>.nip.io` forms when testing root, app, or
 Workspace host semantics. Keep nip.io separate from ngrok tunnels and do not
 persist nip.io aliases as customer domains.
 
-The schema remains Core `2.0`; this capability uses the existing `workspaces`
-and `workspace_domains` tables and adds no migration or product-entity table.
-Domain provider reconciliation remains in the existing management workflow.
+The schema compatibility coordinate remains Core `2.0`; this capability uses
+the existing `workspaces` and `workspace_domains` tables and does not add a
+product-entity table or change migration ownership. Domain provider
+reconciliation remains in the existing management workflow.
 
 ## UI changes
 

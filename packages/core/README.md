@@ -1,7 +1,11 @@
 # @sapienx/saas-core
 
-Current release: runtime `2.2.0`; Core database schema `2.0`. This is a
-backward-compatible minor release with no Core database migration.
+Current release: runtime `2.2.0`; Core schema compatibility coordinate `2.0`.
+The release delivers the additive, Core-managed migration source
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` through
+the canonical application template and CLI. This package exports the generic
+contracts; it does not execute SQL. Consumers apply and verify the delivered
+source through their own controlled migration process.
 
 Generic SaaS Core contracts include product configuration, compatibility
 metadata, and the Agent Surface contract. Use `defineAgentTool()` for a
@@ -17,7 +21,8 @@ without loading a provider SDK or making a network call.
 
 Portable workspace, entitlement, catalog, schema, manifest, and compatibility
 contracts for SaaS Core products. This package contains no Next.js, Supabase
-service-role, Paddle, or product-domain code.
+service-role, Paddle, migration execution, or product-domain code. Its package
+boundary does not own the template's migration files.
 
 Import it from Core runtime adapters and product tooling. Products define their
 own plan names, prices, feature keys, and usage metrics through the config
