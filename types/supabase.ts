@@ -148,6 +148,137 @@ export type Database = {
           },
         ]
       }
+      billing_mutation_transitions: {
+        Row: {
+          attempts: number
+          created_at: string
+          effective_at: string | null
+          environment: string
+          from_plan_key: string | null
+          id: string
+          kind: string
+          last_attempt_at: string | null
+          last_error_code: string | null
+          last_error_message: string | null
+          max_attempts: number
+          mutation_id: string
+          next_attempt_at: string | null
+          outcome: Json
+          provider: string
+          provider_reference: string | null
+          state: string
+          to_plan_key: string | null
+          transition_key: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          effective_at?: string | null
+          environment: string
+          from_plan_key?: string | null
+          id?: string
+          kind: string
+          last_attempt_at?: string | null
+          last_error_code?: string | null
+          last_error_message?: string | null
+          max_attempts?: number
+          mutation_id: string
+          next_attempt_at?: string | null
+          outcome?: Json
+          provider: string
+          provider_reference?: string | null
+          state?: string
+          to_plan_key?: string | null
+          transition_key: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          effective_at?: string | null
+          environment?: string
+          from_plan_key?: string | null
+          id?: string
+          kind?: string
+          last_attempt_at?: string | null
+          last_error_code?: string | null
+          last_error_message?: string | null
+          max_attempts?: number
+          mutation_id?: string
+          next_attempt_at?: string | null
+          outcome?: Json
+          provider?: string
+          provider_reference?: string | null
+          state?: string
+          to_plan_key?: string | null
+          transition_key?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_mutation_transitions_mutation_id_fkey"
+            columns: ["mutation_id"]
+            isOneToOne: false
+            referencedRelation: "billing_mutations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_mutation_transitions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_provider_accounts: {
+        Row: {
+          created_at: string
+          environment: string
+          id: string
+          metadata: Json
+          provider: string
+          provider_account_id: string
+          provider_customer_id: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          environment: string
+          id?: string
+          metadata?: Json
+          provider: string
+          provider_account_id: string
+          provider_customer_id?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          environment?: string
+          id?: string
+          metadata?: Json
+          provider?: string
+          provider_account_id?: string
+          provider_customer_id?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_provider_accounts_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       billing_provider_prices: {
         Row: {
           active: boolean
@@ -201,6 +332,7 @@ export type Database = {
       billing_webhook_events: {
         Row: {
           attempts: number
+          environment: string
           error_code: string | null
           error_message: string | null
           event_type: string
@@ -213,11 +345,18 @@ export type Database = {
           provider_event_id: string
           provider_object_id: string | null
           received_at: string
+          last_error_code: string | null
+          last_error_message: string | null
+          lease_token: string | null
+          lease_until: string | null
+          max_attempts: number
+          next_attempt_at: string | null
           status: string
           workspace_id: string | null
         }
         Insert: {
           attempts?: number
+          environment?: string
           error_code?: string | null
           error_message?: string | null
           event_type: string
@@ -230,11 +369,18 @@ export type Database = {
           provider_event_id: string
           provider_object_id?: string | null
           received_at?: string
+          last_error_code?: string | null
+          last_error_message?: string | null
+          lease_token?: string | null
+          lease_until?: string | null
+          max_attempts?: number
+          next_attempt_at?: string | null
           status?: string
           workspace_id?: string | null
         }
         Update: {
           attempts?: number
+          environment?: string
           error_code?: string | null
           error_message?: string | null
           event_type?: string
@@ -247,12 +393,57 @@ export type Database = {
           provider_event_id?: string
           provider_object_id?: string | null
           received_at?: string
+          last_error_code?: string | null
+          last_error_message?: string | null
+          lease_token?: string | null
+          lease_until?: string | null
+          max_attempts?: number
+          next_attempt_at?: string | null
           status?: string
           workspace_id?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "billing_webhook_events_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_transition_consumptions: {
+        Row: {
+          consumed_at: string
+          id: string
+          transition_id: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          consumed_at?: string
+          id?: string
+          transition_id: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          consumed_at?: string
+          id?: string
+          transition_id?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_transition_consumptions_transition_id_fkey"
+            columns: ["transition_id"]
+            isOneToOne: false
+            referencedRelation: "billing_mutation_transitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "billing_transition_consumptions_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
@@ -1143,6 +1334,30 @@ export type Database = {
         }
         Returns: boolean
       }
+      claim_billing_webhook_event: {
+        Args: {
+          target_allow_reclaim?: boolean
+          target_event_id: string
+          target_lease_seconds?: number
+          target_lease_token: string
+          target_now?: string
+        }
+        Returns: {
+          attempts: number
+          claimed: boolean
+          environment: string
+          event_id: string
+          lease_token: string
+          lease_until: string
+          max_attempts: number
+          next_attempt_at: string
+          payload: Json
+          provider: string
+          provider_event_id: string
+          status: string
+          workspace_id: string
+        }[]
+      }
       bootstrap_initial_workspace: {
         Args: { target_workspace_name: string; target_workspace_slug?: string }
         Returns: {
@@ -1167,6 +1382,25 @@ export type Database = {
           payload: Json
         }[]
       }
+      consume_billing_transition: {
+        Args: {
+          target_now?: string
+          target_transition_id: string
+          target_user_id: string
+          target_workspace_id: string
+        }
+        Returns: {
+          consumed: boolean
+          consumed_at: string
+          effective_at: string
+          kind: string
+          outcome: Json
+          state: string
+          transition_id: string
+          user_id: string
+          workspace_id: string
+        }[]
+      }
       create_workspace_invitation: {
         Args: {
           target_email: string
@@ -1186,6 +1420,28 @@ export type Database = {
           schema_version: string
         }[]
       }
+      finalize_billing_webhook_event: {
+        Args: {
+          target_error_code?: string
+          target_error_message?: string
+          target_event_id: string
+          target_lease_token: string
+          target_next_attempt_at?: string
+          target_now?: string
+          target_status: string
+        }
+        Returns: {
+          attempts: number
+          event_id: string
+          lease_token: string
+          lease_until: string
+          max_attempts: number
+          next_attempt_at: string
+          processed_at: string
+          status: string
+          updated: boolean
+        }[]
+      }
       has_workspace_role: {
         Args: {
           allowed_roles: string[]
@@ -1202,6 +1458,45 @@ export type Database = {
         Args: { target_user_id?: string; target_workspace_id: string }
         Returns: boolean
       }
+      record_billing_mutation_transition: {
+        Args: {
+          target_environment: string
+          target_effective_at?: string
+          target_from_plan_key?: string
+          target_kind: string
+          target_max_attempts?: number
+          target_mutation_id: string
+          target_outcome?: Json
+          target_provider: string
+          target_provider_reference?: string
+          target_state?: string
+          target_to_plan_key?: string
+          target_transition_key: string
+          target_workspace_id: string
+        }
+        Returns: {
+          attempts: number
+          effective_at: string
+          environment: string
+          from_plan_key: string
+          inserted: boolean
+          kind: string
+          last_attempt_at: string
+          last_error_code: string
+          last_error_message: string
+          max_attempts: number
+          mutation_id: string
+          next_attempt_at: string
+          outcome: Json
+          provider: string
+          provider_reference: string
+          state: string
+          to_plan_key: string
+          transition_id: string
+          transition_key: string
+          workspace_id: string
+        }[]
+      }
       sync_core_catalog: {
         Args: {
           target_deactivate_missing?: boolean
@@ -1212,6 +1507,52 @@ export type Database = {
           configured_default_plan_key: string
           deactivated_count: number
           synchronized_count: number
+        }[]
+      }
+      update_billing_mutation_transition: {
+        Args: {
+          target_error_code?: string
+          target_error_message?: string
+          target_expected_state?: string
+          target_next_attempt_at?: string
+          target_now?: string
+          target_outcome?: Json
+          target_provider_reference?: string
+          target_state: string
+          target_transition_id: string
+        }
+        Returns: {
+          attempts: number
+          last_error_code: string
+          last_error_message: string
+          max_attempts: number
+          next_attempt_at: string
+          outcome: Json
+          provider_reference: string
+          state: string
+          transition_id: string
+          updated: boolean
+        }[]
+      }
+      upsert_billing_provider_account: {
+        Args: {
+          target_environment: string
+          target_metadata?: Json
+          target_provider: string
+          target_provider_account_id: string
+          target_provider_customer_id?: string
+          target_workspace_id: string
+        }
+        Returns: {
+          account_id: string
+          created_at: string
+          environment: string
+          metadata: Json
+          provider: string
+          provider_account_id: string
+          provider_customer_id: string
+          updated_at: string
+          workspace_id: string
         }[]
       }
       update_workspace_member: {
