@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowDownLeft, ArrowRight, CalendarClock, Check, CreditCard, ExternalLink, ReceiptText, ShieldCheck, Sparkles, X } from "lucide-react"
 import { initializePaddle, type Paddle } from "@paddle/paddle-js"
@@ -30,6 +30,7 @@ import {
   getBillingInvoiceUrl,
   getBillingTransactions,
   getPlanUsage,
+  consumeBillingTransitionForCurrentUser,
   previewPaddleCheckout,
   previewPaddlePlanChange,
   reconcilePaddleSubscription,
@@ -37,6 +38,50 @@ import {
   startPaddleCheckout,
   startPaymentMethodRecovery,
 } from "@/app/manage/plan/actions"
+
+export type BillingPresentationConfig = {
+  planOrder?: readonly string[]
+  plans?: Readonly<Record<string, { label?: string; description?: string; highlights?: readonly string[] }>>
+  copy?: Readonly<Record<string, string>>
+  featureKeys?: readonly string[]
+  limitKeys?: readonly string[]
+  comparison?: readonly { key: string; label: string; kind?: "feature" | "limit"; featureKey?: string; limitKey?: string }[]
+  comparisonRows?: readonly { key: string; label: string; kind?: "feature" | "limit"; featureKey?: string; limitKey?: string }[]
+}
+
+export type BillingUsageMetricConfig = { key: string; name: string; unit?: string }
+
+export type ResolvedBillingPresentation = {
+  planOrder: string[]
+  supportedIntervals: Array<"month" | "year">
+  defaultInterval: "month" | "year"
+  comparisonRows: Array<{ key: string; label: string; kind: "feature" | "limit"; featureKey?: string; limitKey?: string }>
+}
+
+/** Resolve additive product presentation fields without assuming product keys. */
+export function resolveBillingPresentation(
+  plans: readonly Pick<Plan, "key">[],
+  presentation?: BillingPresentationConfig,
+  supportedIntervals: readonly string[] = ["month", "year"],
+  defaultInterval = "month",
+): ResolvedBillingPresentation {
+  const planKeys = plans.map((plan) => plan.key)
+  const requestedOrder = presentation?.planOrder || []
+  const planOrder = requestedOrder.length === planKeys.length && requestedOrder.every((key) => planKeys.includes(key)) && new Set(requestedOrder).size === requestedOrder.length
+    ? [...requestedOrder]
+    : planKeys
+  const intervals = supportedIntervals.filter((interval): interval is "month" | "year" => interval === "month" || interval === "year")
+  const availableIntervals: Array<"month" | "year"> = intervals.length ? [...new Set(intervals)] : ["month"]
+  const resolvedDefault = availableIntervals.includes(defaultInterval as "month" | "year") ? defaultInterval as "month" | "year" : availableIntervals[0]
+  const configuredRows = [...(presentation?.comparison || []), ...(presentation?.comparisonRows || [])]
+  const comparisonRows: ResolvedBillingPresentation["comparisonRows"] = configuredRows.length
+    ? configuredRows.map((row) => ({ ...row, kind: (row.kind || (row.limitKey ? "limit" : "feature")) as "feature" | "limit" }))
+    : [
+        ...(presentation?.featureKeys || []).map((key) => ({ key: `feature.${key}`, label: key, kind: "feature" as const, featureKey: key })),
+        ...(presentation?.limitKeys || []).map((key) => ({ key: `limit.${key}`, label: key, kind: "limit" as const, limitKey: key })),
+      ]
+  return { planOrder, supportedIntervals: availableIntervals, defaultInterval: resolvedDefault, comparisonRows }
+}
 
 type Plan = {
   key: string
@@ -82,6 +127,10 @@ type Props = {
   plans: Plan[]
   configuredPaidPlans: string[]
   configuredPrices: ConfiguredPrice[]
+  presentation?: BillingPresentationConfig
+  usageMetrics?: BillingUsageMetricConfig[]
+  supportedIntervals?: readonly string[]
+  defaultInterval?: string
 }
 
 const GENERIC_PLAN_COPY: {
@@ -121,13 +170,14 @@ type PendingBillingOutcome = {
   kind: "purchase" | "upgrade" | "downgrade" | "billing"
   targetPlanKey: string
   targetInterval: string
+  transitionId?: string | null
   effectiveAt?: string | null
   fromPlanName?: string | null
 }
 
 type BillingSuccessState = PendingBillingOutcome & {
   planName: string
-  highlights: TranslationKey[]
+  highlights: string[]
 }
 
 type BillingAction =
@@ -143,7 +193,7 @@ type BillingAction =
   | `plan-preview:${string}`
   | `invoice:${string}`
 
-export function PaddleBillingActions({ currentPlan, billing, plans, configuredPaidPlans, configuredPrices }: Props) {
+export function PaddleBillingActions({ currentPlan, billing, plans, configuredPaidPlans, configuredPrices, presentation, usageMetrics = [], supportedIntervals = ["month", "year"], defaultInterval = "month" }: Props) {
   const { currentLang, getTranslation, translateMessage } = useLanguage()
   const { updateCurrentWorkspacePlan } = useManageContext()
   const t = getTranslation
@@ -161,15 +211,34 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   const [successExperience, setSuccessExperience] = useState<BillingSuccessState | null>(null)
   const [selectingPlan, setSelectingPlan] = useState<string | null>(null)
   const [billingConfirmation, setBillingConfirmation] = useState<BillingConfirmation | null>(null)
-  const [billingInterval, setBillingInterval] = useState(billing.billingInterval === "year" ? "year" : "month")
+  const [billingInterval, setBillingInterval] = useState(billing.billingInterval === "year" ? "year" : defaultInterval === "year" ? "year" : "month")
   const [cancellationReason, setCancellationReason] = useState("too_expensive")
   const [cancellationFeedback, setCancellationFeedback] = useState("")
   const [history, setHistory] = useState<Array<Record<string, string | null>> | null>(null)
 
-  const paidPlans = useMemo(
-    () => plans.filter((plan) => configuredPaidPlans.includes(plan.key)),
-    [configuredPaidPlans, plans],
+  const resolvedPresentation = useMemo(
+    () => resolveBillingPresentation(plans, presentation, supportedIntervals, defaultInterval),
+    [defaultInterval, plans, presentation, supportedIntervals],
   )
+  const presentationCopy = presentation?.copy || {}
+  const copyText = (key: string, fallback: string) => presentationCopy[key]?.trim() || fallback
+  const planPresentation = useCallback((plan: Plan) => presentation?.plans?.[plan.key] || {}, [presentation])
+  const planCopy = useCallback((plan: Plan) => {
+    const configured = planPresentation(plan)
+    const configuredHighlights = configured.highlights?.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim()) || []
+    return {
+      label: configured.label?.trim() || plan.name,
+      description: configured.description?.trim() || t("manage.planUsage.billing.catalogDescription"),
+      highlights: configuredHighlights.length ? configuredHighlights : [t(GENERIC_PLAN_COPY.highlights[0]), t(GENERIC_PLAN_COPY.highlights[1])],
+    }
+  }, [planPresentation, t])
+  const displayKey = (key: string) => presentationCopy[key] || presentationCopy[`feature.${key}`] || presentationCopy[`limit.${key}`] || key.replaceAll(/[._-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2")
+  const usageMetricName = (key: string) => usageMetrics.find((metric) => metric.key === key)?.name || displayKey(key)
+
+  const orderedPlans = useMemo(() => {
+    const order = new Map(resolvedPresentation.planOrder.map((key, index) => [key, index]))
+    return [...plans].sort((a, b) => (order.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.key) ?? Number.MAX_SAFE_INTEGER) || a.sort_order - b.sort_order || a.key.localeCompare(b.key))
+  }, [plans, resolvedPresentation.planOrder])
 
   useEffect(() => {
     if (!pendingOutcome) return
@@ -194,6 +263,33 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         ? data?.billing.scheduledPlanInterval === pendingOutcome.targetInterval
         : data?.billing.billingInterval === pendingOutcome.targetInterval
       if (data && planIsVerified && intervalIsVerified && subscriptionIsActive) {
+        if (!pendingOutcome.transitionId) {
+          setActivating(false)
+          setPendingOutcome(null)
+          setMessage(t("manage.planUsage.billing.paymentReceived"))
+          return
+        }
+        const consumption = await consumeBillingTransitionForCurrentUser(pendingOutcome.transitionId)
+        if (cancelled) return
+        if (!consumption.success || !consumption.data || consumption.data.state !== "succeeded") {
+          attempts += 1
+          if (attempts < 12) {
+            window.setTimeout(refreshUntilVerified, 2500)
+            return
+          }
+          setActivating(false)
+          setPendingOutcome(null)
+          setMessage(translateMessage(consumption.message || t("manage.planUsage.billing.paymentReceived")))
+          return
+        }
+        // Only the tab that atomically inserted the consumption gets to show
+        // the celebration. A duplicate tab/reload still refreshes quietly.
+        if (!consumption.data.consumed) {
+          setActivating(false)
+          setPendingOutcome(null)
+          router.refresh()
+          return
+        }
         const plan = data.plans.find((entry) => entry.key === pendingOutcome.targetPlanKey)
         updateCurrentWorkspacePlan({
           key: data.entitlements.planKey,
@@ -213,8 +309,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         setPendingOutcome(null)
         setSuccessExperience({
           ...pendingOutcome,
-          planName: plan?.name || pendingOutcome.targetPlanKey,
-          highlights: GENERIC_PLAN_COPY.highlights,
+          planName: plan ? planCopy(plan).label : pendingOutcome.targetPlanKey,
+          highlights: plan ? planCopy(plan).highlights : [t(GENERIC_PLAN_COPY.highlights[0]), t(GENERIC_PLAN_COPY.highlights[1])],
           effectiveAt: isScheduledDowngrade ? data?.billing.scheduledPlanAt || pendingOutcome.effectiveAt : null,
         })
         router.refresh()
@@ -234,12 +330,12 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     return () => {
       cancelled = true
     }
-  }, [pendingOutcome, router, t, updateCurrentWorkspacePlan])
+  }, [pendingOutcome, planCopy, router, t, translateMessage, updateCurrentWorkspacePlan])
 
   useEffect(() => {
     const requestedInterval = searchParams.get("interval")
-    if (requestedInterval === "month" || requestedInterval === "year") setBillingInterval(requestedInterval)
-  }, [searchParams])
+    if (resolvedPresentation.supportedIntervals.includes(requestedInterval as "month" | "year")) setBillingInterval(requestedInterval as "month" | "year")
+  }, [resolvedPresentation.supportedIntervals, searchParams])
 
   useEffect(() => {
     if (!pending && activeAction) setActiveAction(null)
@@ -256,7 +352,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     beginAction(action, async () => {
       setMessage(null)
       const result = await operation()
-      const data = result.data && typeof result.data === "object" ? result.data as { transactionId?: unknown; token?: unknown; environment?: unknown; url?: unknown } : null
+      const data = result.data && typeof result.data === "object" ? result.data as { transactionId?: unknown; transitionId?: unknown; token?: unknown; environment?: unknown; url?: unknown } : null
       if (!result.success) {
         setMessage(translateMessage(result.message || t("manage.planUsage.billing.actionFailed")))
         return
@@ -285,6 +381,11 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
               setMessage(null)
               setActivating(true)
               if (checkoutOutcomeRef.current) setPendingOutcome(checkoutOutcomeRef.current)
+              else {
+                setActivating(false)
+                setMessage(t("manage.planUsage.billing.actionCompleted"))
+                router.refresh()
+              }
               try {
                 paddleRef.current?.Checkout.close()
               } catch {
@@ -301,12 +402,23 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
           return
         }
         checkoutCompletedRef.current = false
-        checkoutOutcomeRef.current = outcome || null
+        checkoutOutcomeRef.current = outcome
+          ? { ...outcome, transitionId: typeof data.transitionId === "string" ? data.transitionId : null }
+          : null
         paddleRef.current = instance
         setPaddle(instance)
         instance.Checkout.open({ transactionId: data.transactionId })
         setMessage(t("manage.planUsage.billing.completeCheckout"))
+        return
       }
+      if (outcome) {
+        const transitionId = typeof data.transitionId === "string" ? data.transitionId : null
+        setPendingOutcome({ ...outcome, transitionId })
+        router.refresh()
+        return
+      }
+      setMessage(translateMessage(result.message || t("manage.planUsage.billing.actionCompleted")))
+      router.refresh()
     })
   }
 
@@ -340,7 +452,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   const cancelSubscription = () => setBillingConfirmation({ type: "cancel", reason: cancellationReason, feedback: cancellationFeedback })
 
   const isPaid = billing.provider === "paddle" || configuredPaidPlans.includes(currentPlan)
-  const currentPlanName = plans.find((plan) => plan.key === currentPlan)?.name || t("manage.planUsage.activePlan")
+  const currentPlanRecord = plans.find((plan) => plan.key === currentPlan)
+  const currentPlanName = currentPlanRecord ? planCopy(currentPlanRecord).label : t("manage.planUsage.activePlan")
   const selectedPlanKey = searchParams.get("plan") || (isPaid ? currentPlan : null)
   const dateLabel = (value: string | null) => value ? formatLocalizedDate(value, currentLang, { dateStyle: "medium" }) : null
   const configuredMoney = (price: ConfiguredPrice | undefined) => {
@@ -373,7 +486,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   }
   const renderBillingIntervalSwitch = (className = "") => (
     <div className={`inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-white/10 dark:bg-white/[0.06] ${className}`} role="group" aria-label={t("manage.planUsage.billing.billingCycle")}>
-      {(["month", "year"] as const).map((interval) => {
+      {resolvedPresentation.supportedIntervals.map((interval) => {
         const available = configuredPrices.some((price) => price.interval === interval)
         const active = billingInterval === interval
         return (
@@ -410,6 +523,15 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     } catch {
       return null
     }
+  }
+
+  const comparisonValue = (plan: Plan, row: ResolvedBillingPresentation["comparisonRows"][number]) => {
+    if (row.kind === "feature") {
+      const value = row.featureKey ? plan.features[row.featureKey] : undefined
+      return value === undefined ? "—" : value ? "✓" : "×"
+    }
+    const value = row.limitKey ? plan.limits[row.limitKey] : undefined
+    return value === null ? "∞" : value === undefined ? "—" : value.toLocaleString()
   }
 
   const planChangeConfirmation = billingConfirmation?.type === "plan-change" ? billingConfirmation : null
@@ -490,7 +612,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   const currentPlanDetails = plans.find((plan) => plan.key === currentPlan)
   const selectedPlan = plans.find((plan) => plan.key === selectedPlanKey) || currentPlanDetails || null
   const currentPlanSortOrder = currentPlanDetails?.sort_order || 0
-  const availablePlans = paidPlans.filter((plan) => !isPaid || plan.key !== currentPlan)
+  const currentPlanPresentationOrder = resolvedPresentation.planOrder.indexOf(currentPlan)
+  const availablePlans = orderedPlans.filter((plan) => !isPaid || plan.key !== currentPlan)
   const paymentMethodLabel = billing.paymentMethod
     ? `${billing.paymentMethod.type}${billing.paymentMethod.last4 ? ` ending in ${billing.paymentMethod.last4}` : ""}`
     : t("manage.planUsage.billing.securePaymentDetails")
@@ -541,8 +664,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
               {availablePlans.map((plan) => {
                 const configured = configuredPrices.some((price) => price.planKey === plan.key && price.interval === billingInterval) && configuredPaidPlans.includes(plan.key)
                 const recommended = Boolean(plan.metadata.recommended)
-                const isDowngrade = isPaid && plan.sort_order < currentPlanSortOrder
-                const copy = GENERIC_PLAN_COPY
+                const isDowngrade = isPaid && (currentPlanPresentationOrder >= 0 ? resolvedPresentation.planOrder.indexOf(plan.key) < currentPlanPresentationOrder : plan.sort_order < currentPlanSortOrder)
+                const copy = planCopy(plan)
                 const selected = selectedPlanKey === plan.key
                 const selecting = selectingPlan === plan.key
                 const savings = annualSavings(plan.key)
@@ -552,7 +675,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                     role="button"
                     tabIndex={0}
                     aria-pressed={selected}
-                    aria-label={t("manage.planUsage.includedIn", { plan: plan.name })}
+                    aria-label={t("manage.planUsage.includedIn", { plan: copy.label })}
                     onClick={(event) => {
                       if (event.target instanceof Element && event.target.closest("button, a, input, select, textarea")) return
                       selectPlan(plan.key)
@@ -566,7 +689,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                   >
                     {recommended && <span className="absolute right-4 top-4 rounded-full bg-violet-600 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-white">{t("manage.planUsage.billing.mostPopular")}</span>}
                     <div className="flex items-start justify-between gap-3 pr-20">
-                      <div className="text-left"><p className="text-lg font-bold text-slate-950 dark:text-white">{plan.name}</p><p className="mt-0.5 text-xs font-semibold text-violet-700 dark:text-violet-300">{t(copy.positioning)}</p></div>
+                      <div className="text-left"><p className="text-lg font-bold text-slate-950 dark:text-white">{copy.label}</p><p className="mt-0.5 text-xs font-semibold text-violet-700 dark:text-violet-300">{copyText("planPositioning", t(GENERIC_PLAN_COPY.positioning))}</p></div>
                       {selected && <span className="shrink-0 rounded-full bg-violet-100 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.1em] text-violet-700 dark:bg-violet-500/20 dark:text-violet-200">{t("manage.planUsage.billing.selected")}</span>}
                     </div>
                     <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
@@ -577,10 +700,10 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                       </div>
                       {billingInterval === "year" && savings && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{t("manage.planUsage.billing.savePercent", { percent: String(savings.percent) })}</span>}
                     </div>
-                    <p className="mt-2 min-h-10 text-xs leading-5 text-slate-600 dark:text-slate-300">{t(copy.description)}</p>
-                    <div className="mt-4 grid grid-cols-3 gap-2 border-y border-slate-100 py-3 dark:border-white/10"><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.limits["core.workspaces"] === null || plan.limits["core.workspaces"] === undefined ? "∞" : plan.limits["core.workspaces"]}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.workspaces")}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.limits["core.members"] === null || plan.limits["core.members"] === undefined ? "∞" : plan.limits["core.members"]}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.teamMembers")}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{(() => { const key = Object.keys(plan.limits).find((entry) => !entry.startsWith("core.")); const value = key ? plan.limits[key] : null; return value === null || value === undefined ? "∞" : value.toLocaleString() })()}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">Product usage</p></div></div>
-                    <ul className="mt-4 space-y-2 text-xs text-slate-700 dark:text-slate-200">{copy.highlights.map((highlight) => <li key={highlight} className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-300" />{t(highlight)}</li>)}</ul>
-                    <Button type="button" onClick={() => isPaid ? changePlan(plan.key) : startCheckout(plan.key)} loading={activeAction === (isPaid ? `plan-preview:${plan.key}` : `checkout-preview:${plan.key}`)} disabled={!billing.paddleConfigured || !configured} className={`mt-5 min-h-11 w-full rounded-xl px-3 py-2 text-sm font-semibold transition ${recommended && !isDowngrade ? "bg-violet-600 text-white hover:bg-violet-700" : "border border-slate-200 bg-transparent text-slate-800 hover:bg-slate-50 dark:border-white/10 dark:text-white dark:hover:bg-white/10"}`}>{configured && billing.paddleConfigured ? <><span>{isPaid ? t(isDowngrade ? "manage.planUsage.billing.moveTo" : "manage.planUsage.billing.upgradeTo", { plan: plan.name }) : t("manage.planUsage.billing.choose", { plan: plan.name })}</span><ArrowRight className="ml-1 h-3.5 w-3.5" /></> : t("manage.planUsage.billing.billingSetupRequired")}</Button>
+                    <p className="mt-2 min-h-10 text-xs leading-5 text-slate-600 dark:text-slate-300">{copy.description}</p>
+                    <div className="mt-4 grid grid-cols-3 gap-2 border-y border-slate-100 py-3 dark:border-white/10"><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.limits["core.workspaces"] === null || plan.limits["core.workspaces"] === undefined ? "∞" : plan.limits["core.workspaces"]}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{copyText("workspacesLabel", t("manage.planUsage.billing.workspaces"))}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.limits["core.members"] === null || plan.limits["core.members"] === undefined ? "∞" : plan.limits["core.members"]}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{copyText("teamMembersLabel", t("manage.planUsage.billing.teamMembers"))}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{(() => { const key = Object.keys(plan.limits).find((entry) => !entry.startsWith("core.")); const value = key ? plan.limits[key] : null; return value === null || value === undefined ? "∞" : value.toLocaleString() })()}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{copyText("productUsageLabel", usageMetricName(Object.keys(plan.limits).find((entry) => !entry.startsWith("core.")) || "productUsage"))}</p></div></div>
+                    <ul className="mt-4 space-y-2 text-xs text-slate-700 dark:text-slate-200">{copy.highlights.map((highlight) => <li key={highlight} className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-300" />{highlight}</li>)}</ul>
+                    <Button type="button" onClick={() => isPaid ? changePlan(plan.key) : startCheckout(plan.key)} loading={activeAction === (isPaid ? `plan-preview:${plan.key}` : `checkout-preview:${plan.key}`)} disabled={!billing.paddleConfigured || !configured} className={`mt-5 min-h-11 w-full rounded-xl px-3 py-2 text-sm font-semibold transition ${recommended && !isDowngrade ? "bg-violet-600 text-white hover:bg-violet-700" : "border border-slate-200 bg-transparent text-slate-800 hover:bg-slate-50 dark:border-white/10 dark:text-white dark:hover:bg-white/10"}`}>{configured && billing.paddleConfigured ? <><span>{isPaid ? t(isDowngrade ? "manage.planUsage.billing.moveTo" : "manage.planUsage.billing.upgradeTo", { plan: copy.label }) : t("manage.planUsage.billing.choose", { plan: copy.label })}</span><ArrowRight className="ml-1 h-3.5 w-3.5" /></> : t("manage.planUsage.billing.billingSetupRequired")}</Button>
                     {selecting && <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 rounded-2xl bg-white/80 text-[10px] font-semibold text-violet-700 backdrop-blur-[2px] dark:bg-[#22232e]/85 dark:text-violet-200" role="status"><OrbLoader label={t("manage.planUsage.billing.loadingPreview", { plan: plan.name })} state="working" size="sm" showLabel={false} /><span>{t("manage.planUsage.billing.updatingPreview")}</span></div>}
                   </article>
                 )
@@ -593,7 +716,21 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         {!billing.paddleConfigured && billing.canManage && !isPaid && <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.paddleNotConfigured")}</p>}
       </section>
 
-      <PlanFeaturePreview plan={selectedPlan} currentPlanKey={currentPlan} />
+      {resolvedPresentation.comparisonRows.length > 0 && <section id="plan-comparison" className="manage-plan-card overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-5" aria-label={copyText("comparisonLabel", "Plan comparison")}>
+        <div className="mb-3"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("comparisonEyebrow", "Compare plans")}</p><h2 className="mt-1 text-base font-bold tracking-tight text-slate-950 dark:text-white">{copyText("comparisonTitle", "Plan features and limits")}</h2></div>
+        <div className="min-w-[34rem]" role="table" aria-label={copyText("comparisonLabel", "Plan comparison")}>
+          <div className="grid gap-2 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:border-white/10 dark:text-slate-400" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
+            <span role="columnheader">{copyText("comparisonFeatureLabel", "Feature")}</span>
+            {orderedPlans.map((plan) => <span key={plan.key} className="text-center" role="columnheader">{planCopy(plan).label}</span>)}
+          </div>
+          {resolvedPresentation.comparisonRows.map((row) => <div key={row.key} className="grid gap-2 border-b border-slate-100 py-2.5 text-xs last:border-0 dark:border-white/10" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
+            <span className="font-medium text-slate-700 dark:text-slate-200" role="rowheader">{row.label || (row.featureKey ? displayKey(row.featureKey) : row.limitKey ? usageMetricName(row.limitKey) : displayKey(row.key))}</span>
+            {orderedPlans.map((plan) => <span key={plan.key} className={`text-center font-semibold tabular-nums ${row.kind === "feature" && plan.features[row.featureKey || ""] ? "text-emerald-600 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`} role="cell" aria-label={`${planCopy(plan).label}: ${comparisonValue(plan, row)}`}>{comparisonValue(plan, row)}</span>)}
+          </div>)}
+        </div>
+      </section>}
+
+      <PlanFeaturePreview plan={selectedPlan} currentPlanKey={currentPlan} presentation={presentation} usageMetrics={usageMetrics} />
 
       <section id="billing-details" className="manage-plan-card scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-6">
         <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.subscription")}</p><h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{t("manage.planUsage.billing.billingDetails")}</h2><p className="mt-1.5 text-sm text-slate-600 dark:text-slate-300">{t("manage.planUsage.billing.billingDetailsDescription")}</p></div>{billing.canManage && billing.provider === "paddle" && billing.customerId && <Button type="button" onClick={manageBilling} loading={activeAction === "manage-billing"} className="min-h-10 rounded-xl border border-slate-200 bg-transparent px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10">{t("manage.planUsage.billing.manageBilling")}</Button>}</div>

@@ -5,7 +5,6 @@ import { ArrowRight, Check, CircleCheck, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/context/language-context"
 import { formatDate as formatLocalizedDate } from "@/i18n/format"
-import type { TranslationKey } from "@/i18n"
 import { BillingOverlayPortal } from "@/components/manage/billing-overlay-portal"
 
 type BillingSuccessKind = "purchase" | "upgrade" | "downgrade" | "billing"
@@ -14,7 +13,7 @@ type BillingSuccessExperienceProps = {
   kind: BillingSuccessKind
   planName: string
   interval: string
-  highlights: TranslationKey[]
+  highlights: ReadonlyArray<string>
   effectiveAt?: string | null
   fromPlanName?: string | null
   onClose: () => void
@@ -45,10 +44,15 @@ export function BillingSuccessExperience({
   const { currentLang, getTranslation } = useLanguage()
   const t = getTranslation
   const continueRef = useRef<HTMLButtonElement>(null)
-  const effectiveDate = effectiveAt ? formatLocalizedDate(effectiveAt, currentLang, { dateStyle: "medium" }) : null
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  const effectiveDate = effectiveAt ? formatLocalizedDate(effectiveAt, currentLang, { dateStyle: "medium", timeStyle: "short" }) : null
   const isDowngrade = kind === "downgrade"
 
   useEffect(() => {
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     const previousSuccessState = document.body.dataset.billingSuccessOpen
     document.body.style.overflow = "hidden"
@@ -56,7 +60,23 @@ export function BillingSuccessExperience({
     continueRef.current?.focus()
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose()
+      if (event.key === "Escape") {
+        event.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])")).filter((element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true")
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener("keydown", handleKeyDown)
 
@@ -68,8 +88,9 @@ export function BillingSuccessExperience({
         document.body.dataset.billingSuccessOpen = previousSuccessState
       }
       window.removeEventListener("keydown", handleKeyDown)
+      if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus({ preventScroll: true })
     }
-  }, [onClose])
+  }, [])
 
   const title = kind === "purchase"
     ? t("manage.planUsage.billing.success.welcome", { plan: planName })
@@ -90,7 +111,8 @@ export function BillingSuccessExperience({
 
   return (
     <BillingOverlayPortal>
-      <div className="billing-success-experience fixed inset-0 z-[100] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="billing-success-title" aria-describedby="billing-success-description">
+      <style>{`@keyframes billing-success-confetti-fall{0%{opacity:0;transform:translate3d(0,-8vh,0) rotate(0deg)}12%{opacity:1}100%{opacity:0;transform:translate3d(8vw,108vh,0) rotate(520deg)}}@keyframes billing-success-feature-in{0%{opacity:0;transform:translateY(4px)}100%{opacity:1;transform:translateY(0)}}.billing-success-confetti{animation-name:billing-success-confetti-fall;animation-timing-function:cubic-bezier(.2,.65,.35,1);animation-iteration-count:1}.billing-success-feature{animation-name:billing-success-feature-in;animation-timing-function:ease-out;animation-fill-mode:forwards;animation-iteration-count:1}@media (prefers-reduced-motion:reduce){.billing-success-confetti,.billing-success-feature{animation:none!important;opacity:1!important;transform:none!important}}`}</style>
+      <div ref={dialogRef} className="billing-success-experience fixed inset-0 z-[100] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="billing-success-title" aria-describedby="billing-success-description">
         <div className="relative flex min-h-full items-center justify-center p-3 sm:p-5">
           <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-[6px] dark:bg-slate-950/65" aria-hidden="true" />
           <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden" aria-hidden="true">
@@ -131,7 +153,7 @@ export function BillingSuccessExperience({
                 {highlights.map((highlight, index) => (
                   <div key={highlight} className="billing-success-feature flex items-center gap-2 rounded-lg border border-slate-100 bg-white/75 px-2.5 py-2 text-xs font-medium text-slate-700 opacity-0 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200" style={{ animationDelay: `${160 + index * 80}ms` }}>
                     <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" />
-                    <span>{t(highlight)}</span>
+                    <span>{highlight}</span>
                   </div>
                 ))}
               </div>

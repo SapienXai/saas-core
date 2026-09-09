@@ -21,7 +21,7 @@ export function ScheduledPlanChangeBanner({ currentPlanName, targetPlanName, eff
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
-  const effectiveDate = effectiveAt ? formatLocalizedDate(effectiveAt, currentLang, { dateStyle: "medium" }) : null
+  const effectiveDate = effectiveAt ? formatLocalizedDate(effectiveAt, currentLang, { dateStyle: "medium", timeStyle: "short" }) : null
 
   const undo = () => {
     startTransition(async () => {
@@ -50,7 +50,7 @@ export function ScheduledPlanChangeBanner({ currentPlanName, targetPlanName, eff
               <span>{targetPlanName}</span>
             </p>
             <p className="mt-1 text-xs leading-5 text-violet-800/80 dark:text-violet-100/75">
-              {effectiveDate ? t("manage.planUsage.billing.scheduledPlanStarts", { date: effectiveDate, plan: targetPlanName }) : t("manage.planUsage.billing.scheduledPlanPending")}
+              {effectiveDate ? <>{t("manage.planUsage.billing.scheduledPlanStarts", { date: effectiveDate, plan: targetPlanName })} <time dateTime={effectiveAt || undefined} className="sr-only">{effectiveDate}</time></> : t("manage.planUsage.billing.scheduledPlanPending")}
             </p>
             {message && <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-300" role="alert">{message}</p>}
           </div>

@@ -38,6 +38,11 @@ type SidebarUsageItem = {
   limit: number | null
 }
 
+type BillingSidebarPresentation = {
+  planOrder?: readonly string[]
+  plans?: Readonly<Record<string, { label?: string }>>
+}
+
 const PRODUCT_NAVIGATION_ICONS: Record<string, LucideIcon> = {
   activity: Activity,
   archive: Archive,
@@ -106,10 +111,22 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const isStaff = role === "staff"
   const isDomainAdmin = role === "owner" || role === "admin"
   const currentPlanKey = currentWorkspace?.plan?.key || null
-  const currentPlanSortOrder = planCatalog.find((plan) => plan.key === currentPlanKey)?.sortOrder ?? -1
-  const nextPlan = planCatalog.filter((plan) => plan.sortOrder > currentPlanSortOrder).sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key))[0]
+  const productConfig = PRODUCT_CONFIG as typeof PRODUCT_CONFIG & {
+    billingPresentation?: BillingSidebarPresentation
+    billing?: { presentation?: BillingSidebarPresentation }
+    billingPolicy?: { presentation?: BillingSidebarPresentation }
+    catalog?: { presentation?: BillingSidebarPresentation; billingPresentation?: BillingSidebarPresentation }
+  }
+  const billingPresentation = productConfig.billingPresentation || productConfig.billing?.presentation || productConfig.billingPolicy?.presentation || productConfig.catalog?.billingPresentation || productConfig.catalog?.presentation
+  const requestedPlanOrder = billingPresentation?.planOrder || []
+  const planOrder = requestedPlanOrder.length === planCatalog.length && requestedPlanOrder.every((key) => planCatalog.some((plan) => plan.key === key)) && new Set(requestedPlanOrder).size === requestedPlanOrder.length
+    ? requestedPlanOrder
+    : planCatalog.slice().sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key)).map((plan) => plan.key)
+  const orderIndex = new Map(planOrder.map((key, index) => [key, index]))
+  const currentPlanIndex = currentPlanKey ? orderIndex.get(currentPlanKey) ?? -1 : -1
+  const nextPlan = planCatalog.filter((plan) => (orderIndex.get(plan.key) ?? Number.MAX_SAFE_INTEGER) > currentPlanIndex).sort((a, b) => (orderIndex.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.key) ?? Number.MAX_SAFE_INTEGER))[0]
   const nextPlanKey = nextPlan?.key || null
-  const nextPlanLabel = nextPlan?.name || null
+  const nextPlanLabel = nextPlan ? billingPresentation?.plans?.[nextPlan.key]?.label?.trim() || nextPlan.name : null
   const canShowUpgrade = Boolean(nextPlanKey && nextPlanLabel && currentWorkspace?.role === "owner" && !isStaff)
   const workspaceUsage = currentWorkspace?.usage
   const workspaceLimits = currentWorkspace?.plan?.limits

@@ -38,6 +38,11 @@ type SidebarUsageItem = {
   limit: number | null
 }
 
+type BillingSidebarPresentation = {
+  planOrder?: readonly string[]
+  plans?: Readonly<Record<string, { label?: string }>>
+}
+
 const PRODUCT_NAVIGATION_ICONS: Record<string, LucideIcon> = {
   activity: Activity,
   archive: Archive,
@@ -106,10 +111,22 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const isStaff = role === "staff"
   const isDomainAdmin = role === "owner" || role === "admin"
   const currentPlanKey = currentWorkspace?.plan?.key || null
-  const currentPlanSortOrder = planCatalog.find((plan) => plan.key === currentPlanKey)?.sortOrder ?? -1
-  const nextPlan = planCatalog.filter((plan) => plan.sortOrder > currentPlanSortOrder).sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key))[0]
+  const productConfig = PRODUCT_CONFIG as typeof PRODUCT_CONFIG & {
+    billingPresentation?: BillingSidebarPresentation
+    billing?: { presentation?: BillingSidebarPresentation }
+    billingPolicy?: { presentation?: BillingSidebarPresentation }
+    catalog?: { presentation?: BillingSidebarPresentation; billingPresentation?: BillingSidebarPresentation }
+  }
+  const billingPresentation = productConfig.billingPresentation || productConfig.billing?.presentation || productConfig.billingPolicy?.presentation || productConfig.catalog?.billingPresentation || productConfig.catalog?.presentation
+  const requestedPlanOrder = billingPresentation?.planOrder || []
+  const planOrder = requestedPlanOrder.length === planCatalog.length && requestedPlanOrder.every((key) => planCatalog.some((plan) => plan.key === key)) && new Set(requestedPlanOrder).size === requestedPlanOrder.length
+    ? requestedPlanOrder
+    : planCatalog.slice().sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key)).map((plan) => plan.key)
+  const orderIndex = new Map(planOrder.map((key, index) => [key, index]))
+  const currentPlanIndex = currentPlanKey ? orderIndex.get(currentPlanKey) ?? -1 : -1
+  const nextPlan = planCatalog.filter((plan) => (orderIndex.get(plan.key) ?? Number.MAX_SAFE_INTEGER) > currentPlanIndex).sort((a, b) => (orderIndex.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.key) ?? Number.MAX_SAFE_INTEGER))[0]
   const nextPlanKey = nextPlan?.key || null
-  const nextPlanLabel = nextPlan?.name || null
+  const nextPlanLabel = nextPlan ? billingPresentation?.plans?.[nextPlan.key]?.label?.trim() || nextPlan.name : null
   const canShowUpgrade = Boolean(nextPlanKey && nextPlanLabel && currentWorkspace?.role === "owner" && !isStaff)
   const workspaceUsage = currentWorkspace?.usage
   const workspaceLimits = currentWorkspace?.plan?.limits
@@ -281,28 +298,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
               )
             })}
           </nav>}
-          {visiblePlatformNavigation.length > 0 && (
-            <div className={cn("manage-sidebar-platform-group", hasWorkspaceScope ? "mt-5 border-t border-slate-200/80 pt-4 dark:border-white/10" : "mt-1")}>
-              {!compact && <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-600 dark:text-violet-300">Platform</p>}
-              <nav className="manage-sidebar-platform-nav space-y-1.5">
-                {visiblePlatformNavigation.map((item) => {
-                  const Icon = PRODUCT_NAVIGATION_ICONS[item.icon] || Layers3
-                  const current = activePlatformNavigationKey === item.key
-                  const itemClass = cn(
-                    "group flex min-w-0 items-center text-sm font-semibold transition-all duration-200",
-                    compact ? "mx-auto h-10 w-10 min-h-0 justify-center rounded-xl px-0" : "min-h-11 w-full gap-3 rounded-xl px-3",
-                    current
-                      ? "bg-violet-600 text-white shadow-md shadow-violet-500/20"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/[0.07] dark:hover:text-white",
-                  )
-                  const itemContent = <><span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", current ? "bg-white/15" : "bg-slate-100 text-slate-500 group-hover:bg-white dark:bg-white/5 dark:text-slate-400")}><Icon className="h-4 w-4" /></span>{!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}{!compact && current && <ChevronRight className="h-4 w-4 shrink-0 opacity-70" />}</>
-                  const itemElement = <Link key={item.key} href={`${item.href}?lang=${currentLang}`} className={itemClass} aria-current={current ? "page" : undefined} onClick={mobile ? onClose : undefined}>{itemContent}</Link>
-                  if (!compact) return itemElement
-                  return <Tooltip key={item.key}><TooltipTrigger asChild>{itemElement}</TooltipTrigger><TooltipContent side="right" sideOffset={10} className="manage-sidebar-tooltip">{item.label}</TooltipContent></Tooltip>
-                })}
-              </nav>
-            </div>
-          )}
+          {visiblePlatformNavigation.length > 0 && <div className={cn("manage-sidebar-platform-group", hasWorkspaceScope ? "mt-5 border-t border-slate-200/80 pt-4 dark:border-white/10" : "mt-1")}><p className={cn("px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-violet-600 dark:text-violet-300", compact && "sr-only")}>Platform</p><nav className="manage-sidebar-platform-nav space-y-1.5">{visiblePlatformNavigation.map((item) => { const Icon = PRODUCT_NAVIGATION_ICONS[item.icon] || Layers3; const current = activePlatformNavigationKey === item.key; const itemClass = cn("group flex min-w-0 items-center text-sm font-semibold transition-all duration-200", compact ? "mx-auto h-10 w-10 min-h-0 justify-center rounded-xl px-0" : "min-h-11 w-full gap-3 rounded-xl px-3", current ? "bg-violet-600 text-white shadow-md shadow-violet-500/20" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/[0.07] dark:hover:text-white"); const itemContent = <><span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", current ? "bg-white/15" : "bg-slate-100 text-slate-500 group-hover:bg-white dark:bg-white/5 dark:text-slate-400")}><Icon className="h-4 w-4" /></span>{!compact && <span className="min-w-0 flex-1 truncate">{item.label}</span>}{!compact && current && <ChevronRight className="h-4 w-4 shrink-0 opacity-70" />}</>; const itemElement = <Link key={item.key} href={`${item.href}?lang=${currentLang}`} className={itemClass} aria-current={current ? "page" : undefined} onClick={mobile ? onClose : undefined}>{itemContent}</Link>; return compact ? <Tooltip key={item.key}><TooltipTrigger asChild>{itemElement}</TooltipTrigger><TooltipContent side="right" sideOffset={10} className="manage-sidebar-tooltip">{item.label}</TooltipContent></Tooltip> : itemElement })}</nav></div>}
           {availableSettingsNavigation.length > 0 && <div className="manage-sidebar-settings-group mt-3">
             {(() => {
               const settingsGroupButton = (
