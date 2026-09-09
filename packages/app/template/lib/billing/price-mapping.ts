@@ -29,6 +29,24 @@ export type ProviderPriceMapping = {
   active: boolean
 }
 
+export function isProviderPriceMapping(value: unknown): value is ProviderPriceMapping {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const row = value as Record<string, unknown>
+  return row.provider === "paddle" &&
+    (row.environment === "sandbox" || row.environment === "live") &&
+    typeof row.id === "string" && row.id.length > 0 &&
+    typeof row.plan_key === "string" && isPaidPlanKey(row.plan_key) &&
+    typeof row.provider_product_id === "string" && row.provider_product_id.trim().length > 0 &&
+    typeof row.provider_price_id === "string" && row.provider_price_id.trim().length > 0 &&
+    typeof row.billing_interval === "string" && isBillingInterval(row.billing_interval) &&
+    typeof row.currency === "string" && /^[A-Z]{3}$/.test(row.currency) &&
+    typeof row.active === "boolean"
+}
+
+export function assertProviderPriceMapping(value: unknown): asserts value is ProviderPriceMapping {
+  if (!isProviderPriceMapping(value)) throw new Error("Paddle price mapping is invalid.")
+}
+
 export async function getActivePaddlePrice(
   planKey: PaidPlanKey,
   environment: BillingEnvironment,
@@ -49,7 +67,8 @@ export async function getActivePaddlePrice(
 
   if (error) throw new Error(error.message)
   if (!data) return null
-  return data as ProviderPriceMapping
+  if (!isProviderPriceMapping(data)) throw new Error("Paddle price mapping is invalid.")
+  return data
 }
 
 export async function getPaddlePriceByProviderId(providerPriceId: string, environment: BillingEnvironment, activeOnly = true) {
@@ -64,8 +83,8 @@ export async function getPaddlePriceByProviderId(providerPriceId: string, enviro
   const { data, error } = await query.maybeSingle()
 
   if (error) throw new Error(error.message)
-  if (!data || !isPaidPlanKey(data.plan_key)) return null
-  return data as ProviderPriceMapping
+  if (!data || !isProviderPriceMapping(data)) return null
+  return data
 }
 
 export async function getActivePaddlePriceByProviderId(providerPriceId: string, environment: BillingEnvironment) {

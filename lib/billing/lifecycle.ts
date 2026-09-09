@@ -1,6 +1,7 @@
 import "server-only"
 
 import { createServiceRoleClient } from "@/lib/supabase"
+import { getConfiguredFallbackPlanKey } from "./reconciliation"
 
 export const PAYMENT_GRACE_PERIOD_DAYS = 14
 
@@ -18,20 +19,11 @@ export function isPaymentGraceExpired(graceEndsAt: string | null | undefined, no
 
 export async function expirePaymentGracePeriods(now = new Date()) {
   const supabase = createServiceRoleClient()
-  const { data: fallback, error: fallbackError } = await supabase
-    .from("plans")
-    .select("key")
-    .eq("active", true)
-    .order("sort_order", { ascending: true })
-    .order("key", { ascending: true })
-    .limit(1)
-    .maybeSingle()
-  if (fallbackError) throw new Error(fallbackError.message)
-  if (!fallback?.key) throw new Error("No active fallback plan is configured.")
+  const fallbackPlanKey = await getConfiguredFallbackPlanKey(supabase)
   const { data, error } = await supabase
     .from("workspace_subscriptions")
     .update({
-      plan_key: fallback.key,
+      plan_key: fallbackPlanKey,
       billing_issue_code: "grace_expired",
       scheduled_plan_key: null,
       scheduled_plan_at: null,
@@ -39,7 +31,7 @@ export async function expirePaymentGracePeriods(now = new Date()) {
       scheduled_plan_interval: null,
       scheduled_provider_price_id: null,
     })
-    .neq("plan_key", fallback.key)
+    .neq("plan_key", fallbackPlanKey)
     .eq("provider_status", "past_due")
     .not("payment_grace_ends_at", "is", null)
     .lte("payment_grace_ends_at", now.toISOString())

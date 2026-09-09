@@ -21,11 +21,11 @@ export async function POST(request: Request) {
     const event = normalizePaddleEvent(verifiedEvent)
     const stored = await recordPaddleWebhookEvent(event)
 
-    if (!stored.duplicate) {
-      after(async () => {
-        await processStoredPaddleWebhookEvent(stored.id)
-      })
-    }
+    // The durable claim decides whether this delivery is new, already
+    // processed, leased by another worker, or ready for a failed-event retry.
+    after(async () => {
+      await processStoredPaddleWebhookEvent(stored.id)
+    })
 
     return NextResponse.json({ received: true, duplicate: stored.duplicate })
   } catch (error) {

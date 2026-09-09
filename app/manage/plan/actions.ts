@@ -8,6 +8,9 @@ import { getWorkspaceEntitlements, getWorkspaceUsage } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import type { Json } from "@/types/supabase"
 import { applyPaddleSubscriptionEvent } from "@/lib/billing/webhook"
+import { getConfiguredDefaultPlanKey, isTerminalBillingSubscription } from "@/lib/billing/reconciliation"
+import { recordBillingMutationTransition, updateBillingMutationTransition } from "@/lib/billing/persistence"
+import type { BillingTransitionKind } from "@sapienx/saas-core"
 
 const CANCELLATION_REASONS = new Set(["too_expensive", "not_using", "seasonal", "missing_feature", "technical_problem", "switching_solution", "other"])
 
@@ -118,6 +121,22 @@ async function reconcilePaddleSubscriptionProjection(subscription: SubscriptionR
   return { authoritative, result }
 }
 
+async function ensureCheckoutEligibility(subscription: SubscriptionRow) {
+  if (subscription.provider_subscription_id && !isTerminalBillingSubscription(subscription.provider_status || subscription.status)) {
+    throw new Error("This workspace already has a Paddle subscription. Use Manage plan instead.")
+  }
+  if (subscription.provider_subscription_id && isTerminalBillingSubscription(subscription.provider_status || subscription.status)) {
+    // A replacement checkout is safe only after the old provider object has
+    // been observed as terminal through the canonical projection path.
+    await reconcilePaddleSubscriptionProjection(subscription)
+    const reconciled = await getCurrentBillingSubscription(subscription.workspace_id)
+    if (reconciled.provider_status !== "canceled") throw new Error("The previous Paddle subscription is still being reconciled.")
+    return reconciled
+  }
+  if (subscription.source !== "system") throw new Error("This workspace is not eligible for a new paid checkout.")
+  return subscription
+}
+
 function providerPeriodEnd(state: AuthoritativePaddleState | null, fallback: SubscriptionRow) {
   return state?.subscription.currentBillingPeriod?.endsAt || fallback.current_period_end_at || fallback.current_period_end
 }
@@ -166,6 +185,44 @@ async function beginBillingMutation(workspaceId: string, requestKey: string, ope
 async function finishBillingMutation(id: string, status: "succeeded" | "failed" | "unknown", result: unknown = {}, errorCode: string | null = null) {
   const { error } = await createServiceRoleClient().from("billing_mutations").update({ status, result: asJson(result), error_code: errorCode }).eq("id", id)
   if (error) console.error("Could not persist billing mutation state", { code: "MUTATION_STATE_WRITE_FAILED" })
+}
+
+async function beginCanonicalTransition(
+  mutation: BillingMutation,
+  workspaceId: string,
+  environment: "sandbox" | "live",
+  kind: BillingTransitionKind,
+  fromPlanKey?: string | null,
+  toPlanKey?: string | null,
+  effectiveAt?: string | null,
+) {
+  return recordBillingMutationTransition({
+    mutationId: mutation.id,
+    workspaceId,
+    provider: "paddle",
+    environment,
+    transitionKey: `${kind}:${mutation.id}`,
+    kind,
+    fromPlanKey,
+    toPlanKey,
+    effectiveAt,
+    state: "pending",
+  })
+}
+
+async function finishCanonicalTransition(transitionId: string, state: "succeeded" | "failed" | "unknown", outcome: Record<string, unknown> = {}, errorCode?: string) {
+  await updateBillingMutationTransition({
+    transitionId,
+    state,
+    outcome,
+    errorCode: state === "failed" ? errorCode || null : null,
+  })
+}
+
+async function persistUnknownProviderOutcome(mutation: BillingMutation, transitionId: string | null, error: unknown, operation: string) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (transitionId) await finishCanonicalTransition(transitionId, "unknown", { status: "unknown", operation, reason: message.slice(0, 500) })
+  await finishBillingMutation(mutation.id, "unknown", { status: "unknown", operation, reason: message.slice(0, 500) }, "PROVIDER_OUTCOME_UNKNOWN")
 }
 
 function resultRecord(value: Json): Record<string, Json> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Json> : {} }
@@ -379,32 +436,34 @@ export async function reconcilePaddleSubscription() {
 export async function previewPaddleCheckout(targetPlan: string, billingInterval: string = "month") {
   try {
     const membership = await requireCurrentWorkspaceOwner()
-    if (!isPaidPlanKey(targetPlan) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
+    const resolvedTargetPlan = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
+    if (!isPaidPlanKey(resolvedTargetPlan) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
     const environment = getBillingEnvironment()
-    const mapping = await getActivePaddlePrice(targetPlan, environment, billingInterval)
-    if (!mapping) return { success: false, message: `Paddle ${environment} ${billingInterval} price mapping is not configured for plan ${targetPlan}.` }
+    const mapping = await getActivePaddlePrice(resolvedTargetPlan, environment, billingInterval)
+    if (!mapping) return { success: false, message: `Paddle ${environment} ${billingInterval} price mapping is not configured for plan ${resolvedTargetPlan}.` }
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider === "paddle" && subscription.provider_subscription_id && subscription.provider_status !== "canceled") return { success: false, message: "This workspace already has a Paddle subscription. Use Manage plan instead." }
-    if (subscription.source !== "system" || subscription.provider_subscription_id) return { success: false, message: "This workspace is not eligible for a new paid checkout." }
+    if (subscription.provider_subscription_id || subscription.source !== "system") await ensureCheckoutEligibility(subscription)
     const preview = await getPaddleServerClient().transactions.preview({ items: [{ priceId: mapping.provider_price_id, quantity: 1 }], ...(subscription.provider_customer_id ? { customerId: subscription.provider_customer_id } : {}) })
     const totals = preview.details.totals
-    return { success: true, data: { planKey: targetPlan, plan: await getPlanName(targetPlan), interval: billingInterval, amount: totals.grandTotal || totals.total, currency: totals.currencyCode, nextRecurringAmount: totals.grandTotal || totals.total, previewedAt: new Date().toISOString() } }
+    return { success: true, data: { planKey: resolvedTargetPlan, plan: await getPlanName(resolvedTargetPlan), interval: billingInterval, amount: totals.grandTotal || totals.total, currency: totals.currencyCode, nextRecurringAmount: totals.grandTotal || totals.total, previewedAt: new Date().toISOString() } }
   } catch (error) { return { success: false, message: friendlyBillingError(error) } }
 }
 
 export async function startPaddleCheckout(targetPlan: string, intervalOrRequestKey?: string, requestKey?: string) {
   try {
     const membership = await requireCurrentWorkspaceOwner()
+    const resolvedTargetPlan = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
     const billingInterval = isBillingInterval(intervalOrRequestKey || "") ? intervalOrRequestKey as BillingInterval : "month"
     const actualRequestKey = isBillingInterval(intervalOrRequestKey || "") ? requestKey : intervalOrRequestKey
-    if (!isPaidPlanKey(targetPlan)) return { success: false, message: "That plan is not available." }
+    if (!isPaidPlanKey(resolvedTargetPlan)) return { success: false, message: "That plan is not available." }
     const environment = getBillingEnvironment()
-    const mapping = await getActivePaddlePrice(targetPlan, environment, billingInterval)
+    const mapping = await getActivePaddlePrice(resolvedTargetPlan, environment, billingInterval)
     const publicConfig = getPublicPaddleConfig()
-    if (!mapping || !publicConfig) return { success: false, message: `Paddle ${environment} price mapping is not configured for plan ${targetPlan}.` }
+    if (!mapping || !publicConfig) return { success: false, message: `Paddle ${environment} price mapping is not configured for plan ${resolvedTargetPlan}.` }
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider === "paddle" && subscription.provider_subscription_id && subscription.provider_status !== "canceled") return { success: false, message: "This workspace already has a Paddle subscription. Use Change plan instead." }
-    if (subscription.source !== "system" || subscription.provider_subscription_id) return { success: false, message: "This workspace is not eligible for a new paid checkout." }
+    if (subscription.provider_subscription_id || subscription.source !== "system") await ensureCheckoutEligibility(subscription)
     const idempotencyKey = normalizeRequestKey(actualRequestKey)
     const mutation = await beginBillingMutation(membership.workspace_id, idempotencyKey, "checkout")
     if (mutation.status === "succeeded") {
@@ -414,15 +473,28 @@ export async function startPaddleCheckout(targetPlan: string, intervalOrRequestK
     const existing = await createServiceRoleClient().from("billing_checkout_sessions").select("provider_transaction_id, status").eq("workspace_id", membership.workspace_id).eq("idempotency_key", idempotencyKey).maybeSingle()
     if (existing.data?.provider_transaction_id) return { success: true, data: { transactionId: existing.data.provider_transaction_id, ...publicConfig } }
     if (!mutation.created && mutation.status === "pending") return { success: false, message: "Checkout is already being created. Refresh in a moment to continue." }
-    const transaction = await getPaddleServerClient(idempotencyKey).transactions.create({
-      items: [{ priceId: mapping.provider_price_id, quantity: 1 }],
-      ...(subscription.provider_customer_id ? { customerId: subscription.provider_customer_id } : {}),
-      customData: { saas_core_workspace_id: membership.workspace_id, saas_core_target_plan: targetPlan, saas_core_billing_interval: billingInterval, saas_core_billing_environment: environment },
-    })
-    const supabase = createServiceRoleClient()
-    const checkoutError = await supabase.from("billing_checkout_sessions").insert({ workspace_id: membership.workspace_id, environment, target_plan_key: targetPlan, provider_price_id: mapping.provider_price_id, provider_transaction_id: transaction.id, idempotency_key: idempotencyKey, status: "created" }).then((result) => result.error)
-    if (checkoutError && checkoutError.code !== "23505") throw new Error(checkoutError.message)
-    await finishBillingMutation(mutation.id, "succeeded", { transactionId: transaction.id, planKey: targetPlan, interval: billingInterval })
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, environment, "checkout", null, resolvedTargetPlan)
+    let transaction: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["transactions"]["create"]>>
+    try {
+      transaction = await getPaddleServerClient(idempotencyKey).transactions.create({
+        items: [{ priceId: mapping.provider_price_id, quantity: 1 }],
+        ...(subscription.provider_customer_id ? { customerId: subscription.provider_customer_id } : {}),
+        customData: { saas_core_workspace_id: membership.workspace_id, saas_core_target_plan: resolvedTargetPlan, saas_core_billing_interval: billingInterval, saas_core_billing_environment: environment },
+      })
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "checkout")
+      throw error
+    }
+    try {
+      const supabase = createServiceRoleClient()
+      const checkoutError = await supabase.from("billing_checkout_sessions").insert({ workspace_id: membership.workspace_id, environment, target_plan_key: resolvedTargetPlan, provider_price_id: mapping.provider_price_id, provider_transaction_id: transaction.id, idempotency_key: idempotencyKey, status: "created" }).then((result) => result.error)
+      if (checkoutError && checkoutError.code !== "23505") throw new Error(checkoutError.message)
+      await finishCanonicalTransition(transition.transition_id, "succeeded", { providerReference: transaction.id, transactionId: transaction.id })
+      await finishBillingMutation(mutation.id, "succeeded", { transactionId: transaction.id, planKey: resolvedTargetPlan, interval: billingInterval })
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "checkout_persistence")
+      throw error
+    }
     return { success: true, data: { transactionId: transaction.id, ...publicConfig } }
   } catch (error) { return { success: false, message: friendlyBillingError(error) } }
 }
@@ -483,10 +555,18 @@ export async function changePaddlePlan(targetPlan: string, previewToken?: string
     const targetOrder = await getPlanSortOrder(targetPlan)
     const isDowngrade = targetOrder < currentOrder
     const mode = isDowngrade ? "do_not_bill" : "prorated_immediately"
-    const freshPreview = await getPaddleServerClient().subscriptions.previewUpdate(context.subscription.provider_subscription_id as string, { items: [{ priceId: context.mapping.provider_price_id, quantity: 1 }], prorationBillingMode: mode })
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, context.environment, isDowngrade ? "downgrade" : "upgrade", context.subscription.plan_key, targetPlan, isDowngrade ? context.currentPeriodEndAt : null)
+    let freshPreview: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["previewUpdate"]>>
+    try {
+      freshPreview = await getPaddleServerClient().subscriptions.previewUpdate(context.subscription.provider_subscription_id as string, { items: [{ priceId: context.mapping.provider_price_id, quantity: 1 }], prorationBillingMode: mode })
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "plan_change_preview")
+      throw error
+    }
     const fresh = await subscriptionPreviewData(freshPreview, targetPlan as PaidPlanKey, context.interval, mode, isDowngrade, isDowngrade ? context.subscription.current_period_end_at || context.subscription.current_period_end : freshPreview.nextBilledAt, context.mapping)
     if (fresh.amount !== saved.amount || fresh.action !== saved.action || fresh.recurringAmount !== saved.recurringAmount || fresh.creditToBalance !== saved.creditToBalance || fresh.currency !== saved.currency) {
       await finishBillingMutation(mutation.id, "failed", {}, "PREVIEW_CHANGED")
+      await finishCanonicalTransition(transition.transition_id, "failed", { reason: "PREVIEW_CHANGED" }, "PREVIEW_CHANGED")
       return { success: false, message: "The billing amount changed. Review the new preview before confirming." }
     }
     const scheduledEffectiveAt = isDowngrade ? context.currentPeriodEndAt : null
@@ -502,15 +582,27 @@ export async function changePaddlePlan(targetPlan: string, previewToken?: string
       }).eq("workspace_id", membership.workspace_id)
       if (scheduleError) throw new Error(scheduleError.message)
     }
-    const providerResult = await getPaddleServerClient(operationKey).subscriptions.update(context.subscription.provider_subscription_id as string, { items: [{ priceId: context.mapping.provider_price_id, quantity: 1 }], prorationBillingMode: mode, onPaymentFailure: "prevent_change" })
+    let providerResult: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["update"]>>
+    try {
+      providerResult = await getPaddleServerClient(operationKey).subscriptions.update(context.subscription.provider_subscription_id as string, { items: [{ priceId: context.mapping.provider_price_id, quantity: 1 }], prorationBillingMode: mode, onPaymentFailure: "prevent_change" })
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "plan_change")
+      throw error
+    }
     const effectiveAt = scheduledEffectiveAt || providerResult.nextBilledAt
-    await createServiceRoleClient().from("workspace_subscriptions").update({
-      scheduled_plan_key: isDowngrade ? targetPlan : null,
-      scheduled_plan_at: isDowngrade ? (effectiveAt || context.subscription.current_period_end)?.slice(0, 10) || null : null,
-      scheduled_effective_at: isDowngrade ? effectiveAt : null,
-      scheduled_plan_interval: isDowngrade ? context.interval : null,
-      scheduled_provider_price_id: isDowngrade ? context.mapping.provider_price_id : null,
-    }).eq("workspace_id", membership.workspace_id)
+    try {
+      const { error: projectionError } = await createServiceRoleClient().from("workspace_subscriptions").update({
+        scheduled_plan_key: isDowngrade ? targetPlan : null,
+        scheduled_plan_at: isDowngrade ? (effectiveAt || context.subscription.current_period_end)?.slice(0, 10) || null : null,
+        scheduled_effective_at: isDowngrade ? effectiveAt : null,
+        scheduled_plan_interval: isDowngrade ? context.interval : null,
+        scheduled_provider_price_id: isDowngrade ? context.mapping.provider_price_id : null,
+      }).eq("workspace_id", membership.workspace_id)
+      if (projectionError) throw new Error(projectionError.message)
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "plan_change_persistence")
+      throw error
+    }
     try {
       await reconcilePaddleSubscriptionProjection(context.subscription)
     } catch {
@@ -518,6 +610,7 @@ export async function changePaddlePlan(targetPlan: string, previewToken?: string
       // the local projection without turning a successful provider mutation into
       // a false billing failure.
     }
+    await finishCanonicalTransition(transition.transition_id, "succeeded", { targetPlan, interval: context.interval, effectiveAt, providerReference: providerResult.id || null })
     await finishBillingMutation(mutation.id, "succeeded", { targetPlan, interval: context.interval, effectiveAt })
     revalidatePath("/manage/plan")
     return { success: true, message: isDowngrade ? "Your downgrade is scheduled for the end of the current billing period." : "Your plan change was submitted and will unlock after Paddle confirmation." }
@@ -537,11 +630,25 @@ export async function undoPaddlePlanChange(requestKey?: string) {
     const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "plan_change")
     if (mutation.status === "succeeded") return { success: true, message: "The pending change is already being undone." }
     if (!mutation.created) return { success: false, message: "Another billing change is already being processed. Refresh in a moment to see its result." }
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, environment, "downgrade", subscription.scheduled_plan_key, subscription.plan_key, null)
     const paddle = getPaddleServerClient()
-    const preview = await paddle.subscriptions.previewUpdate(subscription.provider_subscription_id, { items: [{ priceId: mapping.provider_price_id, quantity: 1 }], prorationBillingMode: "do_not_bill" })
-    await paddle.subscriptions.update(subscription.provider_subscription_id, { items: [{ priceId: mapping.provider_price_id, quantity: 1 }], prorationBillingMode: "do_not_bill", onPaymentFailure: "prevent_change" })
-    await createServiceRoleClient().from("workspace_subscriptions").update({ scheduled_plan_key: null, scheduled_plan_at: null, scheduled_effective_at: null, scheduled_plan_interval: null, scheduled_provider_price_id: null }).eq("workspace_id", membership.workspace_id)
-    await finishBillingMutation(mutation.id, "succeeded", { amount: preview.updateSummary?.result.amount || null })
+    let preview: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["previewUpdate"]>>
+    try {
+      preview = await paddle.subscriptions.previewUpdate(subscription.provider_subscription_id, { items: [{ priceId: mapping.provider_price_id, quantity: 1 }], prorationBillingMode: "do_not_bill" })
+      await paddle.subscriptions.update(subscription.provider_subscription_id, { items: [{ priceId: mapping.provider_price_id, quantity: 1 }], prorationBillingMode: "do_not_bill", onPaymentFailure: "prevent_change" })
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "undo_plan_change")
+      throw error
+    }
+    try {
+      const { error: projectionError } = await createServiceRoleClient().from("workspace_subscriptions").update({ scheduled_plan_key: null, scheduled_plan_at: null, scheduled_effective_at: null, scheduled_plan_interval: null, scheduled_provider_price_id: null }).eq("workspace_id", membership.workspace_id)
+      if (projectionError) throw new Error(projectionError.message)
+      await finishCanonicalTransition(transition.transition_id, "succeeded", { amount: preview.updateSummary?.result.amount || null })
+      await finishBillingMutation(mutation.id, "succeeded", { amount: preview.updateSummary?.result.amount || null })
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "undo_plan_change_persistence")
+      throw error
+    }
     revalidatePath("/manage/plan")
     return { success: true, message: "The pending plan change was undone." }
   } catch (error) { return { success: false, message: friendlyBillingError(error) }
@@ -559,8 +666,16 @@ export async function cancelPaddleSubscription(reasonCode = "other", feedback = 
     const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "cancel")
     if (mutation.status === "succeeded") return { success: true, message: "Cancellation is already scheduled." }
     if (!mutation.created) return { success: false, message: "Another billing change is already being processed. Refresh in a moment to see its result." }
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, getBillingEnvironment(), "cancel", subscription.plan_key, subscription.plan_key, providerPeriodEnd(providerState, subscription))
     await createServiceRoleClient().from("billing_cancellation_feedback").insert({ workspace_id: membership.workspace_id, provider_subscription_id: subscription.provider_subscription_id, reason_code: reasonCode, feedback: feedback.trim().slice(0, 1000) || null })
-    const result = await getPaddleServerClient().subscriptions.cancel(subscription.provider_subscription_id, { effectiveFrom: "next_billing_period" })
+    let result: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["cancel"]>>
+    try {
+      result = await getPaddleServerClient().subscriptions.cancel(subscription.provider_subscription_id, { effectiveFrom: "next_billing_period" })
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "cancel")
+      throw error
+    }
+    await finishCanonicalTransition(transition.transition_id, "succeeded", { effectiveAt: result.scheduledChange?.effectiveAt || providerPeriodEnd(providerState, subscription) })
     await finishBillingMutation(mutation.id, "succeeded", { effectiveAt: result.scheduledChange?.effectiveAt || providerPeriodEnd(providerState, subscription) })
     revalidatePath("/manage/plan")
     return { success: true, message: "Cancellation scheduled for the end of the current billing period." }
@@ -576,6 +691,7 @@ export async function resumePaddleSubscription(requestKey?: string) {
     const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "resume")
     if (mutation.status === "succeeded") return { success: true, message: "Your subscription is already being reactivated." }
     if (!mutation.created) return { success: false, message: "Another billing change is already being processed. Refresh in a moment to see its result." }
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, getBillingEnvironment(), "resume", subscription.plan_key, subscription.plan_key, null)
     // Paddle's resume endpoint is for paused subscriptions only. A cancellation
     // scheduled for the next billing period is removed by explicitly clearing
     // scheduled_change, which does not create a new charge.
@@ -591,23 +707,40 @@ export async function resumePaddleSubscription(requestKey?: string) {
       }).eq("workspace_id", membership.workspace_id)
       if (clearError) throw new Error(clearError.message)
     } catch (error) {
-      await finishBillingMutation(mutation.id, "failed", {}, "RESUME_FAILED")
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "resume")
       throw error
     }
+    await finishCanonicalTransition(transition.transition_id, "succeeded", {})
     await finishBillingMutation(mutation.id, "succeeded", {})
     revalidatePath("/manage/plan")
     return { success: true, message: "Your subscription has been reactivated." }
   } catch (error) { return { success: false, message: friendlyBillingError(error) } }
 }
 
-export async function startPaymentMethodRecovery() {
+export async function startPaymentMethodRecovery(requestKey?: string) {
   try {
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider !== "paddle" || !subscription.provider_subscription_id) return { success: false, message: "No active Paddle subscription is available." }
-    const transaction = await getPaddleServerClient().subscriptions.getPaymentMethodChangeTransaction(subscription.provider_subscription_id)
     const config = getPublicPaddleConfig()
     if (!config) return { success: false, message: "Billing checkout is not configured." }
+    const environment = getBillingEnvironment()
+    const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "payment_recovery")
+    if (mutation.status === "succeeded") {
+      const saved = resultRecord(mutation.result)
+      if (typeof saved.transactionId === "string") return { success: true, data: { transactionId: saved.transactionId, ...config } }
+    }
+    if (!mutation.created) return { success: false, message: "Payment recovery is already being started. Refresh in a moment to continue." }
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, environment, "recovery", subscription.plan_key, subscription.plan_key, null)
+    let transaction: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["getPaymentMethodChangeTransaction"]>>
+    try {
+      transaction = await getPaddleServerClient().subscriptions.getPaymentMethodChangeTransaction(subscription.provider_subscription_id)
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "payment_recovery")
+      throw error
+    }
+    await finishCanonicalTransition(transition.transition_id, "succeeded", { providerReference: transaction.id, transactionId: transaction.id })
+    await finishBillingMutation(mutation.id, "succeeded", { transactionId: transaction.id })
     return { success: true, data: { transactionId: transaction.id, ...config } }
   } catch (error) { return { success: false, message: friendlyBillingError(error) } }
 }
