@@ -1,6 +1,7 @@
 # @sapienx/saas-core
 
-Current release: runtime `2.1.0`; Core database schema `2.0`.
+Current release: runtime `2.2.0`; Core database schema `2.0`. This is a
+backward-compatible minor release with no Core database migration.
 
 Generic SaaS Core contracts include product configuration, compatibility
 metadata, and the Agent Surface contract. Use `defineAgentTool()` for a

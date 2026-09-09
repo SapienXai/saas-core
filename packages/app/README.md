@@ -1,5 +1,9 @@
 # `@sapienx/saas-core-app`
 
+Current package release: `2.2.0`; Core schema remains `2.0`. This package is the
+template carrier for the coordinated minor release and adds no database
+migration by itself.
+
 This package carries the portable application template extracted from the
 production management implementation. The CLI materializes its
 `template/` into a new product so the consumer receives the actual Core app

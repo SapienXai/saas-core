@@ -1,4 +1,4 @@
-# SaaS Core 2.1
+# SaaS Core 2.2
 
 SaaS Core is infrastructure for workspace-based products. This repository is
 a clean extraction from the production ReserveVia foundations: the proven
@@ -6,9 +6,10 @@ authentication, management shell, workspace boundary, billing, domains, PWA,
 operator control plane, and interaction system remain; the restaurant and
 reservation product domain does not.
 
-The current Core runtime and coordinated package release is `2.1.0`. The Core
-database schema remains `2.0`; Agent Surface is a runtime capability and adds no
-database migration.
+The current Core runtime and coordinated package release is `2.2.0`. The Core
+database schema remains `2.0`; this is a backward-compatible minor release with
+no Core database migration. The release boundary and its validation evidence
+are recorded in [docs/RELEASE-2.2.md](docs/RELEASE-2.2.md).
 
 The governing model is:
 
@@ -275,7 +276,9 @@ server-only Supabase credentials are available—the actual `2.0` Core schema
 metadata. Without those credentials it reports a warning rather than claiming
 verification. `update` plans completely before mutation, blocks on modified
 managed files, creates a self-contained backup, validates, and rolls back the
-consumer automatically if apply or validation fails.
+consumer automatically if apply or validation fails. The controlled
+`2.1.0` → `2.2.0` consumer proof covers packed exports, managed billing delivery,
+product-owned preservation, relocation, and a second frozen install/build.
 
 Generated consumers use `@sapienx/saas-core`, `@sapienx/saas-core-config`, and
 `@sapienx/saas-core-ui` at runtime. The CLI is a devDependency, and

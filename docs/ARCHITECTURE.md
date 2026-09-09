@@ -189,8 +189,9 @@ domains, Platform Control, and source-derived interaction surfaces. It has a
 generic Workspace plus Projects model and does not require industry-specific
 concepts to boot.
 
-The current runtime is `2.1.0`; the Core schema remains `2.0`. The schema was
-introduced by the 2.0 baseline. Schema metadata lives in
+The current runtime is `2.2.0`; the Core schema remains `2.0`. The schema was
+introduced by the 2.0 baseline and this minor release does not add a migration.
+Schema metadata lives in
 `private.core_schema_metadata` and is readable by the CLI only through a
 service-role-only RPC; product catalog changes do not change the schema
 version.

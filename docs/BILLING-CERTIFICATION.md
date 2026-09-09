@@ -1,9 +1,11 @@
 # Reusable billing certification
 
-This document records the local release-boundary review for SaaS Core runtime
-`2.1.0` and Core schema `2.0`. It certifies the packed Core contract and the
-managed-template lifecycle proof. It does not certify either consumer's
-migration or a live payment rollout.
+This document records the local release-boundary review for the coordinated
+SaaS Core runtime/package release `2.2.0` and Core schema `2.0`. It certifies
+the packed Core contract, reusable billing boundary, and managed-template
+lifecycle proof, including the controlled `2.1.0` → `2.2.0` upgrade. It does
+not certify either consumer's migration or a live payment rollout. The release
+overview is [RELEASE-2.2.md](./RELEASE-2.2.md).
 
 The audited reference commits are ReserveVia
 `92ffa98dd22e785d90959b292c341de1e57e6873` (`fix(ui): streamline public brand
@@ -62,14 +64,14 @@ checkout engine is not part of the integration.
 
 ### 4. How are package and schema compatibility handled?
 
-The current coordinates are runtime `2.1.0` and schema `2.0`. All five Core
+The current coordinates are runtime `2.2.0` and schema `2.0`. All five Core
 packages use the runtime coordinate, while the CLI is a tooling dependency and
 the application package is only a template carrier. `doctor` checks manifest,
 package, migration, catalog, and (when server credentials are present) live
 schema metadata. `diff` reports a runtime movement separately from schema
-movement; the legacy fixture upgrades package versions and runtime metadata
-while keeping schema `2.0`. The updater does not rewrite consumer lockfiles or
-apply database migrations.
+movement; the controlled legacy fixture upgrades package versions and runtime
+metadata from `2.1.0` to `2.2.0` while keeping schema `2.0`. The updater does
+not rewrite consumer lockfiles or apply database migrations.
 
 ### 5. How do managed ownership and conflicts work?
 
@@ -95,7 +97,9 @@ app, and CLI artifacts. `core:consumer-proof` installs those tarballs through
 a disposable local registry, executes packed billing exports and config
 validation, initializes a fresh consumer, upgrades a legacy consumer with the
 managed billing files, and verifies product-owned preservation. The same
-proof relocates the consumer and repeats a frozen install and build.
+proof relocates the consumer and repeats a frozen install and build; the
+focused lifecycle fixture also checks dry-run/apply parity, conflict
+isolation, and rollback.
 
 No live Paddle request, provider mutation, production database write, deploy,
 push, merge, or secret change is included in these checks.

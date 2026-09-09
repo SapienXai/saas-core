@@ -1,9 +1,12 @@
 # Consumer migration follow-ups
 
-These checklists are the remaining work for the audited consumers. They are
-separate from the Core packaging checkpoint. Each item must be completed in
-the consumer's own checkout with a dry run, reviewable evidence, and an
-explicit rollback plan.
+These checklists are the remaining work for the audited consumers after the
+SaaS Core `2.2.0` packaging checkpoint. They are separate read-only consumer
+migration workstreams, described alongside the release boundary in
+[`RELEASE-2.2.md`](./RELEASE-2.2.md) and
+[`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md). Each item must be
+completed in the consumer's own checkout with a dry run, reviewable evidence,
+and an explicit rollback plan.
 
 ## ReserveVia
 
@@ -77,3 +80,8 @@ migrations, and domain files survive Core updates; modified managed files block
 the update; and a failed apply restores the independent backup. Neither
 checklist authorizes live payments, production mutations, deployment, push,
 merge, secret changes, or edits to the other consumer.
+
+Publishing Core `2.2.0` does not mark either checklist complete. ReserveVia and
+PlaceDJ remain separate product-owned migrations and must establish their own
+provider-history, catalog, sandbox, rollback, browser, and production-readiness
+evidence before any live migration decision.

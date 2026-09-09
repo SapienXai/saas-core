@@ -1,5 +1,7 @@
 # @sapienx/saas-core-ui
 
+Current package release: `2.2.0`; Core schema remains `2.0`.
+
 This is the reusable UI package extracted from the production ReserveVia
 surface. It contains the actual Radix/shadcn-style primitives, theme provider,
 language context, loading surfaces, toast helpers, and utility implementation;

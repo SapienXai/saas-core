@@ -5,6 +5,12 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
+The current coordinated runtime and package release is `2.2.0` on Core schema
+`2.0`. It is a backward-compatible minor release with no Core database
+migration. The release evidence and certification boundary are recorded in
+[`RELEASE-2.2.md`](./RELEASE-2.2.md) and
+[`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
+
 ## Core/product ownership
 
 Keep Core-owned files and product-owned files separate. A normal product
@@ -123,9 +129,10 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and Core schema version are separate compatibility
-coordinates. The current runtime is `2.1.0` and the Core schema remains `2.0`;
-the Agent Surface capability required a backward-compatible minor package
-release, not a schema migration. `doctor` verifies the actual database metadata when `SUPABASE_URL` and a server-only
+coordinates. The current runtime is `2.2.0` and the Core schema remains `2.0`;
+the controlled `2.1.0` → `2.2.0` package update and reusable billing delivery
+required a backward-compatible minor package release, not a schema migration.
+`doctor` verifies the actual database metadata when `SUPABASE_URL` and a server-only
 `SUPABASE_SERVICE_ROLE_KEY` are available, and reports a warning when those
 credentials are absent. It reports an error when metadata is missing or
 mismatched. Changing a product catalog, default plan, or usage metric does not
@@ -165,7 +172,10 @@ merging an update.
 ## Release discipline
 
 Create a local checkpoint commit for each coherent phase. Do not push archive
-branches or release artifacts automatically. The final release should include
+branches or release artifacts automatically. The `2.2.0` release evidence
+includes the controlled legacy-consumer upgrade, packed exports, managed
+billing-file delivery, product-owned preservation, relocation, and a second
+frozen install/build. The final release should include
 `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, clean DB tests,
 browser tests, build, `pnpm pack`, a fresh consumer, relocation, and a second
 frozen install/build.

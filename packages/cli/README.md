@@ -1,5 +1,9 @@
 # @sapienx/saas-core-cli
 
+Current package release: `2.2.0`; Core schema remains `2.0`. The CLI is the
+tooling boundary for the coordinated minor release and does not apply Core
+database migrations.
+
 Portable `init`, `doctor`, `diff`, and `update` commands for a SaaS Core
 consumer. The CLI ships the canonical `@sapienx/saas-core-app` template at
 pack time, records managed-file hashes, detects product-versus-Core ownership,
