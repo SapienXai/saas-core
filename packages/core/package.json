@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Workspace tenancy, entitlement, manifest and lifecycle contracts for SaaS Core",
   "type": "module",
   "exports": {

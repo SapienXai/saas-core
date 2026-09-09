@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core-config",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Product configuration boundary for SaaS Core",
   "type": "module",
   "exports": {
