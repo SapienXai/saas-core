@@ -2,6 +2,7 @@ import "server-only"
 
 import { cache } from "react"
 import { isPaymentGraceExpired } from "@/lib/billing/lifecycle"
+import { getConfiguredFallbackPlanKey } from "@/lib/billing/reconciliation"
 import { createServiceRoleClient } from "@/lib/supabase"
 
 /**
@@ -68,16 +69,36 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
-function normalizeFeatures(value: unknown): FeatureMap {
-  return Object.fromEntries(Object.entries(asRecord(value)).map(([key, enabled]) => [key, Boolean(enabled)]))
+function textValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null
 }
 
-function normalizeLimits(value: unknown): LimitMap {
-  return Object.fromEntries(Object.entries(asRecord(value)).map(([key, limit]) => {
-    if (limit === null || limit === undefined || limit === "null") return [key, null]
-    const number = typeof limit === "number" ? limit : Number(limit)
-    return [key, Number.isFinite(number) && number >= 0 ? number : null]
-  }))
+function isValidTimestamp(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(new Date(value).getTime())
+}
+
+export function normalizeFeatures(value: unknown): FeatureMap {
+  return Object.fromEntries(Object.entries(asRecord(value)).flatMap(([key, enabled]) => (
+    typeof enabled === "boolean" ? [[key, enabled]] : []
+  )))
+}
+
+/**
+ * Missing keys stay missing. Only JSON null means unlimited; malformed values
+ * are omitted so callers cannot accidentally grant unlimited access.
+ */
+export function normalizeLimits(value: unknown): LimitMap {
+  const entries = Object.entries(asRecord(value)).reduce<Array<[string, number | null]>>((result, [key, limit]) => {
+    if (limit === null || (typeof limit === "number" && Number.isFinite(limit) && limit >= 0)) result.push([key, limit as number | null])
+    return result
+  }, [])
+  return Object.fromEntries(entries)
+}
+
+export function normalizeUsage(value: unknown): UsageMap {
+  return Object.fromEntries(Object.entries(asRecord(value)).flatMap(([key, counter]) => (
+    typeof counter === "number" && Number.isFinite(counter) && counter >= 0 ? [[key, counter]] : []
+  )))
 }
 
 function normalizePricing(value: unknown): PlanPricing {
@@ -98,6 +119,75 @@ export function getCalendarPeriod(date = new Date()) {
   const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1))
   return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }
 }
+
+function validPlanKey(value: unknown): string | null {
+  return textValue(value)
+}
+
+function referenceDate(value: string | Date | undefined) {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : new Date()
+  if (typeof value === "string") {
+    const parsed = new Date(value.length === 10 ? `${value}T00:00:00.000Z` : value)
+    if (Number.isFinite(parsed.getTime())) return parsed
+  }
+  return new Date()
+}
+
+export function isScheduledPlanEffective(effectiveAt: string | null | undefined, now = new Date()) {
+  if (!isValidTimestamp(effectiveAt)) return false
+  return new Date(effectiveAt).getTime() <= now.getTime()
+}
+
+export function isScheduledPlanPending(effectiveAt: string | null | undefined, now = new Date()) {
+  return isValidTimestamp(effectiveAt) && !isScheduledPlanEffective(effectiveAt, now)
+}
+
+export type EffectiveEntitlementPlanInput = {
+  subscriptionPlanKey?: string | null
+  overridePlanKey?: string | null
+  scheduledPlanKey?: string | null
+  scheduledPlanAt?: string | null
+  status?: string | null
+  fallbackPlanKey?: string | null
+  paymentGraceEndsAt?: string | null
+  now?: Date
+}
+
+const KNOWN_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due", "paused", "canceled"])
+
+/**
+ * Resolve all entitlement precedence in one place. Manual overrides win over
+ * lifecycle and scheduled state. Unknown lifecycle or malformed mapping data
+ * returns the configured fallback, which is the fail-closed result.
+ */
+export function resolveEffectiveEntitlementPlan(input: EffectiveEntitlementPlanInput): string | null {
+  const fallback = validPlanKey(input.fallbackPlanKey)
+  const override = validPlanKey(input.overridePlanKey)
+  if (override) return override
+
+  const status = textValue(input.status) || "active"
+  if (!KNOWN_SUBSCRIPTION_STATUSES.has(status) || status === "paused" || status === "canceled") return fallback
+
+  const purchased = validPlanKey(input.subscriptionPlanKey)
+  if (!purchased) return fallback
+
+  const now = input.now && Number.isFinite(input.now.getTime()) ? input.now : new Date()
+  if (status === "past_due") {
+    // A past-due subscription without a valid boundary cannot grant an
+    // unbounded grace period.
+    if (!isValidTimestamp(input.paymentGraceEndsAt) || isPaymentGraceExpired(input.paymentGraceEndsAt, now)) return fallback
+  }
+
+  const hasScheduledMapping = input.scheduledPlanKey != null || input.scheduledPlanAt != null
+  if (hasScheduledMapping) {
+    const scheduled = validPlanKey(input.scheduledPlanKey)
+    if (!scheduled || !isValidTimestamp(input.scheduledPlanAt)) return fallback
+    if (isScheduledPlanEffective(input.scheduledPlanAt, now)) return scheduled
+  }
+  return purchased
+}
+
+export const resolveEffectiveEntitlements = resolveEffectiveEntitlementPlan
 
 const getSubscription = cache(async function getSubscription(workspaceId: string) {
   const service = createServiceRoleClient() as any
@@ -124,28 +214,66 @@ const getSubscription = cache(async function getSubscription(workspaceId: string
 
   const scheduledPlanKey = typeof data.scheduled_plan_key === "string" ? data.scheduled_plan_key : null
   const scheduledPlanAt = data.scheduled_effective_at || data.scheduled_plan_at || null
+  const paymentGraceEndsAt = textValue(data.payment_grace_ends_at)
+  const graceExpired = !override?.plan_key && data.status === "past_due" && (
+    !isValidTimestamp(paymentGraceEndsAt) || isPaymentGraceExpired(paymentGraceEndsAt)
+  )
   return {
     ...data,
     override_id: override?.id || null,
-    override_plan_key: override?.plan_key || null,
+    override_plan_key: textValue(override?.plan_key),
     scheduled_plan_key: scheduledPlanKey,
     scheduled_plan_at: scheduledPlanAt,
-    grace_expired: !override?.plan_key && data.status === "past_due" && isPaymentGraceExpired(data.payment_grace_ends_at),
+    payment_grace_ends_at: paymentGraceEndsAt,
+    grace_expired: graceExpired,
   }
 })
 
-export function resolveEffectivePlanKey(subscriptionPlanKey: string, overridePlanKey?: string | null, scheduledPlanKey?: string | null, scheduledPlanAt?: string | null, today = new Date().toISOString().slice(0, 10)) {
-  if (overridePlanKey) return overridePlanKey
-  const scheduled = scheduledPlanAt && scheduledPlanAt.length > 10
-    ? new Date(scheduledPlanAt).getTime() <= new Date(`${today}T23:59:59.999Z`).getTime()
-    : Boolean(scheduledPlanAt && scheduledPlanAt <= today)
-  return scheduledPlanKey && scheduled ? scheduledPlanKey : subscriptionPlanKey
+const getWorkspaceRecord = cache(async function getWorkspaceRecord(workspaceId: string) {
+  if (!workspaceId.trim()) throw new EntitlementError("PLAN_UNAVAILABLE", "Workspace is unavailable.")
+  const service = createServiceRoleClient() as any
+  const { data, error } = await service
+    .from("workspaces")
+    .select("id, created_by, status, platform_status")
+    .eq("id", workspaceId)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!data || data.status !== "active" || (data.platform_status !== undefined && data.platform_status !== "active")) {
+    throw new EntitlementError("PLAN_UNAVAILABLE", "Workspace is unavailable.")
+  }
+  return data
+})
+
+export function resolveEffectivePlanKey(
+  subscriptionPlanKey: string,
+  overridePlanKey?: string | null,
+  scheduledPlanKey?: string | null,
+  scheduledPlanAt?: string | null,
+  todayOrNow: string | Date = new Date(),
+) {
+  return resolveEffectiveEntitlementPlan({
+    subscriptionPlanKey,
+    overridePlanKey,
+    scheduledPlanKey,
+    scheduledPlanAt,
+    status: "active",
+    fallbackPlanKey: subscriptionPlanKey,
+    now: referenceDate(todayOrNow),
+  }) || subscriptionPlanKey
 }
 
 export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceId: string): Promise<WorkspaceEntitlements> {
+  await getWorkspaceRecord(workspaceId)
   const subscription = await getSubscription(workspaceId)
   const service = createServiceRoleClient() as any
-  const planKeys = Array.from(new Set([subscription.plan_key, subscription.scheduled_plan_key].filter(Boolean)))
+  const fallbackPlanKey = await getConfiguredFallbackPlanKey(service)
+  const planKeys = Array.from(new Set([
+    validPlanKey(subscription.plan_key),
+    validPlanKey(subscription.override_plan_key),
+    validPlanKey(subscription.scheduled_plan_key),
+    fallbackPlanKey,
+  ].filter((key): key is string => Boolean(key))))
+  if (!planKeys.length) throw new EntitlementError("PLAN_UNAVAILABLE", "Workspace plan is not available.")
   const { data: plans, error } = await service
     .from("plans")
     .select("key, name, sort_order, features, limits, metadata")
@@ -153,26 +281,30 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
     .eq("active", true)
   if (error) throw new Error(error.message)
 
-  let activePlans = plans || []
-  if (subscription.grace_expired) {
-    const fallback = await service.from("plans").select("key, name, sort_order, features, limits, metadata").eq("active", true).order("sort_order", { ascending: true }).order("key", { ascending: true }).limit(1).maybeSingle()
-    if (fallback.error) throw new Error(fallback.error.message)
-    if (fallback.data && !activePlans.some((item: any) => item.key === fallback.data.key)) activePlans = [...activePlans, fallback.data]
-  }
-
-  const effectiveKey = subscription.grace_expired
-    ? activePlans.slice().sort((a: any, b: any) => a.sort_order - b.sort_order || a.key.localeCompare(b.key))[0]?.key
-    : resolveEffectivePlanKey(subscription.plan_key, subscription.override_plan_key, subscription.scheduled_plan_key, subscription.scheduled_plan_at)
+  const activePlans = Array.isArray(plans) ? plans : []
+  const now = new Date()
+  const effectiveKey = resolveEffectiveEntitlementPlan({
+    subscriptionPlanKey: textValue(subscription.plan_key),
+    overridePlanKey: textValue(subscription.override_plan_key),
+    scheduledPlanKey: textValue(subscription.scheduled_plan_key),
+    scheduledPlanAt: textValue(subscription.scheduled_plan_at),
+    status: textValue(subscription.status),
+    fallbackPlanKey,
+    paymentGraceEndsAt: textValue(subscription.payment_grace_ends_at),
+    now,
+  })
   const plan = activePlans.find((item: any) => item.key === effectiveKey)
   if (!plan) throw new EntitlementError("PLAN_UNAVAILABLE", "Workspace plan is not available.")
-  const scheduled = !subscription.grace_expired && subscription.scheduled_plan_key && subscription.scheduled_plan_at
+  const status = textValue(subscription.status)
+  const scheduledIsVisible = !subscription.grace_expired && status !== "paused" && status !== "canceled" && isScheduledPlanPending(textValue(subscription.scheduled_plan_at), now)
+  const scheduled = scheduledIsVisible && subscription.scheduled_plan_key && subscription.scheduled_plan_at
     ? activePlans.find((item: any) => item.key === subscription.scheduled_plan_key)
     : null
 
   return {
     workspaceId,
     planKey: String(plan.key),
-    planName: plan.name,
+    planName: typeof plan.name === "string" ? plan.name : String(plan.key),
     pricing: planPricing(plan.metadata),
     features: normalizeFeatures(plan.features),
     limits: normalizeLimits(plan.limits),
@@ -205,15 +337,25 @@ export async function can(workspaceId: string, feature: FeatureKey) {
   catch (error) { console.error("Unable to resolve workspace feature entitlement:", error); return false }
 }
 
-export async function getLimit(workspaceId: string, limit: LimitKey) {
-  return (await getWorkspaceEntitlements(workspaceId)).limits[limit] ?? null
+export async function getLimit(workspaceId: string, limit: LimitKey): Promise<number | null | undefined> {
+  const limits = (await getWorkspaceEntitlements(workspaceId)).limits
+  return Object.prototype.hasOwnProperty.call(limits, limit) ? limits[limit] : undefined
 }
 
-export async function getUsage(workspaceId: string, metric: UsageMetric) {
+export async function getUsage(workspaceId: string, metric: UsageMetric, userId?: string) {
+  const workspace = await getWorkspaceRecord(workspaceId)
   const service = createServiceRoleClient() as any
+  if (userId) {
+    const { data: membership, error: membershipError } = await service
+      .from("workspace_members")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", userId)
+      .maybeSingle()
+    if (membershipError) throw new Error(membershipError.message)
+    if (!membership) throw new EntitlementError("PLAN_UNAVAILABLE", "Workspace is unavailable.")
+  }
   if (metric === "core.workspaces") {
-    const { data: workspace, error } = await service.from("workspaces").select("created_by").eq("id", workspaceId).single()
-    if (error) throw new Error(error.message)
     if (!workspace?.created_by) return 1
     const { count, error: countError } = await service.from("workspace_members").select("id", { count: "exact", head: true }).eq("user_id", workspace.created_by).eq("role", "owner")
     if (countError) throw new Error(countError.message)
@@ -230,19 +372,27 @@ export async function getUsage(workspaceId: string, metric: UsageMetric) {
   const period = getCalendarPeriod()
   const { data, error } = await service.from("workspace_usage_periods").select("usage").eq("workspace_id", workspaceId).eq("period_start", period.start).eq("period_end", period.end).maybeSingle()
   if (error) throw new Error(error.message)
-  const value = asRecord(data?.usage)[metric]
-  const number = typeof value === "number" ? value : Number(value || 0)
-  return Number.isFinite(number) && number >= 0 ? number : 0
+  return normalizeUsage(data?.usage)[metric] ?? 0
 }
 
-export const getWorkspaceUsage = cache(async function getWorkspaceUsage(workspaceId: string): Promise<WorkspaceUsage> {
+export const getWorkspaceUsage = cache(async function getWorkspaceUsage(workspaceId: string, userId?: string): Promise<WorkspaceUsage> {
   const period = getCalendarPeriod()
-  const [workspaces, users] = await Promise.all([getUsage(workspaceId, "core.workspaces"), getUsage(workspaceId, "core.members")])
-  return { workspaceId, periodStart: period.start, periodEnd: period.end, metrics: { "core.workspaces": workspaces, "core.members": users }, workspaces, users }
+  const service = createServiceRoleClient() as any
+  const [workspaces, users, usageResult] = await Promise.all([
+    getUsage(workspaceId, "core.workspaces", userId),
+    getUsage(workspaceId, "core.members", userId),
+    service.from("workspace_usage_periods").select("usage").eq("workspace_id", workspaceId).eq("period_start", period.start).eq("period_end", period.end).maybeSingle(),
+  ])
+  if (usageResult.error) throw new Error(usageResult.error.message)
+  const metrics = normalizeUsage(usageResult.data?.usage)
+  metrics["core.workspaces"] = workspaces
+  metrics["core.members"] = users
+  return { workspaceId, periodStart: period.start, periodEnd: period.end, metrics, workspaces, users }
 })
 
 export async function getRemaining(workspaceId: string, limit: LimitKey) {
   const [value, usage] = await Promise.all([getLimit(workspaceId, limit), getUsage(workspaceId, limit)])
+  if (value === undefined) return undefined
   return value === null ? null : Math.max(0, value - usage)
 }
 
@@ -252,6 +402,7 @@ export async function assertFeature(workspaceId: string, feature: FeatureKey) {
 
 export async function assertWithinLimit(workspaceId: string, limit: LimitKey) {
   const [value, usage] = await Promise.all([getLimit(workspaceId, limit), getUsage(workspaceId, limit)])
+  if (value === undefined) throw new EntitlementError("PLAN_UNAVAILABLE", "This plan limit is unavailable.", { limit })
   if (value !== null && usage >= value) throw new EntitlementError("LIMIT_REACHED", "This plan limit has been reached.", { limit })
 }
 
@@ -261,7 +412,7 @@ export function isEntitlementLimitError(error: unknown, limit?: LimitKey) {
   return candidate.details === `${limit?.toUpperCase().replaceAll(".", "_")}_LIMIT_REACHED` || candidate.message === "WORKSPACE_LIMIT_REACHED" || candidate.code === "P0001"
 }
 
-export function usageWarningPercent(usage: number, limit: number | null) {
-  if (limit === null || limit <= 0) return null
+export function usageWarningPercent(usage: number, limit: number | null | undefined) {
+  if (limit == null || limit <= 0) return null
   return Math.round((usage / limit) * 100)
 }

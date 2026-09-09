@@ -7,7 +7,7 @@ export const PAYMENT_GRACE_PERIOD_DAYS = 14
 
 export function getPaymentGraceEndsAt(startedAt: string, days = PAYMENT_GRACE_PERIOD_DAYS) {
   const start = new Date(startedAt)
-  if (!Number.isFinite(start.getTime())) return null
+  if (!Number.isFinite(start.getTime()) || !Number.isSafeInteger(days) || days < 0) return null
   return new Date(start.getTime() + days * 24 * 60 * 60 * 1000).toISOString()
 }
 
