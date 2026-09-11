@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-const VERSION = "2.2.0"
+const VERSION = "2.2.1"
 const SCHEMA_VERSION = "2.0"
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const REPOSITORY_TEMPLATE = path.resolve(CLI_ROOT, "../app/template")

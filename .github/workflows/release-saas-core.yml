@@ -1,0 +1,125 @@
+name: Release SaaS Core
+
+on:
+  push:
+    tags:
+      - "saas-core-v*"
+
+concurrency:
+  group: saas-core-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_NPM_REGISTRY: https://registry.npmjs.org/
+  SUPABASE_URL: https://ci.invalid.supabase.co
+  SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
+  SUPABASE_ANON_KEY: ci-placeholder-anon-key
+  NEXT_PUBLIC_SUPABASE_URL: https://ci.invalid.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+  NEXT_PUBLIC_SITE_URL: https://core.invalid
+  NEXT_PUBLIC_APP_URL: https://app.core.invalid
+  SAAS_CORE_ROOT_DOMAIN: core.invalid
+  SAAS_CORE_APP_DOMAIN: app.core.invalid
+  SAAS_CORE_APP_URL: https://app.core.invalid
+  SAAS_CORE_RATE_LIMIT_SECRET: ci-only-rate-limit-secret
+  SAAS_CORE_API_CREDENTIAL_PEPPER: ci-only-api-credential-pepper
+  CRON_SECRET: ci-only-cron-secret
+  PADDLE_ENVIRONMENT: sandbox
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate tag and package coordinates
+        run: pnpm run release:metadata -- "$GITHUB_REF_NAME" --require-clean
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm run release:check
+      - run: pnpm run release:registry-preflight
+      - uses: actions/upload-artifact@v4
+        with:
+          name: saas-core-release-${{ github.ref_name }}
+          path: artifacts/*.tgz
+          if-no-files-found: error
+
+  publish-npm:
+    needs: validate-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: saas-core-release-${{ github.ref_name }}
+          path: artifacts
+      - name: Publish immutable public packages through npm Trusted Publishing
+        run: |
+          if [ "${SAAS_CORE_PUBLIC_RELEASE_APPROVED:-}" != "true" ]; then
+            echo "Refusing public npm publication until SAAS_CORE_PUBLIC_RELEASE_APPROVED=true is explicitly configured after package visibility and license approval."
+            exit 1
+          fi
+          npm publish "artifacts/sapienx-saas-core-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
+          npm publish "artifacts/sapienx-saas-core-config-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
+          npm publish "artifacts/sapienx-saas-core-ui-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
+          npm publish "artifacts/sapienx-saas-core-app-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
+          npm publish "artifacts/sapienx-saas-core-cli-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
+        env:
+          RELEASE_VERSION: 2.2.1
+          SAAS_CORE_PUBLIC_RELEASE_APPROVED: ${{ vars.SAAS_CORE_PUBLIC_RELEASE_APPROVED }}
+
+  verify-published:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run release:registry-verify
+      - run: pnpm run release:registry-install
+
+  github-release:
+    needs: verify-published
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - name: Create GitHub Release with Core-specific notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "SaaS Core 2.2.1" --notes-file docs/RELEASE-2.2.1.md

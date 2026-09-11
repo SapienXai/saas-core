@@ -9,13 +9,15 @@ describe("platform control hardening", () => {
     expect(readFileSync("lib/platform-admin.ts", "utf8")).toContain('import "server-only"')
   })
 
-  it("keeps support inspection read-only and audited", () => {
+  it("keeps platform-user administration server-side, authorized and audited", () => {
     const platform = readFileSync("lib/platform-admin.ts", "utf8")
     expect(platform).toContain("requirePlatformRole")
+    expect(platform).toContain("requirePlatformWriteAccess")
     expect(platform).toContain("platform_audit_logs")
     expect(platform).toContain("auth.admin.listUsers")
-    expect(platform).not.toContain("auth.admin.createUser")
-    expect(platform).not.toContain("auth.admin.deleteUser")
+    expect(platform).toContain("auth.admin.createUser")
+    expect(platform).toContain("auth.admin.deleteUser")
+    expect(platform).toContain("platform_user_controls")
   })
 
   it("keeps domain refresh scoped to provider reads and audit state", () => {

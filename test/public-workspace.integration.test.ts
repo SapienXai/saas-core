@@ -11,6 +11,7 @@ integration("public Workspace routing against Core persistence", () => {
   const suffix = Date.now().toString(36)
   const workspaceA = `routing-alpha-${suffix}`
   const workspaceB = `routing-beta-${suffix}`
+  const rootDomain = process.env.SAAS_CORE_ROOT_DOMAIN || "saas.example.com"
   const customA = `${workspaceA}.customer.example`
   const customB = `${workspaceB}.customer.example`
   const ids: string[] = []
@@ -46,7 +47,7 @@ integration("public Workspace routing against Core persistence", () => {
   })
 
   it("resolves hosted and custom hosts to the same Workspace/path context", async () => {
-    const hosted = await resolvePublicWorkspace({ hostname: `${workspaceA}.saas.example.com`, pathname: "/beach?ref=instagram" })
+    const hosted = await resolvePublicWorkspace({ hostname: `${workspaceA}.${rootDomain}`, pathname: "/beach?ref=instagram" })
     const custom = await resolvePublicWorkspace({ hostname: customA, pathname: "/beach" })
 
     expect(hosted).toMatchObject({ status: "resolved", context: { workspaceId: ids[0], workspaceSlug: workspaceA, pathname: "/beach", hostnameKind: "HOSTED_WORKSPACE" } })
@@ -54,7 +55,7 @@ integration("public Workspace routing against Core persistence", () => {
   })
 
   it("cannot be overridden by path or query parameters", async () => {
-    const result = await resolvePublicWorkspace({ hostname: `${workspaceA}.saas.example.com`, pathname: `/${workspaceB}/beach?workspaceId=${ids[1]}` })
+    const result = await resolvePublicWorkspace({ hostname: `${workspaceA}.${rootDomain}`, pathname: `/${workspaceB}/beach?workspaceId=${ids[1]}` })
     expect(result).toMatchObject({ status: "resolved", context: { workspaceId: ids[0], workspaceSlug: workspaceA, pathname: `/${workspaceB}/beach` } })
   })
 
@@ -69,14 +70,14 @@ integration("public Workspace routing against Core persistence", () => {
     if (restoreDomainError) throw new Error(restoreDomainError.message)
     const { error: suspendError } = await service.from("workspaces").update({ platform_status: "suspended" }).eq("id", ids[0])
     if (suspendError) throw new Error(suspendError.message)
-    expect(await resolvePublicWorkspace({ hostname: `${workspaceA}.saas.example.com`, pathname: "/example" })).toEqual({ status: "not_found" })
+    expect(await resolvePublicWorkspace({ hostname: `${workspaceA}.${rootDomain}`, pathname: "/example" })).toEqual({ status: "not_found" })
     const { error: restoreWorkspaceError } = await service.from("workspaces").update({ platform_status: "active" }).eq("id", ids[0])
     if (restoreWorkspaceError) throw new Error(restoreWorkspaceError.message)
   })
 
   it("does not resolve platform or canonical Core paths", async () => {
-    expect(await resolvePublicWorkspace({ hostname: `${workspaceA}.saas.example.com`, pathname: "/app/../app" })).toEqual({ status: "not_public_workspace" })
-    expect(await resolvePublicWorkspace({ hostname: "app.saas.example.com", pathname: "/example" })).toEqual({ status: "not_public_workspace" })
+    expect(await resolvePublicWorkspace({ hostname: `${workspaceA}.${rootDomain}`, pathname: "/app/../app" })).toEqual({ status: "not_public_workspace" })
+    expect(await resolvePublicWorkspace({ hostname: `app.${rootDomain}`, pathname: "/example" })).toEqual({ status: "not_public_workspace" })
     expect(await resolvePublicWorkspace({ hostname: "workspace.localhost:3000", pathname: "/example" })).toEqual({ status: "not_public_workspace" })
   })
 })

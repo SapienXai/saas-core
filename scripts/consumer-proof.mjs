@@ -4,16 +4,15 @@ import os from "node:os"
 import path from "node:path"
 import { createClient } from "@supabase/supabase-js"
 import { chromium } from "@playwright/test"
+import { RELEASE_VERSION, RUNTIME_PACKAGES, SCHEMA_VERSION, TOOLING_PACKAGES } from "./release-constants.mjs"
 
 const root = process.cwd()
 const packageCli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const artifacts = path.join(root, "artifacts")
-const RELEASE_VERSION = "2.2.0"
-const LEGACY_VERSION = "2.1.0"
-const SCHEMA_VERSION = "2.0"
+const LEGACY_VERSION = "2.2.0"
 const billingMigration = "supabase/migrations/20260909094344_reusable_billing_persistence.sql"
-const runtimePackages = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
-const toolingPackages = ["@sapienx/saas-core-cli"]
+const runtimePackages = RUNTIME_PACKAGES
+const toolingPackages = TOOLING_PACKAGES
 const npmCache = mkdtempSync(path.join(os.tmpdir(), "saas-core-npm-cache-"))
 const product = mkdtempSync(path.join(os.tmpdir(), "saas-core-product-"))
 const packedProduct = mkdtempSync(path.join(os.tmpdir(), "saas-core-packed-product-"))

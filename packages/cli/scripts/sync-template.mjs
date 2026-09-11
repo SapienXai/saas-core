@@ -1,4 +1,5 @@
 import { cp, rm } from "node:fs/promises"
+import { spawnSync } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -6,6 +7,9 @@ const cliRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const source = path.resolve(cliRoot, "../app/template")
 const destination = path.join(cliRoot, "template")
 const appManifest = path.join(cliRoot, "app-package.json")
+const repositoryRoot = path.resolve(cliRoot, "../..")
+const parity = spawnSync(process.execPath, [path.join(repositoryRoot, "scripts/check-app-template-parity.mjs")], { cwd: repositoryRoot, stdio: "inherit" })
+if (parity.status !== 0) process.exit(parity.status ?? 1)
 
 await rm(destination, { recursive: true, force: true })
 await cp(source, destination, { recursive: true })

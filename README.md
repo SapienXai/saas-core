@@ -6,7 +6,7 @@ authentication, management shell, workspace boundary, billing, domains, PWA,
 operator control plane, and interaction system remain; the restaurant and
 reservation product domain does not.
 
-The current Core runtime and coordinated package release is `2.2.0`. The Core
+The current Core runtime and coordinated package release is `2.2.1`. The Core
 schema compatibility coordinate remains `2.0`, and this release delivers the
 additive, Core-managed migration source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` in the
@@ -14,7 +14,8 @@ repository and canonical application template. Package packing and the CLI
 deliver that source to consumers; `init` and `update` never execute SQL. Each
 consumer owns the controlled apply and verification workstream. The release
 boundary and its validation evidence are recorded in
-[docs/RELEASE-2.2.md](docs/RELEASE-2.2.md).
+[docs/RELEASE-2.2.1.md](docs/RELEASE-2.2.1.md). The previous local `2.2.0`
+boundary remains documented in [docs/RELEASE-2.2.md](docs/RELEASE-2.2.md).
 
 The governing model is:
 
@@ -296,13 +297,33 @@ plans completely before mutation, blocks on modified managed files, creates a
 self-contained backup, validates, and rolls back the consumer automatically if
 apply or validation fails. Rollback restores metadata and replaced files and
 removes newly added Core files, including the billing migration. The controlled
-`2.1.0` → `2.2.0` consumer proof covers packed exports, managed billing delivery,
+`2.2.0` → `2.2.1` consumer proof covers packed exports, managed billing delivery,
 product-owned preservation, relocation, and a second frozen install/build.
 
 Generated consumers use `@sapienx/saas-core`, `@sapienx/saas-core-config`, and
 `@sapienx/saas-core-ui` at runtime. The CLI is a devDependency, and
 `@sapienx/saas-core-app` is the package-only template carrier used while
 materializing the canonical app.
+
+## Registry consumers
+
+The coordinated packages are published at the same version. For a fresh
+consumer, install the runtime packages and CLI from npm, then initialize the
+application from the packed template:
+
+```bash
+pnpm add @sapienx/saas-core@^2.2.1 @sapienx/saas-core-config@^2.2.1 @sapienx/saas-core-ui@^2.2.1
+pnpm add -D @sapienx/saas-core-cli@^2.2.1
+pnpm exec saas-core init "My Product" ./my-product
+pnpm install --dir ./my-product
+```
+
+For an existing PlaceDJ, ReserveVia, or other consumer, update those package
+ranges from the registry, then run `saas-core doctor`, review
+`saas-core diff --json`, apply `saas-core update`, reinstall, and run the
+consumer's migration verification, tests, and build. Core delivers migration
+source and never executes consumer SQL; product-owned catalogs, migrations,
+styles, and routes remain protected.
 
 ## Security posture
 

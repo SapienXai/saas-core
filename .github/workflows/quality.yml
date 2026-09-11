@@ -31,9 +31,9 @@ env:
   PADDLE_ENVIRONMENT: sandbox
 
 jobs:
-  quality:
+  release-quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -41,105 +41,14 @@ jobs:
           version: 11.21.0
       - uses: actions/setup-node@v4
         with:
-          node-version-file: .nvmrc
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run lint
-      - run: pnpm run typecheck
-      - run: pnpm run test:run
-      - run: pnpm run build
-
-  database:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.21.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run db:start:ci
-      - run: pnpm run db:test:clean
-      - run: pnpm run db:test:schema
-      - run: pnpm run db:types
-      - run: git diff --exit-code -- types/supabase.ts
-
-  e2e-critical:
-    runs-on: ubuntu-latest
-    timeout-minutes: 35
-    needs: [quality, database]
-    env:
-      NODE_ENV: development
-      SAAS_CORE_APP_URL: http://127.0.0.1:3100
-      SAAS_CORE_MAIL_URL: http://127.0.0.1:55524
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.21.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run db:start:ci
-      - run: pnpm run db:reset
-      - name: Start app for protocol auth E2E
-        run: |
-          pnpm run dev:local -- --port 3100 > /tmp/saas-core-auth-e2e-next.log 2>&1 &
-          for attempt in {1..60}; do
-            if curl --fail --silent http://127.0.0.1:3100/login > /dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          cat /tmp/saas-core-auth-e2e-next.log
-          exit 1
-      - run: pnpm run auth:e2e
-        env:
-          SAAS_CORE_APP_URL: http://127.0.0.1:3100
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm run e2e:critical
-        env:
-          PADDLE_ENVIRONMENT: sandbox
+      - run: pnpm run release:check
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: saas-core-playwright-critical
-          path: output/playwright
-          if-no-files-found: ignore
-
-  e2e-full:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    needs: [quality, database, e2e-critical]
-    if: github.event_name == 'schedule' || github.ref == 'refs/heads/main'
-    env:
-      NODE_ENV: development
-      SAAS_CORE_APP_URL: http://127.0.0.1:3100
-      SAAS_CORE_MAIL_URL: http://127.0.0.1:55524
-      SAAS_CORE_FULL_E2E: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.21.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run db:start:ci
-      - run: pnpm run db:reset
-      - run: pnpm exec playwright install --with-deps chromium firefox webkit
-      - run: pnpm run e2e:full
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: saas-core-playwright-full
           path: output/playwright
           if-no-files-found: ignore

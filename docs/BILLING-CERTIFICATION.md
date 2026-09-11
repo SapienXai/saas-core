@@ -1,14 +1,15 @@
 # Reusable billing certification
 
 This document records the local release-boundary review for the coordinated
-SaaS Core runtime/package release `2.2.0` and Core schema compatibility
+SaaS Core runtime/package release `2.2.1` and Core schema compatibility
 coordinate `2.0`. The release delivers the additive, Core-managed migration
 source `supabase/migrations/20260909094344_reusable_billing_persistence.sql`
 from both the repository root and the canonical application template. It
 certifies the packed Core contract, reusable billing boundary, and managed-
-template lifecycle proof, including the controlled `2.1.0` → `2.2.0` upgrade.
+template lifecycle proof, including the controlled `2.2.0` → `2.2.1` upgrade.
 It does not certify either consumer's migration apply/verification or a live
-payment rollout. The release overview is [RELEASE-2.2.md](./RELEASE-2.2.md).
+payment rollout. The release overview is [RELEASE-2.2.1.md](./RELEASE-2.2.1.md);
+the previous local boundary remains in [RELEASE-2.2.md](./RELEASE-2.2.md).
 
 The audited reference commits are ReserveVia
 `92ffa98dd22e785d90959b292c341de1e57e6873` (`fix(ui): streamline public brand
@@ -69,7 +70,7 @@ checkout engine is not part of the integration.
 
 ### 4. How are package and schema compatibility handled?
 
-The current coordinates are runtime `2.2.0` and schema compatibility coordinate
+The current coordinates are runtime `2.2.1` and schema compatibility coordinate
 `2.0`. All five Core packages use the runtime coordinate, while the CLI is a
 tooling dependency and the application package is the template carrier for the
 managed migration source. Package packing and CLI `init`/`update` deliver
@@ -81,7 +82,7 @@ metadata check runs only with server credentials. Missing credentials produce a
 database warning, while missing or changed source, consumer, or manifest state
 produces an error. `diff` reports runtime movement separately from schema
 movement; the controlled legacy fixture upgrades package versions and runtime
-metadata from `2.1.0` to `2.2.0` while keeping compatibility coordinate `2.0`.
+metadata from `2.2.0` to `2.2.1` while keeping compatibility coordinate `2.0`.
 The updater does not rewrite consumer lockfiles or apply SQL.
 
 ### 5. How do managed ownership and conflicts work?
@@ -109,7 +110,8 @@ exercise explicit defaults, product keys, usage metrics, RLS metadata, and
 schema mismatch handling. `core:pack` builds and packs the Core, config, UI,
 app, and CLI artifacts, carrying the Core-managed billing migration source.
 `core:consumer-proof` installs those tarballs through a disposable local
-registry, executes packed billing exports and config validation, initializes a
+registry as a deterministic packaging proof (published consumers use the same
+immutable coordinates from npm), executes packed billing exports and config validation, initializes a
 fresh consumer, upgrades a legacy consumer with the managed billing files, and
 verifies product-owned preservation. The same proof relocates the consumer and
 repeats a frozen install and build; the focused lifecycle fixture also checks
@@ -128,17 +130,10 @@ reported as skipped when that environment is unavailable. `doctor` keeps its
 source, consumer, and manifest readiness checks independent from the
 credential-dependent database check: absent server-only schema credentials
 produce a warning, while missing or mismatched database metadata produces an
-error. The full root build and typecheck currently remain blocked by
-pre-existing template platform user
-errors: the template platform user actions/page import helpers and
-`platform-user-management` exports are missing. Full lint also sees generated
-`supabase/.temp` code from local services. These failures are outside the
-allowlist and were not hidden by weakening a check.
-
-The generic `core:scan` remains blocked by its intentional test-only
-vocabulary assertion in `test/billing-persistence.integration.test.ts`; the
-assertion verifies that the reusable migration rejects product vocabulary. The
-commercial scan passes.
+error. Root/template Platform Users parity is enforced before packing;
+generated Supabase `.temp` code and intentional negative vocabulary assertions
+are excluded from source scans, while the actual integration and schema gates
+remain mandatory.
 
 ### 8. What is explicitly out of scope?
 

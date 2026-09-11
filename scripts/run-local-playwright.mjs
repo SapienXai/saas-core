@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 
 const status = JSON.parse(execFileSync("supabase", ["status", "--workdir", ".", "-o", "json"], {
   encoding: "utf8",
@@ -23,8 +24,11 @@ const environment = {
   SAAS_CORE_APP_URL: process.env.SAAS_CORE_APP_URL || "http://127.0.0.1:3100",
 }
 
+const nextEnvFile = "next-env.d.ts"
+const nextEnvBefore = existsSync(nextEnvFile) ? readFileSync(nextEnvFile, "utf8") : null
 const result = spawnSync("./node_modules/.bin/playwright", ["test", ...process.argv.slice(2)], {
   stdio: "inherit",
   env: environment,
 })
+if (nextEnvBefore !== null && readFileSync(nextEnvFile, "utf8") !== nextEnvBefore) writeFileSync(nextEnvFile, nextEnvBefore, "utf8")
 process.exit(result.status ?? 1)

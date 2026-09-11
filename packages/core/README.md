@@ -1,6 +1,6 @@
 # @sapienx/saas-core
 
-Current release: runtime `2.2.0`; Core schema compatibility coordinate `2.0`.
+Current release: runtime `2.2.1`; Core schema compatibility coordinate `2.0`.
 The release delivers the additive, Core-managed migration source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` through
 the canonical application template and CLI. This package exports the generic

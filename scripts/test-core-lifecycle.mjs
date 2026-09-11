@@ -3,16 +3,15 @@ import { existsSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import os from "node:os"
 import path from "node:path"
+import { RELEASE_VERSION, RUNTIME_PACKAGES, SCHEMA_VERSION, TOOLING_PACKAGES } from "./release-constants.mjs"
 
 const root = process.cwd()
 const cli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const source = path.join(root, "packages/app/template")
-const RELEASE_VERSION = "2.2.0"
 const LEGACY_VERSION = "2.1.0"
-const SCHEMA_VERSION = "2.0"
 const billingMigration = "supabase/migrations/20260909094344_reusable_billing_persistence.sql"
-const runtimePackages = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
-const toolingPackages = ["@sapienx/saas-core-cli"]
+const runtimePackages = RUNTIME_PACKAGES
+const toolingPackages = TOOLING_PACKAGES
 const fixture = await fsTemp("saas-core-lifecycle-")
 const coreA = path.join(fixture, "core-a")
 const coreB = path.join(fixture, "core-b")

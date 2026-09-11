@@ -27,6 +27,8 @@ export default defineConfig([
     "build/**",
     "dist/**",
     "**/dist/**",
+    "supabase/.branches/**",
+    "supabase/.temp/**",
     "public/vendor/**",
     "next-env.d.ts",
   ]),

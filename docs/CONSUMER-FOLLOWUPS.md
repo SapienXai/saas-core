@@ -1,14 +1,14 @@
 # Consumer migration follow-ups
 
 These checklists are the remaining work for the audited consumers after the
-SaaS Core `2.2.0` packaging checkpoint. The release delivers the additive,
+SaaS Core `2.2.1` packaging checkpoint. The release delivers the additive,
 Core-managed source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` while
 keeping schema compatibility coordinate `2.0`. CLI `init`/`update` and package
 packing deliver the file as source and never execute SQL; each consumer owns
 its controlled apply and database verification. These are separate read-only
 consumer migration workstreams, described alongside the release boundary in
-[`RELEASE-2.2.md`](./RELEASE-2.2.md) and
+[`RELEASE-2.2.1.md`](./RELEASE-2.2.1.md) and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md). Each item must be
 completed in the consumer's own checkout with a dry run, reviewable evidence,
 and an explicit rollback plan.
@@ -98,7 +98,7 @@ path is a conflict and must block before mutation. A failed update must restore
 the package and manifest metadata and remove the newly added Core source; that
 rollback does not apply or reverse SQL in a consumer database.
 
-Publishing Core `2.2.0` does not mark either checklist complete. ReserveVia and
+Publishing Core `2.2.1` does not mark either checklist complete. ReserveVia and
 PlaceDJ remain separate product-owned migrations and must establish their own
 provider-history, catalog, sandbox, rollback, browser, and production-readiness
 evidence before any live migration decision. This run did not apply the Core

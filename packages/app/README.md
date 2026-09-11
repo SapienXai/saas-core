@@ -1,6 +1,6 @@
 # `@sapienx/saas-core-app`
 
-Current package release: `2.2.0`; Core schema compatibility coordinate remains
+Current package release: `2.2.1`; Core schema compatibility coordinate remains
 `2.0`. This package is the template carrier for the coordinated release and
 includes the additive, Core-managed source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` (stored

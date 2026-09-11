@@ -1,6 +1,6 @@
 # @sapienx/saas-core-cli
 
-Current package release: `2.2.0`; Core schema compatibility coordinate remains
+Current package release: `2.2.1`; Core schema compatibility coordinate remains
 `2.0`. The CLI is the source-delivery and readiness boundary for the
 coordinated release. It carries the Core-managed source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` through

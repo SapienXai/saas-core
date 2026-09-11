@@ -1,4 +1,4 @@
-export const CORE_VERSION = "2.2.0"
+export const CORE_VERSION = "2.2.1"
 export const CORE_SCHEMA_VERSION = "2.0"
 
 export * from "./billing.js"
@@ -9,7 +9,6 @@ import {
   validateBillingPolicy,
   validateBillingPresentation,
   type ProductBillingConfig,
-  type ProductBillingPolicy,
   type ProductBillingPresentation,
 } from "./billing.js"
 

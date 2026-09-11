@@ -5,14 +5,14 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
-The current coordinated runtime and package release is `2.2.0` on Core schema
+The current coordinated runtime and package release is `2.2.1` on Core schema
 compatibility coordinate `2.0`. It delivers the additive, Core-managed source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` in the
 repository root and canonical application template. Package packing and CLI
 `init`/`update` deliver the source but never execute SQL; each consumer owns
 the controlled apply and verification workstream. The release evidence and
 certification boundary are recorded in
-[`RELEASE-2.2.md`](./RELEASE-2.2.md) and
+[`RELEASE-2.2.1.md`](./RELEASE-2.2.1.md) and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
 ## Core/product ownership
@@ -30,6 +30,25 @@ pnpm diff -- ./my-product
 pnpm update -- ./my-product
 ```
 
+## Registry installation and update
+
+The normal consumer path installs the coordinated packages from npm. A fresh
+consumer uses the registry-published CLI to materialize the packed template:
+
+```bash
+pnpm add @sapienx/saas-core@^2.2.1 @sapienx/saas-core-config@^2.2.1 @sapienx/saas-core-ui@^2.2.1
+pnpm add -D @sapienx/saas-core-cli@^2.2.1
+pnpm exec saas-core init "My Product" ./my-product
+pnpm install --dir ./my-product
+```
+
+For an existing consumer, update the four runtime/tooling package ranges with
+the package manager, run `doctor`, inspect `diff --json`, and apply `update`
+only after resolving any conflict. Then reinstall dependencies, apply and
+verify Core-managed migration source through the consumer-controlled database
+process, run product tests, and build/deploy through the product's own release
+workflow. The CLI does not execute SQL.
+
 The billing release boundary is documented in
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md), with separate
 consumer migration checklists in
@@ -38,8 +57,10 @@ the product team before applying a billing update; they define the provider
 history, legacy custom-data, catalog, usage, conflict, sandbox, and rollback
 evidence each consumer must supply.
 
-When both repositories are checked out locally, point the existing lifecycle
-tool at the canonical Core source instead of publishing packages first:
+## Local source override (development only)
+
+When both repositories are checked out locally, the existing lifecycle tool
+can be pointed at the canonical Core source for development diagnosis:
 
 ```bash
 node ../saas-core/packages/cli/bin/saas-core.mjs diff ../PlaceDJ --source ../saas-core --json
@@ -124,7 +145,7 @@ screenshots, or provider credentials between checkouts.
 
 ## Database changes
 
-The baseline migration is clean and independent. The `2.2.0` release adds the
+The baseline migration is clean and independent. The `2.2.1` release carries the
 generic, provider-neutral Core-managed source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql`; it is
 additive and is present in both the repository root and
@@ -147,7 +168,7 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and schema compatibility coordinate are separate. The
-current runtime is `2.2.0` and the compatibility coordinate remains `2.0` even
+current runtime is `2.2.1` and the compatibility coordinate remains `2.0` even
 though the release delivers the additive billing persistence source. `doctor`
 reports Core source readiness, consumer presence/hash readiness, and manifest
 ownership/readiness separately. It verifies actual schema metadata only when
@@ -191,11 +212,15 @@ merging an update.
 
 ## Release discipline
 
-Create a local checkpoint commit for each coherent phase. Do not push archive
-branches or release artifacts automatically. The `2.2.0` release evidence
-includes the controlled legacy-consumer upgrade, packed exports, managed
-billing-file delivery, product-owned preservation, relocation, and a second
-frozen install/build. The final release should include
+Create a local checkpoint commit for each coherent phase. The canonical
+release gate is `pnpm release:check`; tag `saas-core-vX.Y.Z` only after it
+passes. The release workflow validates the tag/package coordinates, packs and
+inspects all five artifacts, then publishes through npm Trusted Publishing
+with OIDC, verifies fresh registry installation, and creates the GitHub
+Release. Any failed gate stops before publication. The `2.2.1` release
+evidence includes the controlled legacy-consumer upgrade, packed exports,
+managed billing-file delivery, product-owned preservation, relocation, and a
+second frozen install/build. The final release should include
 `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, clean DB tests,
 browser tests, build, `pnpm pack`, a fresh consumer, relocation, and a second
 frozen install/build.

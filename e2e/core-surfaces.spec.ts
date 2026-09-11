@@ -146,7 +146,7 @@ test("@critical authenticated shell preserves collapse, persistence, theme, and 
   await sidebar.getByRole("button", { name: "Settings" }).click()
   await sidebar.getByRole("link", { name: "Team", exact: true }).click()
   await expect(page).toHaveURL(/\/app\/team(?:\?lang=en)?$/)
-  await expect(page.getByRole("heading", { name: workspaceName, exact: true })).toBeVisible()
+  await expect(page.getByText(`${workspaceName} · manage access and invitations.`, { exact: true })).toBeVisible()
   await page.screenshot({ path: "output/playwright/core-team-desktop.png", fullPage: true })
 })
 

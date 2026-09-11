@@ -1,7 +1,10 @@
 {
   "name": "@sapienx/saas-core-cli",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "SaaS Core product lifecycle CLI",
+  "license": "UNLICENSED",
+  "repository": { "type": "git", "url": "git+https://github.com/SapienXai/saas-core.git" },
+  "homepage": "https://github.com/SapienXai/saas-core#readme",
   "type": "module",
   "bin": {
     "saas-core": "./bin/saas-core.mjs"
