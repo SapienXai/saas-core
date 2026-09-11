@@ -227,3 +227,8 @@ second frozen install/build. The final release should include
 `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, clean DB tests,
 browser tests, build, `pnpm pack`, a fresh consumer, relocation, and a second
 frozen install/build.
+
+If a first npm publication is interrupted, rerun the same tag workflow after
+fixing the cause. The registry preflight compares each local tarball with npm
+`dist.integrity` (or legacy `dist.shasum`) and skips only exact verified
+packages; mismatches and indeterminate registry responses fail closed.

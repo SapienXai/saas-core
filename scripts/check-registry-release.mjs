@@ -1,38 +1,26 @@
-import { spawnSync } from "node:child_process"
-import { PACKAGE_NAMES, RELEASE_VERSION } from "./release-constants.mjs"
+import { allExpectedPackages, expectedVersion, inspectPackage, packageReports, registry, RELEASE_STATES } from "./npm-release-state.mjs"
 
 const mode = process.argv.includes("--verify") ? "verify" : process.argv.includes("--preflight") ? "preflight" : "help"
-const registry = process.env.RELEASE_NPM_REGISTRY || "https://registry.npmjs.org/"
-const expectedVersion = process.env.RELEASE_VERSION || RELEASE_VERSION
-
-if (!/^\d+\.\d+\.\d+$/.test(expectedVersion)) throw new Error(`Invalid release version: ${expectedVersion}`)
 
 if (mode === "help") {
   console.error("Usage: node scripts/check-registry-release.mjs --preflight|--verify")
   process.exit(1)
 }
 
-function query(packageName) {
-  const result = spawnSync("npm", ["view", `${packageName}@${expectedVersion}`, "version", "--json", "--registry", registry], { encoding: "utf8" })
-  return { ...result, output: `${result.stdout || ""}\n${result.stderr || ""}`.trim() }
+const reports = allExpectedPackages().map((packageName) => inspectPackage(packageName))
+console.log(packageReports(reports))
+
+const hardFailures = reports.filter((report) => [RELEASE_STATES.PRESENT_BUT_UNVERIFIED_OR_MISMATCHED, RELEASE_STATES.INDETERMINATE].includes(report.state))
+if (hardFailures.length > 0) {
+  console.error(JSON.stringify({ status: "HARD_FAIL", mode, registry, version: expectedVersion, reports }))
+  process.exit(1)
 }
 
-for (const packageName of PACKAGE_NAMES) {
-  const result = query(packageName)
-  if (mode === "verify") {
-    if (result.status !== 0) throw new Error(`Registry verification failed for ${packageName}@${expectedVersion}: ${result.output}`)
-    let value
-    try { value = JSON.parse(result.stdout) } catch { value = result.stdout.trim().replace(/^['"]|['"]$/g, "") }
-    if (String(value) !== expectedVersion) throw new Error(`Registry returned ${packageName}@${expectedVersion} as ${String(value)}.`)
-    console.log(`Verified ${packageName}@${expectedVersion} on ${registry}`)
-    continue
-  }
-
-  if (result.status === 0) throw new Error(`${packageName}@${expectedVersion} already exists on ${registry}; refusing an immutable-version republish.`)
-  if (!/(?:\bE404\b|404 Not Found|No match found)/i.test(result.output)) {
-    throw new Error(`Registry preflight could not prove ${packageName}@${expectedVersion} is unpublished: ${result.output}`)
-  }
-  console.log(`Available for first publication: ${packageName}@${expectedVersion}`)
+if (mode === "verify" && reports.some((report) => report.state !== RELEASE_STATES.PRESENT_AND_VERIFIED)) {
+  console.error(JSON.stringify({ status: "HARD_FAIL", mode, registry, version: expectedVersion, reason: "Every package must be present and integrity-verified after publication.", reports }))
+  process.exit(1)
 }
 
-console.log(JSON.stringify({ status: "PASS", mode, registry, version: expectedVersion, packages: PACKAGE_NAMES }))
+const absent = reports.filter((report) => report.state === RELEASE_STATES.ABSENT).length
+const verified = reports.filter((report) => report.state === RELEASE_STATES.PRESENT_AND_VERIFIED).length
+console.log(JSON.stringify({ status: "PASS", mode, registry, version: expectedVersion, packages: allExpectedPackages(), absent, verified, publishRequired: absent > 0, resumable: absent > 0 && verified > 0 }))

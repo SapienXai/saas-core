@@ -43,5 +43,6 @@ if (existsSync(chromium.executablePath())) {
 
 run("package packing", ["run", "core:pack"])
 run("package tarball inspection", ["run", "release:packages"])
+run("partial publication recovery proof", ["run", "release:recovery-proof"])
 run("fresh and upgrade consumer proof", ["run", "core:consumer-proof"])
 console.log(JSON.stringify({ status: "PASS", browserE2E: existsSync(chromium.executablePath()) ? "passed" : "explicitly-skipped" }))

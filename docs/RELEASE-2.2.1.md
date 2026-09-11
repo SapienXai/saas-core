@@ -92,6 +92,27 @@ The release workflow pins npm `11.6.2`, derives the version from
 `saas-core-vX.Y.Z`, publishes in dependency-safe order, verifies exact registry
 versions, and creates the GitHub Release only after registry consumer proof.
 
+## Partial publication recovery
+
+Publication is resumable but never permissive. For each exact package/version,
+the registry state is classified as:
+
+- `ABSENT`: the exact version is not present and may be published.
+- `PRESENT_AND_VERIFIED`: the registry `dist.integrity` (preferred) or
+  `dist.shasum` matches the local tarball; publication is skipped safely.
+- `PRESENT_BUT_UNVERIFIED_OR_MISMATCHED`: the version exists but its artifact
+  identity differs or cannot be proven; the release hard-fails.
+- `INDETERMINATE`: the registry response is not a proven not-found response,
+  including network failures; the release hard-fails.
+
+The publisher performs a complete fail-closed preflight before its first
+publish call, then rechecks each package immediately before publication and
+verifies the registry integrity immediately afterward. A rerun therefore skips
+only exact, integrity-verified packages and publishes only the remaining
+absent packages. It never overwrites, unpublishes, deprecates, or bumps a
+version automatically. The deterministic recovery proof covers 0/5, 2/5,
+5/5, identity mismatch, and registry/network failure without mutating npm.
+
 To trigger this release after the external bootstrap configuration is ready,
 run the local gate, commit the release-preparation changes, and push the main
 branch and tag:
