@@ -25,7 +25,7 @@
     "db:test:clean": "node scripts/run-local-supabase-tests.mjs --reset",
     "auth:e2e": "node scripts/run-local-auth-e2e.mjs",
     "e2e:critical": "node scripts/run-local-playwright.mjs --grep @critical",
-    "e2e:full": "node scripts/run-local-playwright.mjs --grep @e2e",
+    "e2e:full": "node scripts/run-local-playwright.mjs",
     "e2e:install": "playwright install chromium",
     "billing:register-price": "node scripts/billing-register-price.mjs",
     "billing:sync-catalog": "node scripts/billing-sync-catalog.mjs",

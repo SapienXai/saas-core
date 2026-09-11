@@ -84,6 +84,7 @@ export function createLocalE2EEnvironment(source, status) {
     SAAS_CORE_MAIL_URL: mailUrl,
     NEXT_PUBLIC_DEV_MAILPIT_URL: mailUrl,
     SAAS_CORE_E2E: "1",
+    ...(source.SAAS_CORE_FULL_E2E === "1" ? { SAAS_CORE_FULL_E2E: "1" } : {}),
   }
 }
 

@@ -81,11 +81,15 @@ expect_contract(File.read(File.expand_path("release-check.mjs", __dir__)).includ
 expect_contract(File.read(File.expand_path("run-release-unit-tests.mjs", __dir__)).include?("createReleaseUnitEnvironment"), "release unit tests must sanitize their parent environment")
 expect_contract(File.read(File.expand_path("run-local-supabase-tests.mjs", __dir__)).include?("55621"), "local integration tests must enforce the isolated Supabase port")
 expect_contract(File.read(File.expand_path("run-local-playwright.mjs", __dir__)).include?("createLocalE2EEnvironment"), "browser E2E must use the local Supabase environment helper")
+expect_contract(File.read(File.expand_path("release-environment.mjs", __dir__)).include?("source.SAAS_CORE_FULL_E2E === \"1\""), "full browser E2E must preserve only its explicit full-suite selector")
 
 quality_jobs = YAML.load_file(QUALITY_WORKFLOW).fetch("jobs")
 quality_uploads = quality_jobs.values.flat_map { |job| Array(job["steps"]) }.select { |step| step["uses"] == "actions/upload-artifact@v4" }
 expect_contract(quality_uploads.length == 2, "quality workflow must retain both Playwright artifact uploads")
 expect_contract(quality_uploads.all? { |step| step["continue-on-error"] == true }, "quality artifact storage exhaustion must not turn a passing validation gate into a failure")
+
+package_scripts = JSON.parse(File.read(File.expand_path("../package.json", __dir__))).fetch("scripts")
+expect_contract(!package_scripts.fetch("e2e:full").to_s.match?(/--grep\s+@e2e/), "e2e:full must not select a nonexistent @e2e tag")
 
 concurrency = workflow.fetch("concurrency")
 expect_contract(concurrency["cancel-in-progress"] == false, "release concurrency must not cancel an active tag release")
