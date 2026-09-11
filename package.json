@@ -13,6 +13,8 @@
     "lint": "eslint .",
     "test": "vitest",
     "test:run": "vitest run",
+    "release:unit": "node scripts/run-release-unit-tests.mjs",
+    "release:environment": "node scripts/test-release-environment.mjs",
     "db:start": "supabase start --workdir .",
     "db:start:ci": "node scripts/start-local-supabase-ci.mjs",
     "db:stop": "supabase stop --workdir .",

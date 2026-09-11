@@ -1,10 +1,13 @@
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { chromium } from "@playwright/test"
+import { createBuildEnvironment, createReleaseToolingEnvironment } from "./release-environment.mjs"
 
-function run(label, args) {
+const releaseEnvironment = createReleaseToolingEnvironment(process.env)
+
+function run(label, args, env = releaseEnvironment) {
   console.log(`\n==> ${label}`)
-  const result = spawnSync("pnpm", args, { stdio: "inherit", env: process.env })
+  const result = spawnSync("pnpm", args, { stdio: "inherit", env })
   if (result.status !== 0) throw new Error(`${label} failed with exit code ${result.status ?? 1}.`)
 }
 
@@ -14,9 +17,10 @@ const nextEnvBeforeBuild = existsSync(nextEnvFile) ? readFileSync(nextEnvFile, "
 run("frozen install", ["install", "--frozen-lockfile"])
 run("release metadata", ["run", "release:metadata"])
 run("release workflow contract", ["run", "release:workflow-contract"])
+run("release environment isolation", ["run", "release:environment"])
 run("lint", ["run", "lint"])
 run("typecheck", ["run", "typecheck"])
-run("unit tests", ["run", "test:run"])
+run("unit tests", ["run", "release:unit"])
 run("local Supabase start", ["run", "db:start:ci"])
 run("clean local integration tests", ["run", "db:test:clean"])
 run("schema tests", ["run", "db:test:schema"])
@@ -29,7 +33,7 @@ run("genericity scan", ["run", "core:scan"])
 run("commercial ownership scan", ["run", "core:commercial-scan"])
 run("UI source fidelity", ["run", "core:ui-fidelity"])
 run("Core lifecycle proof", ["run", "core:lifecycle"])
-run("application build", ["run", "build"])
+run("application build", ["run", "build"], createBuildEnvironment(process.env))
 if (nextEnvBeforeBuild !== null && readFileSync(nextEnvFile, "utf8") !== nextEnvBeforeBuild) writeFileSync(nextEnvFile, nextEnvBeforeBuild, "utf8")
 run("root/template capability parity", ["run", "core:source-parity"])
 run("auth E2E setup", ["run", "auth:e2e"])

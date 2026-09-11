@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process"
+import { createReleaseToolingEnvironment } from "./release-environment.mjs"
 
 const result = spawnSync("pnpm", ["exec", "supabase", "start", "--workdir", "."], {
-  env: { ...process.env, SUPABASE_TELEMETRY_DISABLED: "1" },
+  env: { ...createReleaseToolingEnvironment(process.env), SUPABASE_TELEMETRY_DISABLED: "1" },
   stdio: "ignore",
 })
 

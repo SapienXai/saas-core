@@ -1,7 +1,8 @@
 require "json"
 require "yaml"
 
-WORKFLOW = File.expand_path("../.github/workflows/release-saas-core.yml", __dir__)
+RELEASE_WORKFLOW = File.expand_path("../.github/workflows/release-saas-core.yml", __dir__)
+QUALITY_WORKFLOW = File.expand_path("../.github/workflows/quality.yml", __dir__)
 
 def fail_contract(message)
   warn "Workflow contract failure: #{message}"
@@ -12,7 +13,20 @@ def expect_contract(condition, message)
   fail_contract(message) unless condition
 end
 
-workflow = YAML.load_file(WORKFLOW)
+workflow = YAML.load_file(RELEASE_WORKFLOW)
+for workflow_path in [RELEASE_WORKFLOW, QUALITY_WORKFLOW]
+  scoped_workflow = YAML.load_file(workflow_path)
+  global_environment = scoped_workflow.fetch("env", {})
+  forbidden_global_keys = %w[
+    SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY SUPABASE_ANON_KEY SUPABASE_JWT_SECRET
+    NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY
+    NEXT_PUBLIC_SITE_URL NEXT_PUBLIC_APP_URL SAAS_CORE_ROOT_DOMAIN SAAS_CORE_APP_DOMAIN
+    SAAS_CORE_APP_URL NEXT_PUBLIC_SAAS_CORE_APP_DOMAIN SAAS_CORE_RATE_LIMIT_SECRET
+    SAAS_CORE_API_CREDENTIAL_PEPPER CRON_SECRET PADDLE_ENVIRONMENT
+  ]
+  leaked_keys = forbidden_global_keys.select { |key| global_environment.key?(key) }
+  expect_contract(leaked_keys.empty?, "#{File.basename(workflow_path)} must not globally inject runtime/test environment: #{leaked_keys.join(", ")}")
+end
 jobs = workflow.fetch("jobs")
 validate = jobs.fetch("validate-release")
 publish = jobs.fetch("publish-npm")
@@ -57,6 +71,16 @@ expect_contract(registry_verify_index < registry_install_index, "registry verifi
 release_needs = Array(github_release["needs"])
 expect_contract(release_needs.include?("verify-published"), "github-release must depend on verify-published")
 expect_contract(github_steps.any? { |step| step["run"].to_s.include?("gh release create") }, "github-release must create the GitHub Release only in its release job")
+
+integration_runner = File.read(File.expand_path("run-local-supabase-tests.mjs", __dir__))
+Dir[File.expand_path("../test/*.integration.test.ts", __dir__)].each do |integration_file|
+  expect_contract(integration_runner.include?(File.basename(integration_file)), "local integration runner must explicitly include #{File.basename(integration_file)}")
+end
+
+expect_contract(File.read(File.expand_path("release-check.mjs", __dir__)).include?("release:environment"), "release-check must run the poison-environment isolation proof")
+expect_contract(File.read(File.expand_path("run-release-unit-tests.mjs", __dir__)).include?("createReleaseUnitEnvironment"), "release unit tests must sanitize their parent environment")
+expect_contract(File.read(File.expand_path("run-local-supabase-tests.mjs", __dir__)).include?("55621"), "local integration tests must enforce the isolated Supabase port")
+expect_contract(File.read(File.expand_path("run-local-playwright.mjs", __dir__)).include?("createLocalE2EEnvironment"), "browser E2E must use the local Supabase environment helper")
 
 concurrency = workflow.fetch("concurrency")
 expect_contract(concurrency["cancel-in-progress"] == false, "release concurrency must not cancel an active tag release")
