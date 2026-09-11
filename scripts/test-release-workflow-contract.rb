@@ -82,6 +82,11 @@ expect_contract(File.read(File.expand_path("run-release-unit-tests.mjs", __dir__
 expect_contract(File.read(File.expand_path("run-local-supabase-tests.mjs", __dir__)).include?("55621"), "local integration tests must enforce the isolated Supabase port")
 expect_contract(File.read(File.expand_path("run-local-playwright.mjs", __dir__)).include?("createLocalE2EEnvironment"), "browser E2E must use the local Supabase environment helper")
 
+quality_jobs = YAML.load_file(QUALITY_WORKFLOW).fetch("jobs")
+quality_uploads = quality_jobs.values.flat_map { |job| Array(job["steps"]) }.select { |step| step["uses"] == "actions/upload-artifact@v4" }
+expect_contract(quality_uploads.length == 2, "quality workflow must retain both Playwright artifact uploads")
+expect_contract(quality_uploads.all? { |step| step["continue-on-error"] == true }, "quality artifact storage exhaustion must not turn a passing validation gate into a failure")
+
 concurrency = workflow.fetch("concurrency")
 expect_contract(concurrency["cancel-in-progress"] == false, "release concurrency must not cancel an active tag release")
 expect_contract(concurrency["group"].to_s.include?("github.ref"), "release concurrency must be keyed by the exact ref")

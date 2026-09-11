@@ -36,6 +36,10 @@ function runOutput(command, args, cwd, extraEnvironment = {}, expectedStatus = 0
   return result.stdout
 }
 
+function removeBuildOutputs(directory) {
+  for (const name of [".next", ".next-e2e"]) rmSync(path.join(directory, name), { recursive: true, force: true })
+}
+
 function downgradeToLegacyConsumer(directory, agentSurfaceFiles) {
   const packageFile = path.join(directory, "package.json")
   const packageJson = JSON.parse(readFileSync(packageFile, "utf8"))
@@ -291,10 +295,13 @@ try {
   run("npm", ["run", "typecheck"], packedProduct)
   run("npm", ["test"], packedProduct)
   run("npm", ["run", "build"], packedProduct, supabaseEnvironment || {})
+  removeBuildOutputs(packedProduct)
+  rmSync(path.join(packedProduct, "node_modules"), { recursive: true, force: true })
   run("npm", ["test"], product)
   run("npm", ["run", "typecheck"], product)
   run("npm", ["run", "build"], product, supabaseEnvironment || {})
   const browserShell = await bootAndSmoke(product, 3217, true, supabaseEnvironment)
+  removeBuildOutputs(product)
   renameSync(product, relocated)
 
   const relocatedCli = path.join(relocated, "node_modules/.bin/saas-core")
@@ -308,6 +315,7 @@ try {
   run("npm", ["test"], relocated)
   run("npm", ["run", "build"], relocated, supabaseEnvironment || {})
   const relocatedBrowserShell = await bootAndSmoke(relocated, 3218, true, supabaseEnvironment)
+  removeBuildOutputs(relocated)
   run(relocatedCli, ["update", relocated], relocated)
   run(relocatedCli, ["doctor", relocated], relocated)
   const packageJson = JSON.parse(readFileSync(path.join(relocated, "package.json"), "utf8"))
