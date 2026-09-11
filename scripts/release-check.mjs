@@ -13,6 +13,7 @@ const nextEnvBeforeBuild = existsSync(nextEnvFile) ? readFileSync(nextEnvFile, "
 
 run("frozen install", ["install", "--frozen-lockfile"])
 run("release metadata", ["run", "release:metadata"])
+run("release workflow contract", ["run", "release:workflow-contract"])
 run("lint", ["run", "lint"])
 run("typecheck", ["run", "typecheck"])
 run("unit tests", ["run", "test:run"])
@@ -43,6 +44,7 @@ if (existsSync(chromium.executablePath())) {
 
 run("package packing", ["run", "core:pack"])
 run("package tarball inspection", ["run", "release:packages"])
+run("artifact lifecycle proof", ["run", "release:artifact-lifecycle"])
 run("partial publication recovery proof", ["run", "release:recovery-proof"])
 run("fresh and upgrade consumer proof", ["run", "core:consumer-proof"])
 console.log(JSON.stringify({ status: "PASS", browserE2E: existsSync(chromium.executablePath()) ? "passed" : "explicitly-skipped" }))

@@ -77,7 +77,7 @@ jobs:
         run: pnpm run release:metadata -- "$GITHUB_REF_NAME" --require-clean
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm run release:check
-      - name: Prove registry versions are still unpublished
+      - name: Classify npm registry release state
         env:
           RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
         run: pnpm run release:registry-preflight
@@ -177,6 +177,10 @@ jobs:
           npm --version
           pnpm --version
           test "$(npm --version)" = "$RELEASE_NPM_VERSION"
+      - uses: actions/download-artifact@v4
+        with:
+          name: saas-core-release-${{ needs.validate-release.outputs.version }}
+          path: artifacts
       - run: pnpm install --frozen-lockfile
       - run: pnpm run release:registry-verify
       - run: pnpm run release:registry-install

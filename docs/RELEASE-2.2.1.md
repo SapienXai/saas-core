@@ -16,6 +16,10 @@ This is the first registry-oriented patch release after the repository-backed
   inspection, and fresh/upgrade/relocation consumer proof.
 - The five package tarballs are checked for clean contents and resolved
   registry dependency ranges before publication.
+- The workflow carries those exact five validated tarballs through the upload,
+  publish, and registry-verification jobs. Each downstream job downloads the
+  version-scoped artifact; verification never repacks from the checkout, and a
+  deterministic SHA-512 handoff proof guards against artifact substitution.
 
 ## Package versions
 
