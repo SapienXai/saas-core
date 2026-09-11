@@ -40,6 +40,7 @@
     "core:source-parity": "node scripts/check-app-template-parity.mjs",
     "release:metadata": "node scripts/check-release-metadata.mjs",
     "release:packages": "node scripts/check-package-artifacts.mjs",
+    "release:publish": "node scripts/publish-npm-release.mjs",
     "release:registry-preflight": "node scripts/check-registry-release.mjs --preflight",
     "release:registry-verify": "node scripts/check-registry-release.mjs --verify",
     "release:registry-install": "node scripts/registry-install-proof.mjs",

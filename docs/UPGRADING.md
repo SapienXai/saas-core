@@ -214,10 +214,13 @@ merging an update.
 
 Create a local checkpoint commit for each coherent phase. The canonical
 release gate is `pnpm release:check`; tag `saas-core-vX.Y.Z` only after it
-passes. The release workflow validates the tag/package coordinates, packs and
-inspects all five artifacts, then publishes through npm Trusted Publishing
-with OIDC, verifies fresh registry installation, and creates the GitHub
-Release. Any failed gate stops before publication. The `2.2.1` release
+passes. The release workflow derives `X.Y.Z` from the tag, validates the
+package coordinates, packs and inspects all five artifacts, then publishes in
+dependency-safe order through either the one-time first-release `NPM_TOKEN`
+bootstrap or npm Trusted Publishing with OIDC. It verifies fresh registry
+installation and creates the GitHub Release only afterward. Any failed gate
+stops before publication. Delete `NPM_TOKEN` after the first successful
+bootstrap and configure Trusted Publishers for all five packages. The `2.2.1` release
 evidence includes the controlled legacy-consumer upgrade, packed exports,
 managed billing-file delivery, product-owned preservation, relocation, and a
 second frozen install/build. The final release should include

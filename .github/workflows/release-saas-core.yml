@@ -11,6 +11,7 @@ concurrency:
 
 env:
   RELEASE_NPM_REGISTRY: https://registry.npmjs.org/
+  RELEASE_NPM_VERSION: 11.6.2
   SUPABASE_URL: https://ci.invalid.supabase.co
   SUPABASE_SERVICE_ROLE_KEY: ci-placeholder-service-role-key
   SUPABASE_ANON_KEY: ci-placeholder-anon-key
@@ -28,6 +29,8 @@ env:
 
 jobs:
   validate-release:
+    outputs:
+      version: ${{ steps.release_version.outputs.version }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -42,15 +45,45 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Derive release version from tag
+        id: release_version
+        shell: bash
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if [[ "$tag" != saas-core-v* ]]; then
+            echo "Unexpected release tag: $tag"
+            exit 1
+          fi
+          version="${tag#saas-core-v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use saas-core-vX.Y.Z: $tag"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Release version: $version"
+      - name: Require versioned release notes before publication
+        env:
+          RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
+        run: test -f "docs/RELEASE-${RELEASE_VERSION}.md"
+      - name: Pin npm CLI and print release tooling
+        run: |
+          npm install --global "npm@${RELEASE_NPM_VERSION}"
+          node --version
+          npm --version
+          pnpm --version
+          test "$(npm --version)" = "$RELEASE_NPM_VERSION"
       - run: pnpm install --frozen-lockfile
       - name: Validate tag and package coordinates
         run: pnpm run release:metadata -- "$GITHUB_REF_NAME" --require-clean
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm run release:check
-      - run: pnpm run release:registry-preflight
+      - name: Prove registry versions are still unpublished
+        env:
+          RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
+        run: pnpm run release:registry-preflight
       - uses: actions/upload-artifact@v4
         with:
-          name: saas-core-release-${{ github.ref_name }}
+          name: saas-core-release-${{ steps.release_version.outputs.version }}
           path: artifacts/*.tgz
           if-no-files-found: error
 
@@ -61,6 +94,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+      SAAS_CORE_PUBLIC_RELEASE_APPROVED: ${{ vars.SAAS_CORE_PUBLIC_RELEASE_APPROVED }}
+      SAAS_CORE_NPM_BOOTSTRAP_APPROVED: ${{ vars.SAAS_CORE_NPM_BOOTSTRAP_APPROVED }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -72,29 +109,56 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+      - name: Pin npm CLI and print release tooling
+        run: |
+          npm install --global "npm@${RELEASE_NPM_VERSION}"
+          node --version
+          npm --version
+          pnpm --version
+          test "$(npm --version)" = "$RELEASE_NPM_VERSION"
       - uses: actions/download-artifact@v4
         with:
-          name: saas-core-release-${{ github.ref_name }}
+          name: saas-core-release-${{ needs.validate-release.outputs.version }}
           path: artifacts
-      - name: Publish immutable public packages through npm Trusted Publishing
+      - name: Enforce explicit public release approval
         run: |
           if [ "${SAAS_CORE_PUBLIC_RELEASE_APPROVED:-}" != "true" ]; then
             echo "Refusing public npm publication until SAAS_CORE_PUBLIC_RELEASE_APPROVED=true is explicitly configured after package visibility and license approval."
             exit 1
           fi
-          npm publish "artifacts/sapienx-saas-core-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
-          npm publish "artifacts/sapienx-saas-core-config-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
-          npm publish "artifacts/sapienx-saas-core-ui-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
-          npm publish "artifacts/sapienx-saas-core-app-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
-          npm publish "artifacts/sapienx-saas-core-cli-${RELEASE_VERSION}.tgz" --access public --provenance --registry "$RELEASE_NPM_REGISTRY"
+      - name: Select one-time npm bootstrap or Trusted Publishing
+        id: npm_auth
         env:
-          RELEASE_VERSION: 2.2.1
-          SAAS_CORE_PUBLIC_RELEASE_APPROVED: ${{ vars.SAAS_CORE_PUBLIC_RELEASE_APPROVED }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ "${SAAS_CORE_NPM_BOOTSTRAP_APPROVED:-}" = "true" ] && [ -n "${NPM_TOKEN:-}" ]; then
+            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+            echo "A temporary NPM_TOKEN is configured for the first package publication. Delete it after this release and configure npm Trusted Publishers."
+          elif [ "${SAAS_CORE_NPM_BOOTSTRAP_APPROVED:-}" = "true" ] && [ -z "${NPM_TOKEN:-}" ]; then
+            echo "Bootstrap approval is enabled but the NPM_TOKEN secret is missing. Refusing publication."
+            exit 1
+          elif [ -n "${NPM_TOKEN:-}" ]; then
+            echo "NPM_TOKEN is configured but SAAS_CORE_NPM_BOOTSTRAP_APPROVED is not true. Refusing an implicit token fallback."
+            exit 1
+          else
+            echo "mode=trusted-publishing" >> "$GITHUB_OUTPUT"
+            echo "No NPM_TOKEN is configured; npm Trusted Publishing is required for this release."
+          fi
+      - name: Publish immutable public packages with one-time bootstrap token
+        if: steps.npm_auth.outputs.mode == 'bootstrap'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm run release:publish
+      - name: Publish immutable public packages through npm Trusted Publishing
+        if: steps.npm_auth.outputs.mode == 'trusted-publishing'
+        run: pnpm run release:publish
 
   verify-published:
-    needs: publish-npm
+    needs: [validate-release, publish-npm]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -106,12 +170,19 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - name: Pin npm CLI and print release tooling
+        run: |
+          npm install --global "npm@${RELEASE_NPM_VERSION}"
+          node --version
+          npm --version
+          pnpm --version
+          test "$(npm --version)" = "$RELEASE_NPM_VERSION"
       - run: pnpm install --frozen-lockfile
       - run: pnpm run release:registry-verify
       - run: pnpm run release:registry-install
 
   github-release:
-    needs: verify-published
+    needs: [validate-release, verify-published]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,4 +193,8 @@ jobs:
       - name: Create GitHub Release with Core-specific notes
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "SaaS Core 2.2.1" --notes-file docs/RELEASE-2.2.1.md
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          release_notes="docs/RELEASE-${RELEASE_VERSION}.md"
+          test -f "$release_notes"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "SaaS Core ${RELEASE_VERSION}" --notes-file "$release_notes"
