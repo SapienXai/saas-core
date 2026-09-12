@@ -7,6 +7,15 @@ const generated = execFileSync(
   { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
 )
 
+// Supabase's type generator does not preserve nullability for RETURNS TABLE
+// fields. This RPC deliberately returns NULL when a quota is unavailable or
+// unlimited, so keep the checked-in contract honest and deterministic.
+const normalizedGenerated = generated.replace(
+  /(lock_workspace_entitlement:[\s\S]*?limit_value: )number(?: \| null)?(\r?\n)/,
+  "$1number | null$2",
+)
+if (!normalizedGenerated.includes("limit_value: number | null")) throw new Error("lock_workspace_entitlement return type was not generated; review types/supabase.ts.")
+
 const aliases = `
 
 export type Workspace = Database["public"]["Tables"]["workspaces"]["Row"]
@@ -25,5 +34,5 @@ export type EmailOutboxRun = Database["public"]["Tables"]["email_outbox_runs"]["
 `
 
 mkdirSync("types", { recursive: true })
-writeFileSync("types/supabase.ts", generated + aliases, "utf8")
+writeFileSync("types/supabase.ts", normalizedGenerated + aliases, "utf8")
 console.log("Generated types/supabase.ts from the local SaaS Core schema.")

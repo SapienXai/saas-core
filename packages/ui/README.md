@@ -1,9 +1,9 @@
 # @sapienx/saas-core-ui
 
 Current package release: `2.2.1`; Core schema compatibility coordinate remains
-`2.0`. The coordinated release also delivers the additive, Core-managed source
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql` through
-the application template and CLI; this UI package does not execute SQL.
+`2.0`. The coordinated release also delivers the additive, Core-managed
+billing sources through the application template and CLI; this UI package does
+not execute SQL.
 
 This is the reusable UI package extracted from the production ReserveVia
 surface. It contains the actual Radix/shadcn-style primitives, theme provider,
@@ -17,4 +17,5 @@ package must not import Supabase, Paddle, or server credentials.
 Billing plan cards and confirmed transition feedback stay in that managed app
 shell so they can read the product catalog and server-confirmed entitlements.
 This package supplies the reusable presentation primitives used by those
-surfaces; it does not own checkout, webhook, or provider state.
+surfaces, including `BillingUsageMeter` and `EntitlementLimitNotice`; it does
+not own checkout, webhook, or provider state.

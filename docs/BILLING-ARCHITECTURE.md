@@ -148,9 +148,13 @@ confirmation.
 
 Products provide catalog definitions, prices, feature and limit keys, usage
 metrics, plan presentation, and domain-specific quota writes. Product server
-actions call Core authorization and generic entitlement helpers before a
-domain mutation. Core does not know what a product's Workspace contains and
-does not own product tables, domain entities, marketing copy, or metrics.
+actions call `createEntitlementService()` and `assertCanConsume()` after
+resolving the authenticated Workspace. Core does not know what a product's
+Workspace contains and does not own product tables, domain entities, marketing
+copy, or metrics. For check-then-insert quotas, a product-owned transaction
+RPC calls `public.lock_workspace_entitlement()` before its own count and
+insert; this keeps policy in Core while keeping domain semantics in the
+consumer.
 
 ReserveVia keeps its restaurant, reservation, history, fixed plan ladder,
 prices, and legacy custom-data translation in its own migration. PlaceDJ
@@ -159,22 +163,30 @@ configuration and write boundaries. Both consumers use the shared contract
 through an explicit migration and keep their provider IDs and history
 intact.
 
-## Delivery sequence and current phase
+## Phase 1 result and consumer handoff
 
-The implementation sequence is deliberately additive:
+Phase 1 now delivers the complete reusable Core path:
 
-1. Define and test the provider-neutral contract and record parity (this
-   phase).
-2. Add durable provider-account, event-lease, retry, mutation, and confirmed
-   transition-consumption persistence.
-3. Consolidate Paddle normalization, lifecycle actions, webhook projection,
-   and reconciliation behind the contract.
-4. Align server and database effective-plan and usage enforcement.
-5. Drive the existing responsive billing UI from product catalog and copy,
-   with server-confirmed success semantics.
-6. Verify packaging, managed-file ownership, and each consumer migration.
+```text
+product catalog
+  → normalized workspace subscription
+  → effective plan / entitlements
+  → authoritative Core or product usage
+  → server guard or transactional lock
+  → billing and limit-reached UI
+```
 
-This phase intentionally changes only the Core contract, product config
-validation, focused contract tests, and these two specifications. Existing
-Paddle runtime behavior, migrations, secrets, ReserveVia, and PlaceDJ remain
-outside this checkpoint.
+The configured catalog fallback is used when a paid subscription is absent,
+past its local billing period, expired, paused, canceled, unknown, or mapped to an inactive plan. `null` is
+the only unlimited limit; an omitted or malformed capability is unavailable.
+Non-manual paid projections also require a complete local provider identity;
+normal entitlement reads never call Paddle synchronously.
+
+The root migration and application template carry both durable billing
+persistence and the server-only entitlement lock boundary. The CLI delivers
+those files as source and never applies SQL. Consumers must apply and verify
+the migrations in their own controlled database workflow, define their own
+commercial catalog/provider mappings, register product usage resolvers, and
+guard product mutations. See [BILLING-CONSUMER.md](./BILLING-CONSUMER.md) for
+the exact integration contract and [BILLING-PARITY.md](./BILLING-PARITY.md) for
+the ReserveVia comparison.

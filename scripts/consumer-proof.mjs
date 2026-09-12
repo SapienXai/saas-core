@@ -10,7 +10,10 @@ const root = process.cwd()
 const packageCli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const artifacts = path.join(root, "artifacts")
 const LEGACY_VERSION = "2.2.0"
-const billingMigration = "supabase/migrations/20260909094344_reusable_billing_persistence.sql"
+const billingMigrations = [
+  "supabase/migrations/20260909094344_reusable_billing_persistence.sql",
+  "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
+]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
 const npmCache = mkdtempSync(path.join(os.tmpdir(), "saas-core-npm-cache-"))
@@ -64,7 +67,7 @@ const packedExportProbe = `
 import { readFileSync } from "node:fs"
 import * as core from "@sapienx/saas-core"
 import { defineProductConfig } from "@sapienx/saas-core-config"
-for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions"]) {
+for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions", "evaluateEntitlementConsumption", "getUsageSnapshot", "getEntitlementGateState"]) {
   if (typeof core[name] !== "function") throw new Error("Missing packed runtime export: " + name)
 }
 if (core.CORE_VERSION !== "${RELEASE_VERSION}" || core.CORE_SCHEMA_VERSION !== "${SCHEMA_VERSION}") throw new Error("Packed Core version metadata is incorrect.")
@@ -81,11 +84,15 @@ const packedProductConfig = defineProductConfig({
 if (packedProductConfig.billing?.defaultPlanKey !== "starter") throw new Error("Packed product billing configuration contract is incorrect.")
 const declarations = readFileSync(new URL("./index.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
 const billingDeclarations = readFileSync(new URL("./billing.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
+const entitlementDeclarations = readFileSync(new URL("./entitlements.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
 for (const name of ["JsonSchema", "AgentToolDefinition", "AgentSurfaceEvent", "AgentSurfaceObserver"]) {
   if (!declarations.includes("export type " + name)) throw new Error("Missing packed type export: " + name)
 }
 for (const name of ["ProductBillingPolicy", "BillingOperationOutcome", "BillingTransitionDecision"]) {
   if (!billingDeclarations.includes("export type " + name)) throw new Error("Missing packed billing type export: " + name)
+}
+for (const name of ["EntitlementLimit", "EntitlementDecision", "UsageSnapshot"]) {
+  if (!entitlementDeclarations.includes("export type " + name)) throw new Error("Missing packed entitlement type export: " + name)
 }
 `
 
@@ -227,7 +234,7 @@ try {
   for (const name of ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]) if (!generatedPackage.dependencies[name]) throw new Error(`Missing runtime Core dependency: ${name}`)
   const agentSurfaceFiles = ["components/agent-surface/core-webmcp-tools.tsx", "lib/agent-surface/server.ts", "lib/agent-surface/webmcp.ts"]
   const billingManagedFiles = [
-    billingMigration,
+    ...billingMigrations,
     "app/api/billing/paddle/webhook/route.ts",
     "app/api/cron/billing/lifecycle/route.ts",
     "app/manage/plan/actions.ts",
@@ -248,7 +255,7 @@ try {
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing Agent Surface file: ${relative}`)
   for (const relative of billingManagedFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing managed billing file: ${relative}`)
   const freshManifest = JSON.parse(readFileSync(path.join(product, ".saas-core-manifest.json"), "utf8"))
-  if (!freshManifest.managedFiles[billingMigration]) throw new Error("Fresh consumer manifest did not record the reusable billing migration as Core-managed.")
+  for (const migration of billingMigrations) if (!freshManifest.managedFiles[migration]) throw new Error(`Fresh consumer manifest did not record ${migration} as Core-managed.`)
   const productMigrationRelative = "supabase/migrations/product/20990909000000_product-owned-proof.sql"
   mkdirSync(path.dirname(path.join(product, productMigrationRelative)), { recursive: true })
   const productMigration = "-- Product-owned migration fixture\ncreate table if not exists public.product_owned_proof (id uuid primary key);\n"
@@ -310,7 +317,7 @@ try {
   rmSync(path.join(relocated, "node_modules"), { recursive: true, force: true })
   run("npm", ["ci", "--ignore-scripts", "--audit=false", "--fund=false"], relocated)
   if (!existsSync(relocatedCli)) throw new Error("Packed Core CLI was not restored by frozen install.")
-  if (!existsSync(path.join(relocated, billingMigration))) throw new Error("Relocation or frozen install lost the reusable billing migration.")
+  for (const migration of billingMigrations) if (!existsSync(path.join(relocated, migration))) throw new Error(`Relocation or frozen install lost ${migration}.`)
   run(relocatedCli, ["doctor", relocated], relocated)
   run("npm", ["test"], relocated)
   run("npm", ["run", "build"], relocated, supabaseEnvironment || {})

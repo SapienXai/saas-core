@@ -1,71 +1,41 @@
-# Billing parity and ownership
+# Billing parity: ReserveVia to SaaS Core
 
-This document records the phase-one audit of the reusable billing boundary.
-The comparison is against SaaS Core `9bd1b4e0997e6a85330ed08f4391e88c9ec1102e`,
-ReserveVia `92ffa98dd22e785d90959b292c341de1e57e6873`, and PlaceDJ
-`5fd2765bf3b36dd2be8e6c9105e40d410f4bc995`. ReserveVia and PlaceDJ were read
-only references. This phase changes the Core contract and its validation
-tests; it does not change Paddle calls, database migrations, or either
-consumer.
+This is the concise extraction audit for the reusable subscription boundary.
+ReserveVia and PlaceDJ were read-only references; neither consumer is changed
+by Phase 1.
 
-## Audited capability matrix
-
-| Capability | ReserveVia evidence and behavior | SaaS Core boundary | Remaining work |
+| Capability | ReserveVia reference behavior | SaaS Core Phase 1 result | Status / note |
 | --- | --- | --- | --- |
-| Free and default plan | `supabase/migrations/20260809155804_plans_subscriptions_and_usage.sql` seeds a fixed Free plan; `bootstrap_initial_workspace` assigns it. | `ProductCatalog.defaultPlanKey` is explicit, and the contract validates that it names a plan with an explicit `limits.core.workspaces` value. | Billing persistence and every runtime fallback must use the configured key consistently. |
-| Catalog and prices | `public.plans` contains fixed Starter, Pro, and Business rows plus monthly provider mappings. | Product catalogs own plan keys, prices, features, limits, and usage metric keys. Core accepts arbitrary valid keys and month/year prices. | Consumers must supply their own paid catalog and provider mappings during their migrations. |
-| Workspace customer mapping | `workspace_subscriptions` stores the provider customer and subscription IDs; checkout can create the first customer and verified events associate it. | A provider adapter will map one recurring base subscription to a workspace and environment. Browser input cannot select a customer, plan, or price. | The persistence phase adds the durable environment-scoped account association and conflict checks. |
-| Checkout | `app/manage/plan/actions.ts` resolves the workspace owner, mapping, and environment server-side before creating checkout. Checkout completion alone never grants paid access. | The contract exposes no provider client and contains no checkout side effect. | The lifecycle phase keeps the existing action surface as a compatibility wrapper around a canonical provider service. |
-| Upgrade | ReserveVia previews the change and requests immediate proration; local access changes after a verified provider event. | `getBillingProrationMode("upgrade")` is `immediate`; the provider adapter translates that semantic mode. | Preserve the exact preview, authorization, idempotency, and provider-confirmed projection in the lifecycle phase. |
-| Downgrade and undo | ReserveVia requests next-period billing treatment and keeps the current plan until the scheduled boundary; a pending change can be undone. | `getBillingProrationMode("downgrade")` is `next_period`; scheduled transitions are distinct from immediate status changes. | Persist the transition journal and exact effective timestamp, including recoverable failed or unknown outcomes. |
-| Cancellation and resume | Cancellation is scheduled for the end of the current period. Resume clears that scheduled cancellation; it does not treat a paused provider subscription as resumed. | Transition kinds include `cancel` and `resume`; future effective timestamps resolve to `schedule`. | Implement provider calls, durable mutation state, and event projection without optimistic access changes. |
-| Renewal and status projection | Verified subscription events update period, price, status, and provider timestamps. Active and trialing retain the purchased plan. | Provider adapters normalize to `active`, `trialing`, `past_due`, `paused`, or `canceled`. Unknown states fail closed before projection. | Add canonical event normalization, stale/equal timestamp handling, and reconciliation. |
-| Past due and recovery | A past-due workspace retains its paid entitlements for 14 days. A verified recovery restores access; expiry moves effective access to the fallback plan. | The default grace policy is 14 days and can be configured without naming a product plan. `null` grace timestamps do not claim expiry. | Apply one policy in server and database entitlement enforcement and run boundary tests. |
-| Paused, canceled, and expired access | Paused and canceled subscriptions fall back to Free while data, usage, and provider history remain. A later checkout may replace a terminal subscription safely. | `resolveEffectiveBillingPlan` selects the configured fallback for paused, canceled, or expired grace. | Add safe canceled-subscription replacement and reconciliation before retrying uncertain provider operations. |
-| Webhook verification and inbox | The webhook route reads the raw body once, verifies the official signature first, stores a minimal unique inbox record, and processes it idempotently. | The contract describes operation and transition outcomes only; it has no network or persistence dependency. | Keep raw-body verification before persistence, then add atomic claim leases, retry, and observability. |
-| Duplicate and ordering protection | Provider event IDs deduplicate delivery and `occurred_at` prevents an older event from overwriting a newer projection. Unknown prices, workspaces, subscriptions, or environments fail closed. | Transition decisions distinguish `pending`, `succeeded`, `failed`, and `unknown`; unknown outcomes require reconciliation. | Extend the same ordering rule to transaction events and equal-time reconciliation. |
-| Reconciliation | `scripts/billing-reconcile.mjs` fetches current provider state and repairs local drift only when the provider timestamp is newer. | Core owns the reconciliation policy; consumers do not own a second billing engine. | Consolidate duplicated projection logic behind one provider-neutral service. |
-| Entitlements and usage | `lib/entitlements.ts` reads keyed features, limits, and usage. Product writes enforce restaurant, user, reservation, and history rules transactionally. | Features, limits, and usage metrics are open-ended product keys. A missing limit is unavailable; `null` explicitly means unlimited. | Move generic effective-plan and usage assertions behind the Core boundary while products keep domain writes. |
-| Billing presentation | ReserveVia supplies plan names, prices, feature labels, comparison content, recovery copy, and success feedback from its product surface. | Optional presentation config validates plan order, plan copy, comparison rows, and feature/limit references. | The UI phase drives the existing shared surface from product configuration and persists confirmed transition consumption. |
+| Plan model | Product-defined Free, Starter, Pro, and Business catalog with prices and feature/limit copy. | `ProductCatalog` accepts arbitrary product plan keys, descriptions, ordering, recommendation metadata, month/year prices, boolean features, numeric limits, and explicit `null` unlimited limits. | Extracted generically; commercial values stay product-owned. |
+| Current plan | Workspace-scoped current subscription and visible scheduled change. | `workspace_subscriptions` remains workspace-owned; `getEffectivePlan`/`getEntitlements` expose current and scheduled plan state. | Parity retained. |
+| Plan comparison | Responsive feature/limit comparison and selected-plan preview. | Managed plan UI renders configured plan order, comparison rows, feature labels, and every configured limit. | Extracted and configuration-driven. |
+| Upgrade | Owner-only Paddle preview, immediate/prorated provider change, access after verified sync. | Existing server actions keep owner authorization, server price mapping, preview, durable transition, and webhook-confirmed projection. | Preserved; no client-supplied plan or price is trusted. |
+| Downgrade | Next-period change; current access remains until the effective boundary; undo is supported. | Scheduled target/effective timestamp remains in the local projection. Existing resources are retained and new over-limit consumption is rejected. | Safe over-limit behavior documented and enforced. |
+| Cancellation | Scheduled for period end; service remains active until the provider boundary; resume clears it. | Cancellation and resume use the existing Paddle lifecycle and local scheduled state. Effective entitlements fall back after cancellation. | Preserved and fail-closed. |
+| Usage | Authoritative workspace/member and product-domain usage; calendar-period counters where appropriate. | Core resolves workspace/member usage and supports product `usageResolvers`; persisted generic metrics remain keyed by capability. | Consumer owns domain queries and writes. |
+| Feature gating | Central `can`, `getLimit`, `getUsage`, and assertion helpers. | `hasFeature`, `getLimit`, `getUsage`, `getEntitlement`, `getUsageSnapshot`, and `canConsume` share one normalized evaluator. | Extracted as a provider-neutral API. |
+| Limits | Finite quotas, unavailable capabilities, and explicit unlimited capabilities. | Missing is unavailable, `null` is unlimited, and malformed values are omitted/fail closed. | P0 safety rule covered by tests. |
+| Server enforcement | Domain mutations guard quota inside the authoritative transaction. | `assertCanConsume` is reusable for server actions; `lock_workspace_entitlement` gives product RPCs an advisory transaction lock before count-and-insert. | Core owns policy; products own domain mutation SQL. |
+| Paddle sync | Raw signature verification, normalized local subscription, event uniqueness/order, retries, and unknown-price safety. | Existing Paddle boundary remains local and normalized; duplicate, stale, delayed, unknown, and failed states do not grant premium access. | Provider is not called for ordinary entitlement reads. |
+| Mobile UX | Responsive billing cards, dialogs, cancellation, usage, and plan comparison. | Managed plan page and billing actions retain the Core visual system and responsive dialog/card behavior; reusable usage and limit-notice primitives are also exported. | Extracted without ReserveVia domain copy. |
 
-## Ownership rules
+## Ownership decision
 
-SaaS Core owns the provider-neutral lifecycle vocabulary and policy helpers,
-provider adapter boundary, provider price registry, checkout and mutation
-journal, webhook inbox, reconciliation, grace policy, keyed entitlement
-helpers, billing actions, plan selection, status notices, and confirmed
-success semantics. Core must continue to work when a product has one plan or
-many plans and when plan keys are arbitrary valid strings.
+Subscriptions, effective plans, Core workspace/member usage, provider
+normalization, billing actions, and enforcement policy are workspace-scoped in
+SaaS Core. Product resources remain in the consumer database. A user may be a
+member of multiple workspaces; a quota is evaluated against the workspace
+passed to the server guard. The Core workspace quota is account-derived from
+the owner membership when that metric is requested, while product metrics are
+workspace-specific unless a consumer resolver deliberately defines another
+scope.
 
-ReserveVia owns its plan definitions and prices, restaurant and reservation
-limits, history rules, marketing labels, and product-specific copy. Its
-existing `reservevia_*` custom-data keys and fixed plan names stay in that
-consumer migration and are translated at the adapter boundary.
+The important fallback rule is: a missing or non-paid subscription resolves to
+the configured catalog fallback plan. No customer, no subscription, expired
+paid state, paused state, canceled state, unknown price, and invalid plan
+mapping never mean unlimited access.
 
-PlaceDJ owns venue, device, music, and catalog definitions, their usage
-metrics and limits, and product copy. Core does not interpret a Workspace as
-one of those entities and must not add those names to its types or policies.
-
-The direction remains `SaaS Core → product configuration → product domain`.
-Product configuration can describe plans and copy; it cannot grant access,
-choose a provider price from browser input, or replace server authorization.
-
-## Consumer follow-up requirements
-
-ReserveVia's migration must preserve existing provider IDs, subscription
-history, and current entitlements; map legacy custom-data keys to the generic
-workspace association; supply its four plan definitions, prices, comparison
-copy, and domain metrics; and move runtime call sites to the Core contract.
-The migration must prove Sandbox event ordering, payment recovery, canceled
-replacement checkout, and rollback before any live rollout.
-
-PlaceDJ's migration must begin with a Core update dry run against its manifest
-and resolve managed-file conflicts without touching product-owned paths. It
-must define paid plans, prices, venue/device/music/catalog limits, and copy in
-its own catalog/configuration, then call Core entitlements and usage helpers
-from authorized product write boundaries. It must not add a local provider
-client, webhook, or checkout implementation.
-
-Neither consumer migration is part of this phase. No provider credentials,
-payment state, production data, or database schema was changed while writing
-this specification.
+ReserveVia-specific restaurant/reservation names, commercial limits, and
+legacy provider custom-data remain outside Core. PlaceDJ venue enforcement is
+the Phase 2 consumer task; this phase only supplies the generic contract and
+transaction boundary it needs.

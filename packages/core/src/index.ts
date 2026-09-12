@@ -2,6 +2,7 @@ export const CORE_VERSION = "2.2.1"
 export const CORE_SCHEMA_VERSION = "2.0"
 
 export * from "./billing.js"
+export * from "./entitlements.js"
 
 import {
   isBillingInterval,
@@ -27,6 +28,7 @@ export type ProductPlan = {
   name: string
   description?: string
   active?: boolean
+  recommended?: boolean
   sort_order?: number
   sortOrder?: number
   prices?: Readonly<Record<string, CorePrice>>
@@ -280,6 +282,7 @@ function validateProductPlan(plan: unknown, index: number, keys: Set<string>) {
   if (typeof plan.key !== "string" || !PRODUCT_PLAN_KEY_PATTERN.test(plan.key) || keys.has(plan.key)) throw new Error(`Invalid or duplicate product plan key: ${String(plan.key)}`)
   if (typeof plan.name !== "string" || !plan.name.trim()) throw new Error(`Plan ${plan.key} must have a display name.`)
   if (plan.active !== undefined && typeof plan.active !== "boolean") throw new Error(`Plan ${plan.key} active must be a boolean.`)
+  if (plan.recommended !== undefined && typeof plan.recommended !== "boolean") throw new Error(`Plan ${plan.key} recommended must be a boolean.`)
   for (const sortKey of ["sort_order", "sortOrder"]) {
     if (plan[sortKey] !== undefined && (!Number.isSafeInteger(plan[sortKey]) || Number(plan[sortKey]) < 0)) throw new Error(`Plan ${plan.key} ${sortKey} must be a non-negative integer.`)
   }

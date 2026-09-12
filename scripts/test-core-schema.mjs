@@ -7,8 +7,12 @@ const migration = await readFile(migrationPath, "utf8")
 const persistenceMigrationPath = path.join(root, "supabase/migrations/20260909094344_reusable_billing_persistence.sql")
 const persistenceMigration = await readFile(persistenceMigrationPath, "utf8")
 const templatePersistenceMigration = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260909094344_reusable_billing_persistence.sql"), "utf8")
+const entitlementMigrationPath = path.join(root, "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql")
+const entitlementMigration = await readFile(entitlementMigrationPath, "utf8")
+const templateEntitlementMigration = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql"), "utf8")
 const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
 if (persistenceMigration !== templatePersistenceMigration) throw new Error("Root and template reusable billing migrations are not byte-for-byte identical.")
+if (entitlementMigration !== templateEntitlementMigration) throw new Error("Root and template entitlement enforcement migrations are not byte-for-byte identical.")
 const tables = [
   "plans", "workspaces", "workspace_members", "workspace_invitations", "workspace_subscriptions",
   "workspace_usage_periods", "billing_provider_prices", "billing_webhook_events", "billing_checkout_sessions",
@@ -104,6 +108,24 @@ if (persistenceMigration.includes("security definer") || persistenceFunctions.so
 })) {
   throw new Error("Persistence functions must use fixed search_path without public SECURITY DEFINER exposure.")
 }
+if (!entitlementMigration.includes("create or replace function public.lock_workspace_entitlement(") || !entitlementMigration.includes("pg_advisory_xact_lock") || !entitlementMigration.includes("for update")) {
+  throw new Error("Entitlement enforcement migration is missing the transaction-scoped workspace quota lock.")
+}
+if (!entitlementMigration.includes("create or replace function public.get_core_default_plan_key()") || !entitlementMigration.includes("revoke all on function public.get_core_default_plan_key() from public, anon, authenticated") || !entitlementMigration.includes("grant execute on function public.get_core_default_plan_key() to service_role")) {
+  throw new Error("The server fallback lookup is not bound to the configured private default plan.")
+}
+if (!entitlementMigration.includes("security definer") || !entitlementMigration.includes("set search_path = public, private") || !entitlementMigration.includes("revoke all on function public.lock_workspace_entitlement(uuid, text) from public, anon, authenticated") || !entitlementMigration.includes("grant execute on function public.lock_workspace_entitlement(uuid, text) to service_role")) {
+  throw new Error("Entitlement enforcement RPC is not protected by a fixed search_path and server-only grants.")
+}
+if (!entitlementMigration.includes("private.assert_workspace_member_available") || !entitlementMigration.includes("USER_LIMIT_REACHED") || !entitlementMigration.includes("create or replace function public.renew_workspace_invitation(") || !entitlementMigration.includes("revoke all on function public.renew_workspace_invitation(uuid, text) from public, anon, authenticated") || !entitlementMigration.includes("grant execute on function public.renew_workspace_invitation(uuid, text) to authenticated") || !entitlementMigration.includes("revoke insert, update, delete on public.workspace_members, public.workspace_invitations from anon, authenticated")) {
+  throw new Error("Core-managed membership mutations are not routed through the guarded entitlement boundary.")
+}
+if (!entitlementMigration.includes("subscription_row.source <> 'manual'") || !entitlementMigration.includes("provider_customer_id") || !entitlementMigration.includes("provider_subscription_id") || !entitlementMigration.includes("candidate_provider_price_id") || !entitlementMigration.includes("current_period_end_at")) {
+  throw new Error("Paid entitlement projections are missing the complete provider-identity fail-closed check.")
+}
+if (["rest" + "aurant", "reserv" + "ation", "seat" + "ing", "paddle"].some((term) => entitlementMigration.toLowerCase().includes(term))) {
+  throw new Error("The reusable entitlement enforcement migration contains product/provider-specific vocabulary.")
+}
 if (!persistenceMigration.includes("UNKNOWN_OUTCOME_REQUIRES_RECONCILIATION") || !persistenceMigration.includes("target_allow_reclaim")) {
   throw new Error("Persistence does not preserve unknown outcomes and explicit stale-lease retry policy.")
 }
@@ -111,4 +133,4 @@ const persistenceProductVocabulary = ["rest" + "aurant", "reserv" + "ation", "se
 if (persistenceProductVocabulary.some((term) => persistenceMigration.toLowerCase().includes(term))) {
   throw new Error("The reusable billing persistence migration contains product/provider-specific vocabulary.")
 }
-console.log(`Core schema verified: ${tables.length} baseline tables plus ${persistenceTables.length} durable billing tables, RLS enabled, no product tables.`)
+console.log(`Core schema verified: ${tables.length} baseline tables plus ${persistenceTables.length} durable billing tables and the entitlement lock boundary, RLS enabled, no product tables.`)

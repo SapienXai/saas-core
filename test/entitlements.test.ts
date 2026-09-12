@@ -39,6 +39,56 @@ describe("workspace entitlement policy", () => {
     expect(resolveEffectiveEntitlementPlan({ subscriptionPlanKey: "paid", fallbackPlanKey: "default", status: "past_due", paymentGraceEndsAt: "2026-09-29T00:00:00.000Z", now: exactBoundary })).toBe("paid")
   })
 
+  it("keeps scheduled cancellation active only until its trusted boundary", () => {
+    const cancellationAt = "2026-09-20T00:00:00.000Z"
+    expect(resolveEffectiveEntitlementPlan({ subscriptionPlanKey: "paid", fallbackPlanKey: "default", status: "active", cancelAtPeriodEnd: true, cancellationEffectiveAt: cancellationAt, now: new Date("2026-09-19T23:59:59.999Z") })).toBe("paid")
+    expect(resolveEffectiveEntitlementPlan({ subscriptionPlanKey: "paid", fallbackPlanKey: "default", status: "active", cancelAtPeriodEnd: true, cancellationEffectiveAt: cancellationAt, now: new Date(cancellationAt) })).toBe("default")
+    expect(resolveEffectiveEntitlementPlan({ subscriptionPlanKey: "paid", fallbackPlanKey: "default", status: "active", scheduledChangeAction: "cancel", cancellationEffectiveAt: null })).toBe("default")
+    expect(resolveEffectiveEntitlementPlan({ subscriptionPlanKey: "paid", fallbackPlanKey: "default", status: "active", scheduledChangeAction: "pause", cancellationEffectiveAt: null })).toBe("default")
+  })
+
+  it("does not treat an incomplete non-manual provider projection as paid", () => {
+    expect(resolveEffectiveEntitlementPlan({
+      subscriptionPlanKey: "paid",
+      fallbackPlanKey: "default",
+      status: "active",
+      source: "paddle",
+      provider: "paddle",
+      providerEnvironment: "sandbox",
+      providerCustomerId: "cus_fixture",
+      providerSubscriptionId: null,
+      providerPriceId: "pri_fixture",
+    })).toBe("default")
+    expect(resolveEffectiveEntitlementPlan({
+      subscriptionPlanKey: "paid",
+      fallbackPlanKey: "default",
+      status: "active",
+      source: "system",
+    })).toBe("default")
+    expect(resolveEffectiveEntitlementPlan({
+      subscriptionPlanKey: "paid",
+      fallbackPlanKey: "default",
+      status: "active",
+      source: "manual",
+    })).toBe("paid")
+  })
+
+  it("falls back when a paid projection has crossed its local billing period", () => {
+    expect(resolveEffectiveEntitlementPlan({
+      subscriptionPlanKey: "paid",
+      fallbackPlanKey: "default",
+      status: "active",
+      source: "paddle",
+      provider: "paddle",
+      providerEnvironment: "sandbox",
+      providerCustomerId: "cus_fixture",
+      providerSubscriptionId: "sub_fixture",
+      providerPriceId: "pri_fixture",
+      currentPeriodEndAt: "2026-09-01T00:00:00.000Z",
+      now: new Date("2026-09-12T00:00:00.000Z"),
+    })).toBe("default")
+  })
+
   it("gives an active manual override precedence over scheduled and grace state", () => {
     expect(resolveEffectiveEntitlementPlan({ subscriptionPlanKey: "paid", overridePlanKey: "manual", scheduledPlanKey: "next", scheduledPlanAt: "2026-09-01T00:00:00.000Z", fallbackPlanKey: "default", status: "past_due", paymentGraceEndsAt: "2026-09-01T00:00:00.000Z", now: exactBoundary })).toBe("manual")
     expect(resolveEffectivePlanKey("paid", "manual", "next", "2026-09-01T00:00:00.000Z", exactBoundary)).toBe("manual")

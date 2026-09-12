@@ -234,6 +234,14 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   }, [planPresentation, t])
   const displayKey = (key: string) => presentationCopy[key] || presentationCopy[`feature.${key}`] || presentationCopy[`limit.${key}`] || key.replaceAll(/[._-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2")
   const usageMetricName = (key: string) => usageMetrics.find((metric) => metric.key === key)?.name || displayKey(key)
+  const planLimitKeys = (plan: Plan) => {
+    const requested = presentation?.limitKeys?.length ? presentation.limitKeys : Object.keys(plan.limits)
+    return [...new Set(requested)].filter((key) => Object.prototype.hasOwnProperty.call(plan.limits, key))
+  }
+  const planLimitValue = (plan: Plan, key: string) => {
+    const value = plan.limits[key]
+    return value === null ? "Unlimited" : value === undefined ? "—" : value.toLocaleString()
+  }
 
   const orderedPlans = useMemo(() => {
     const order = new Map(resolvedPresentation.planOrder.map((key, index) => [key, index]))
@@ -451,7 +459,9 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
 
   const cancelSubscription = () => setBillingConfirmation({ type: "cancel", reason: cancellationReason, feedback: cancellationFeedback })
 
-  const isPaid = billing.provider === "paddle" || configuredPaidPlans.includes(currentPlan)
+  // The effective local plan is authoritative for UI state. A provider row
+  // can remain present after cancellation, pause, or grace expiry.
+  const isPaid = configuredPaidPlans.includes(currentPlan) && billing.providerStatus !== "canceled" && billing.providerStatus !== "paused"
   const currentPlanRecord = plans.find((plan) => plan.key === currentPlan)
   const currentPlanName = currentPlanRecord ? planCopy(currentPlanRecord).label : t("manage.planUsage.activePlan")
   const selectedPlanKey = searchParams.get("plan") || (isPaid ? currentPlan : null)
@@ -701,7 +711,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                       {billingInterval === "year" && savings && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{t("manage.planUsage.billing.savePercent", { percent: String(savings.percent) })}</span>}
                     </div>
                     <p className="mt-2 min-h-10 text-xs leading-5 text-slate-600 dark:text-slate-300">{copy.description}</p>
-                    <div className="mt-4 grid grid-cols-3 gap-2 border-y border-slate-100 py-3 dark:border-white/10"><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.limits["core.workspaces"] === null || plan.limits["core.workspaces"] === undefined ? "∞" : plan.limits["core.workspaces"]}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{copyText("workspacesLabel", t("manage.planUsage.billing.workspaces"))}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{plan.limits["core.members"] === null || plan.limits["core.members"] === undefined ? "∞" : plan.limits["core.members"]}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{copyText("teamMembersLabel", t("manage.planUsage.billing.teamMembers"))}</p></div><div><p className="text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{(() => { const key = Object.keys(plan.limits).find((entry) => !entry.startsWith("core.")); const value = key ? plan.limits[key] : null; return value === null || value === undefined ? "∞" : value.toLocaleString() })()}</p><p className="mt-1 text-[10px] text-slate-500 dark:text-slate-400">{copyText("productUsageLabel", usageMetricName(Object.keys(plan.limits).find((entry) => !entry.startsWith("core.")) || "productUsage"))}</p></div></div>
+                    {planLimitKeys(plan).length > 0 && <div className={`mt-4 grid gap-2 border-y border-slate-100 py-3 dark:border-white/10 ${planLimitKeys(plan).length > 2 ? "sm:grid-cols-3" : planLimitKeys(plan).length === 2 ? "sm:grid-cols-2" : "grid-cols-1"}`}>{planLimitKeys(plan).map((key) => <div key={key} className="min-w-0"><p className="truncate text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{planLimitValue(plan, key)}</p><p className="mt-1 truncate text-[10px] text-slate-500 dark:text-slate-400">{key === "core.workspaces" ? copyText("workspacesLabel", t("manage.planUsage.billing.workspaces")) : key === "core.members" ? copyText("teamMembersLabel", t("manage.planUsage.billing.teamMembers")) : usageMetricName(key)}</p></div>)}</div>}
                     <ul className="mt-4 space-y-2 text-xs text-slate-700 dark:text-slate-200">{copy.highlights.map((highlight) => <li key={highlight} className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-300" />{highlight}</li>)}</ul>
                     <Button type="button" onClick={() => isPaid ? changePlan(plan.key) : startCheckout(plan.key)} loading={activeAction === (isPaid ? `plan-preview:${plan.key}` : `checkout-preview:${plan.key}`)} disabled={!billing.paddleConfigured || !configured} className={`mt-5 min-h-11 w-full rounded-xl px-3 py-2 text-sm font-semibold transition ${recommended && !isDowngrade ? "bg-violet-600 text-white hover:bg-violet-700" : "border border-slate-200 bg-transparent text-slate-800 hover:bg-slate-50 dark:border-white/10 dark:text-white dark:hover:bg-white/10"}`}>{configured && billing.paddleConfigured ? <><span>{isPaid ? t(isDowngrade ? "manage.planUsage.billing.moveTo" : "manage.planUsage.billing.upgradeTo", { plan: copy.label }) : t("manage.planUsage.billing.choose", { plan: copy.label })}</span><ArrowRight className="ml-1 h-3.5 w-3.5" /></> : t("manage.planUsage.billing.billingSetupRequired")}</Button>
                     {selecting && <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 rounded-2xl bg-white/80 text-[10px] font-semibold text-violet-700 backdrop-blur-[2px] dark:bg-[#22232e]/85 dark:text-violet-200" role="status"><OrbLoader label={t("manage.planUsage.billing.loadingPreview", { plan: plan.name })} state="working" size="sm" showLabel={false} /><span>{t("manage.planUsage.billing.updatingPreview")}</span></div>}
@@ -776,7 +786,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         )}
       </section>
 
-      {currentPlan !== "free" && billing.provider !== "paddle" && <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-white/[0.03] dark:text-slate-300"><ShieldCheck className="mr-2 inline h-4 w-4" />{t("manage.planUsage.billing.grandfathered")}</p>}
+      {configuredPaidPlans.includes(currentPlan) && billing.provider !== "paddle" && <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-white/[0.03] dark:text-slate-300"><ShieldCheck className="mr-2 inline h-4 w-4" />{t("manage.planUsage.billing.grandfathered")}</p>}
       {(pending || activating) && <BillingOverlayPortal><div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-sm dark:bg-slate-950/55" role="status" aria-live="polite"><div className="billing-success-card flex w-full max-w-sm items-center gap-4 rounded-2xl border border-white/90 bg-white/95 p-5 shadow-[0_24px_70px_-30px_rgba(30,20,70,0.55)] dark:border-white/10 dark:bg-[#1c1b29]/95"><OrbLoader label={activating ? t("manage.planUsage.billing.activatingPlan") : t("common.updating")} size={activating ? "sm" : "md"} showLabel={false} className="shrink-0" /><div><p className="text-sm font-bold text-slate-950 dark:text-white">{activating ? t("manage.planUsage.billing.activatingPlan") : t("common.updating")}</p>{activating && <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.activatingAfterConfirmation")}</p>}</div></div></div></BillingOverlayPortal>}
       {message && <p className="text-sm text-slate-600 dark:text-slate-300" role="status">{message}</p>}
 

@@ -2,10 +2,10 @@
 
 Current package release: `2.2.1`; Core schema compatibility coordinate remains
 `2.0`. The CLI is the source-delivery and readiness boundary for the
-coordinated release. It carries the Core-managed source
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql` through
-package packing, `init`, and `update`, but never executes SQL. Each consumer
-owns the controlled migration apply and verification workstream.
+coordinated release. It carries the Core-managed billing persistence and
+entitlement-lock sources through package packing, `init`, and `update`, but
+never executes SQL. Each consumer owns the controlled migration apply and
+verification workstream.
 
 Portable `init`, `doctor`, `diff`, and `update` commands for a SaaS Core
 consumer. The CLI ships the canonical `@sapienx/saas-core-app` template at
@@ -41,8 +41,7 @@ the result, and rolls back automatically if an apply or validation step fails.
 
 `pnpm run core:pack` produces the five release tarballs used by the disposable
 consumer proof. The packed CLI carries the managed billing routes, persistence,
-entitlement, plan UI, lifecycle files, and
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql`; a legacy
+entitlement, plan UI, lifecycle files, and Core migration sources; a legacy
 consumer receives those files during `update` while its catalog, styles,
 routes, product-owned migrations under `supabase/migrations/product/**`, and
 domain files remain product-owned. A same-path local file at the Core migration

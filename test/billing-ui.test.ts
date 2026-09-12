@@ -51,6 +51,18 @@ describe("reusable billing UI", () => {
     expect(success).toContain("prefers-reduced-motion")
   })
 
+  it("exposes product-neutral usage and limit-reached primitives", () => {
+    const appNotice = read("components/manage/entitlement-limit-notice.tsx")
+    const packageBilling = read("packages/ui/src/components/billing.tsx")
+    expect(appNotice).toContain("data-entitlement-capability={capability}")
+    expect(appNotice).toContain("limit === undefined")
+    expect(appNotice).toContain("requiredPlan")
+    expect(packageBilling).toContain("Limit unavailable")
+    expect(packageBilling).toContain("/ Unlimited")
+    expect(read("app/manage/plan/page.tsx")).toContain("usage.metrics[key] ?? undefined")
+    expect(read("components/manage/manage-responsive.tsx")).toContain("value: number | undefined")
+  })
+
   it("keeps source and template billing surfaces in parity", () => {
     const pairs = [
       ["components/manage/billing-success-experience.tsx", "packages/app/template/components/manage/billing-success-experience.tsx"],
@@ -58,6 +70,7 @@ describe("reusable billing UI", () => {
       ["components/manage/manage-sidebar.tsx", "packages/app/template/components/manage/manage-sidebar.tsx"],
       ["components/manage/scheduled-plan-change-banner.tsx", "packages/app/template/components/manage/scheduled-plan-change-banner.tsx"],
       ["components/manage/plan-feature-preview.tsx", "packages/app/template/components/manage/plan-feature-preview.tsx"],
+      ["components/manage/entitlement-limit-notice.tsx", "packages/app/template/components/manage/entitlement-limit-notice.tsx"],
       ["app/manage/plan/page.tsx", "packages/app/template/app/manage/plan/page.tsx"],
       ["app/platform/billing/page.tsx", "packages/app/template/app/platform/billing/page.tsx"],
       ["app/manage/plan/actions.ts", "packages/app/template/app/manage/plan/actions.ts"],

@@ -16,7 +16,7 @@ import { createWorkspaceInvitation, removeWorkspaceMember, resendWorkspaceInvita
 type Role = "admin" | "manager" | "staff"
 type Member = { id: string; userId: string; email: string; name: string | null; role: string; createdAt: string; isOwner: boolean }
 type Invitation = { id: string; email: string; role: string; expiresAt: string; status: string; emailDeliveryStatus: string }
-type TeamData = { workspace: { id: string; name: string; slug: string }; currentRole: string; members: Member[]; invitations: Invitation[]; entitlements: { planName: string; limits: Record<string, number | null> }; usage: { users: number; pendingInvitations: number; seatUsage: number } }
+type TeamData = { workspace: { id: string; name: string; slug: string }; currentRole: string; members: Member[]; invitations: Invitation[]; entitlements: { planName: string; limits: Record<string, number | null | undefined> }; usage: { users: number; pendingInvitations: number; seatUsage: number } }
 type ActionResult = { success: boolean; message?: string; warning?: string | null }
 
 const roles: Role[] = ["admin", "manager", "staff"]
@@ -36,8 +36,8 @@ export function TeamManagement({ initialData }: { initialData: TeamData }) {
   const [role, setRole] = useState<Role>("staff")
   const [busy, setBusy] = useState(false)
   const pending = data.invitations.filter((item) => item.status === "pending")
-  const memberLimit = data.entitlements.limits["core.members"] ?? null
-  const canInvite = memberLimit === null || data.usage.seatUsage < memberLimit
+  const memberLimit = Object.prototype.hasOwnProperty.call(data.entitlements.limits, "core.members") ? data.entitlements.limits["core.members"] : undefined
+  const canInvite = memberLimit === null || typeof memberLimit === "number" && data.usage.seatUsage < memberLimit
   const { showConfirmation, ConfirmationDialogComponent } = useConfirmationDialog()
 
   async function run(action: () => Promise<ActionResult>, successMessage = "Team updated") {
@@ -63,10 +63,10 @@ export function TeamManagement({ initialData }: { initialData: TeamData }) {
     <ManageMetricGrid>
       <ManageMetricCard label="Members" value={data.members.length} detail="Current access" icon={Users} />
       <ManageMetricCard label="Pending" value={pending.length} detail="Invitations" icon={Clock3} />
-      <ManageMetricCard label="Seats" value={`${data.usage.seatUsage}${memberLimit === null ? "" : ` / ${memberLimit}`}`} detail={memberLimit === null ? "Unlimited" : "Plan limit"} icon={ShieldCheck} />
+      <ManageMetricCard label="Seats" value={`${data.usage.seatUsage}${memberLimit === undefined ? " / —" : memberLimit === null ? "" : ` / ${memberLimit}`}`} detail={memberLimit === undefined ? "Limit unavailable" : memberLimit === null ? "Unlimited" : "Plan limit"} icon={ShieldCheck} />
       <ManageMetricCard label="Your role" value={data.currentRole} detail="Workspace access" icon={Crown} />
     </ManageMetricGrid>
-    {!canInvite ? <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200"><XCircle className="mt-0.5 h-4 w-4 shrink-0" />The current plan has no available team seats.</div> : null}
+    {memberLimit === undefined ? <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200"><XCircle className="mt-0.5 h-4 w-4 shrink-0" />The current plan's team-seat limit is unavailable.</div> : !canInvite ? <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200"><XCircle className="mt-0.5 h-4 w-4 shrink-0" />The current plan has no available team seats.</div> : null}
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,.8fr)]">
       <ManageSurface className="overflow-hidden">
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3.5 py-3 dark:border-white/10 sm:px-4"><div><h2 className="text-sm font-semibold text-slate-950 dark:text-white">Members</h2><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Roles can be changed from each member’s menu.</p></div><Users className="h-4 w-4 text-violet-600 dark:text-violet-300" /></div>

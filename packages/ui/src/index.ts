@@ -20,6 +20,7 @@ export * from "./components/ui/tabs"
 export * from "./components/ui/textarea"
 export * from "./components/ui/tooltip"
 export * from "./components/ui/sidebar"
+export * from "./components/billing"
 
 export const UI_SYSTEM_VERSION = "2.2.1"
 export const UI_SOURCE = "Production-derived source-preserving primitives"

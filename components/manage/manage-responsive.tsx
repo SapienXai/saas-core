@@ -49,9 +49,12 @@ export function ManageMetricCard({ label, value, detail, tone = "neutral", icon:
   return href ? <Link href={href} className={classes}>{content}</Link> : <div className={classes}>{content}</div>
 }
 
-export function ManageUsageMetric({ label, value, limit }: { label: string; value: number; limit: number | null }) {
-  const percent = limit && limit > 0 ? Math.min(100, Math.round(value / limit * 100)) : 0
-  return <div className="min-w-0 p-3 sm:p-4"><div className="flex items-baseline justify-between gap-2"><p className="truncate text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">{label}</p><p className="shrink-0 text-lg font-bold tabular-nums text-slate-950 dark:text-white">{value}{limit !== null ? ` / ${limit}` : ""}</p></div>{limit !== null && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"><div className={cn("h-full rounded-full", percent >= 100 ? "bg-rose-500" : percent >= 80 ? "bg-amber-500" : "bg-violet-600")} style={{ width: `${percent}%` }} /></div>}</div>
+export function ManageUsageMetric({ label, value, limit }: { label: string; value: number | undefined; limit: number | null | undefined }) {
+  const configured = limit !== undefined
+  const available = typeof value === "number"
+  const percent = available && typeof limit === "number" && limit > 0 ? Math.min(100, Math.round(value / limit * 100)) : 0
+  const valueLabel = !available ? "—" : !configured ? `${value} / —` : limit === null ? `${value} / Unlimited` : `${value} / ${limit}`
+  return <div className="min-w-0 p-3 sm:p-4"><div className="flex items-baseline justify-between gap-2"><p className="truncate text-[11px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">{label}</p><p className="shrink-0 text-lg font-bold tabular-nums text-slate-950 dark:text-white">{valueLabel}</p></div>{available && typeof limit === "number" && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10"><div className={cn("h-full rounded-full", percent >= 100 ? "bg-rose-500" : percent >= 80 ? "bg-amber-500" : "bg-violet-600")} style={{ width: `${percent}%` }} /></div>}</div>
 }
 
 export function ManageSection({ title, description, action, children, className }: { title: string; description?: string; action?: React.ReactNode; children: React.ReactNode; className?: string }) {

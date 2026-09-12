@@ -1413,6 +1413,7 @@ export type Database = {
           invitation_id: string
         }[]
       }
+      get_core_default_plan_key: { Args: never; Returns: string }
       get_core_schema_metadata: {
         Args: never
         Returns: {
@@ -1457,6 +1458,25 @@ export type Database = {
       is_workspace_member: {
         Args: { target_user_id?: string; target_workspace_id: string }
         Returns: boolean
+      }
+      lock_workspace_entitlement: {
+        Args: { target_capability: string; target_workspace_id: string }
+        Returns: {
+          capability_configured: boolean
+          feature_enabled: boolean
+          limit_value: number | null
+          plan_key: string
+          unlimited: boolean
+        }[]
+      }
+      renew_workspace_invitation: {
+        Args: { target_invitation_id: string; target_token_hash: string }
+        Returns: {
+          email: string
+          expires_at: string
+          invitation_id: string
+          role: string
+        }[]
       }
       record_billing_mutation_transition: {
         Args: {

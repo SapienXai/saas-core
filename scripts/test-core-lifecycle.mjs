@@ -9,7 +9,10 @@ const root = process.cwd()
 const cli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const source = path.join(root, "packages/app/template")
 const LEGACY_VERSION = "2.1.0"
-const billingMigration = "supabase/migrations/20260909094344_reusable_billing_persistence.sql"
+const billingMigrations = [
+  "supabase/migrations/20260909094344_reusable_billing_persistence.sql",
+  "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
+]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
 const fixture = await fsTemp("saas-core-lifecycle-")
@@ -61,7 +64,7 @@ try {
     "lib/agent-surface/webmcp.ts",
   ]
   const billingManagedFiles = [
-    billingMigration,
+    ...billingMigrations,
     "app/api/billing/paddle/webhook/route.ts",
     "app/api/cron/billing/lifecycle/route.ts",
     "app/manage/plan/actions.ts",
@@ -214,7 +217,7 @@ try {
   result = run(coreB, ["update", cleanProduct, "--dry-run", "--json"])
   assert(result.status === 0, result.stderr || "dry-run failed")
   const dryRun = JSON.parse(result.stdout)
-  assert(dryRun.updated.includes("app/error.tsx") && dryRun.updated.includes("package.json") && dryRun.added.includes("app/core-lifecycle-fixture.ts") && dryRun.added.includes(billingMigration) && dryRun.removed.includes("app/robots.ts"), "dry-run did not report changed/added/removed managed files, billing migration, and package drift")
+  assert(dryRun.updated.includes("app/error.tsx") && dryRun.updated.includes("package.json") && dryRun.added.includes("app/core-lifecycle-fixture.ts") && billingMigrations.every((migration) => dryRun.added.includes(migration)) && dryRun.removed.includes("app/robots.ts"), "dry-run did not report changed/added/removed managed files, billing migrations, and package drift")
   result = run(coreB, ["update", cleanProduct, "--json"])
   assert(result.status === 0, `${result.stderr || result.stdout || "clean update failed"}`)
   const cleanReport = JSON.parse(result.stdout)
@@ -228,7 +231,7 @@ try {
   result = run(coreA, ["init", "Lifecycle Conflict", conflictProduct])
   assert(result.status === 0, result.stderr || "conflict init failed")
   const conflictFile = path.join(conflictProduct, "app/error.tsx")
-  const conflictMigrationFile = path.join(conflictProduct, billingMigration)
+  const conflictMigrationFile = path.join(conflictProduct, billingMigrations[0])
   await mkdir(path.dirname(conflictMigrationFile), { recursive: true })
   const conflictMigrationContent = "-- locally supplied migration with the same Core path\n"
   await writeFile(conflictMigrationFile, conflictMigrationContent, "utf8")
@@ -241,7 +244,7 @@ try {
   assert(result.status === 2, "managed modification did not produce an update conflict")
   const conflictReport = JSON.parse(result.stdout)
   assert(conflictReport.conflicts.includes("app/error.tsx"), "conflict report omitted modified managed file")
-  assert(conflictReport.conflicts.includes(billingMigration), "conflict report omitted same-path Core migration")
+  assert(conflictReport.conflicts.includes(billingMigrations[0]), "conflict report omitted same-path Core migration")
   assert((await readFile(conflictFile, "utf8")) === localContent, "conflicting managed file was overwritten")
   assert((await readFile(conflictMigrationFile, "utf8")) === conflictMigrationContent, "same-path Core migration conflict was overwritten")
   assert((await readFile(path.join(conflictProduct, "app/robots.ts"), "utf8")) === conflictRobotsBefore, "conflict update partially removed an unrelated managed file")
@@ -262,7 +265,7 @@ try {
   assert((await readFile(path.join(rollbackProduct, "package.json"), "utf8")) === rollbackPackageBefore, "rollback did not restore package.json")
   assert((await readFile(path.join(rollbackProduct, ".saas-core-manifest.json"), "utf8")) === rollbackManifestBefore, "rollback did not restore the manifest")
   assert(!existsSync(path.join(rollbackProduct, "app/core-lifecycle-fixture.ts")), "rollback left a newly added Core file behind")
-  assert(!existsSync(path.join(rollbackProduct, billingMigration)), "rollback left the newly added reusable billing migration behind")
+  assert(billingMigrations.every((migration) => !existsSync(path.join(rollbackProduct, migration))), "rollback left a newly added reusable billing migration behind")
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
   assert(result.status !== 0 && result.stdout.includes("Required reusable billing migration source is missing"), "doctor did not expose the missing migration source after rollback")
 

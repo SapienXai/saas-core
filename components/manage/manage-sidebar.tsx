@@ -35,7 +35,7 @@ type SidebarNavigationItem = {
 type SidebarUsageItem = {
   label: string
   used: number
-  limit: number | null
+  limit: number | null | undefined
 }
 
 type BillingSidebarPresentation = {
@@ -78,15 +78,15 @@ function SidebarUsageBars({ items }: { items: SidebarUsageItem[] }) {
   return (
     <div className="grid grid-cols-2 gap-x-2.5 gap-y-1.5">
       {items.map((item) => {
-        const percent = item.limit === null ? 0 : Math.min(100, (item.used / Math.max(item.limit, 1)) * 100)
+        const percent = typeof item.limit === "number" ? Math.min(100, (item.used / Math.max(item.limit, 1)) * 100) : 0
         return (
           <div key={item.label} className="min-w-0">
             <div className="flex items-center justify-between gap-1 text-[10px] leading-none">
               <span className="min-w-0 truncate font-medium text-slate-500 dark:text-slate-400">{item.label}</span>
-              <span className="shrink-0 font-bold tabular-nums text-slate-700 dark:text-slate-200">{item.used}/{item.limit === null ? "∞" : item.limit}</span>
+              <span className="shrink-0 font-bold tabular-nums text-slate-700 dark:text-slate-200">{item.used}/{item.limit === undefined ? "—" : item.limit === null ? "∞" : item.limit}</span>
             </div>
             <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10" aria-hidden="true">
-              <div className="h-full rounded-full bg-violet-500 transition-[width]" style={{ width: item.limit === null ? "8%" : `${percent}%` }} />
+              <div className="h-full rounded-full bg-violet-500 transition-[width]" style={{ width: item.limit === null ? "8%" : typeof item.limit === "number" ? `${percent}%` : "0%" }} />
             </div>
           </div>
         )
@@ -132,8 +132,8 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const workspaceLimits = currentWorkspace?.plan?.limits
   const usageItems: SidebarUsageItem[] = workspaceUsage && workspaceLimits
     ? [
-        { label: getTranslation("manage.planUsage.workspaces"), used: workspaceUsage.workspaces, limit: workspaceLimits["core.workspaces"] ?? null },
-        { label: getTranslation("manage.planUsage.teamMembers"), used: workspaceUsage.users, limit: workspaceLimits["core.members"] ?? null },
+        { label: getTranslation("manage.planUsage.workspaces"), used: workspaceUsage.workspaces, limit: workspaceLimits["core.workspaces"] },
+        { label: getTranslation("manage.planUsage.teamMembers"), used: workspaceUsage.users, limit: workspaceLimits["core.members"] },
       ]
     : []
   const hasWorkspaceUsage = usageItems.length > 0
@@ -491,7 +491,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
         currentWorkspaceName={currentWorkspace?.workspace?.name}
         currentWorkspaceId={currentWorkspace?.id}
         ownedWorkspaceId={ownedWorkspaceId}
-        workspaceLimit={typeof currentWorkspace?.plan?.limits?.["core.workspaces"] === "number" ? currentWorkspace.plan.limits["core.workspaces"] : null}
+        workspaceLimit={currentWorkspace?.plan?.limits && Object.prototype.hasOwnProperty.call(currentWorkspace.plan.limits, "core.workspaces") ? currentWorkspace.plan.limits["core.workspaces"] : undefined}
       />
     </>
   )

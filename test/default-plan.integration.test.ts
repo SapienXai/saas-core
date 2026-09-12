@@ -40,7 +40,7 @@ integration("configured product default plan", () => {
 
   afterAll(async () => {
     for (const id of workspaceIds) await service!.from("workspaces").delete().eq("id", id)
-    await sync("core-test", [{ key: "core-test", name: "Core test", sort_order: 10, active: true, features: { team: true }, limits: { "core.workspaces": 2 }, metadata: { fixture: true } }])
+    await sync("core-test", [{ key: "core-test", name: "Core test", sort_order: 10, active: true, features: { team: true }, limits: { "core.workspaces": 2, "core.members": 10 }, metadata: { fixture: true } }])
     if (owner?.id) await service!.auth.admin.deleteUser(owner.id)
   })
 

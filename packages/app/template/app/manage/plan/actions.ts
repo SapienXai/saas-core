@@ -8,7 +8,7 @@ import { getWorkspaceEntitlements, getWorkspaceUsage } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import type { Json } from "@/types/supabase"
 import { applyPaddleSubscriptionEvent } from "@/lib/billing/webhook"
-import { getConfiguredDefaultPlanKey, isTerminalBillingSubscription } from "@/lib/billing/reconciliation"
+import { getConfiguredDefaultPlanKey, getConfiguredFallbackPlanKey, isTerminalBillingSubscription } from "@/lib/billing/reconciliation"
 import { consumeBillingTransition, recordBillingMutationTransition, updateBillingMutationTransition } from "@/lib/billing/persistence"
 import type { BillingTransitionKind } from "@sapienx/saas-core"
 
@@ -66,13 +66,50 @@ async function getCurrentBillingSubscription(workspaceId: string): Promise<Subsc
     .from("workspace_subscriptions")
     .select("workspace_id, plan_key, status, source, current_period_start, current_period_end, current_period_start_at, current_period_end_at, cancel_at_period_end, provider, provider_environment, provider_customer_id, provider_subscription_id, provider_price_id, provider_status, billing_interval, billing_currency, last_provider_event_at, next_billed_at, scheduled_change_at, scheduled_change_action, scheduled_effective_at, scheduled_plan_key, scheduled_plan_at, scheduled_plan_interval, scheduled_provider_price_id, billing_issue_code, payment_failure_started_at, payment_grace_ends_at")
     .eq("workspace_id", workspaceId)
-    .single()
+    .maybeSingle()
   if (error?.code === "42703") {
-    const legacy = await supabase.from("workspace_subscriptions").select("workspace_id, plan_key, status, source, current_period_start, current_period_end, cancel_at_period_end, provider, provider_environment, provider_customer_id, provider_subscription_id, provider_price_id, provider_status, last_provider_event_at, next_billed_at, scheduled_change_at, scheduled_change_action, scheduled_plan_key, scheduled_plan_at, billing_issue_code").eq("workspace_id", workspaceId).single()
+    const legacy = await supabase.from("workspace_subscriptions").select("workspace_id, plan_key, status, source, current_period_start, current_period_end, cancel_at_period_end, provider, provider_environment, provider_customer_id, provider_subscription_id, provider_price_id, provider_status, last_provider_event_at, next_billed_at, scheduled_change_at, scheduled_change_action, scheduled_plan_key, scheduled_plan_at, billing_issue_code").eq("workspace_id", workspaceId).maybeSingle()
     data = legacy.data ? { ...legacy.data, current_period_start_at: null, current_period_end_at: null, scheduled_effective_at: null, scheduled_plan_interval: null, scheduled_provider_price_id: null, billing_interval: null, billing_currency: null, payment_failure_started_at: null, payment_grace_ends_at: null } : null
     error = legacy.error
   }
-  if (error || !data) throw new Error(error?.message || "Workspace subscription could not be loaded.")
+  if (error) throw new Error(error.message)
+  if (!data) {
+    // The baseline trigger normally creates this row. Keep an old or partially
+    // migrated workspace on the configured fallback instead of treating a
+    // missing subscription as a paid or unrestricted state.
+    const fallbackPlanKey = await getConfiguredFallbackPlanKey(supabase)
+    return {
+      workspace_id: workspaceId,
+      plan_key: fallbackPlanKey,
+      status: "active",
+      source: "system",
+      current_period_start: null,
+      current_period_end: null,
+      current_period_start_at: null,
+      current_period_end_at: null,
+      cancel_at_period_end: false,
+      provider: null,
+      provider_environment: null,
+      provider_customer_id: null,
+      provider_subscription_id: null,
+      provider_price_id: null,
+      provider_status: null,
+      billing_interval: null,
+      billing_currency: null,
+      last_provider_event_at: null,
+      next_billed_at: null,
+      scheduled_change_at: null,
+      scheduled_change_action: null,
+      scheduled_effective_at: null,
+      scheduled_plan_key: null,
+      scheduled_plan_at: null,
+      scheduled_plan_interval: null,
+      scheduled_provider_price_id: null,
+      billing_issue_code: null,
+      payment_failure_started_at: null,
+      payment_grace_ends_at: null,
+    }
+  }
   return data
 }
 

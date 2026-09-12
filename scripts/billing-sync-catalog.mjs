@@ -43,6 +43,7 @@ function normalizeCatalog(value) {
     if (typeof plan.name !== "string" || !plan.name.trim()) fail(`Plan ${plan.key} must have a display name.`)
     if (plan.features !== undefined && !isObject(plan.features)) fail(`Plan ${plan.key} features must be an object.`)
     if (plan.limits !== undefined && !isObject(plan.limits)) fail(`Plan ${plan.key} limits must be an object.`)
+    if (plan.recommended !== undefined && typeof plan.recommended !== "boolean") fail(`Plan ${plan.key} recommended must be a boolean.`)
     keys.add(plan.key)
     const prices = normalizePrices(plan.prices)
     return {
@@ -54,6 +55,7 @@ function normalizeCatalog(value) {
       limits: plan.limits || {},
       metadata: {
         ...(isObject(plan.metadata) ? plan.metadata : {}),
+        ...(plan.recommended === undefined ? {} : { recommended: plan.recommended }),
         ...(Object.keys(prices).length ? { pricing: prices } : {}),
       },
     }

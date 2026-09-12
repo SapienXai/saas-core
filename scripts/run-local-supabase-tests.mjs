@@ -19,7 +19,7 @@ if (!/^https?:\/\/(127\.0\.0\.1|localhost):55621$/.test(status.API_URL ?? "")) {
 
 const environment = createLocalSupabaseEnvironment(process.env, status)
 
-const result = spawnSync("./node_modules/.bin/vitest", ["run", "--no-file-parallelism", "test/billing-persistence.integration.test.ts", "test/core-rls.integration.test.ts", "test/default-plan.integration.test.ts", "test/initial-workspace.integration.test.ts", "test/public-workspace.integration.test.ts"], {
+const result = spawnSync("./node_modules/.bin/vitest", ["run", "--no-file-parallelism", "test/billing-persistence.integration.test.ts", "test/core-rls.integration.test.ts", "test/default-plan.integration.test.ts", "test/entitlement-lock.integration.test.ts", "test/initial-workspace.integration.test.ts", "test/public-workspace.integration.test.ts"], {
   stdio: "inherit",
   env: environment,
 })

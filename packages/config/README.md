@@ -2,11 +2,9 @@
 
 Part of the coordinated SaaS Core `2.2.1` runtime/package release; Core schema
 compatibility coordinate remains `2.0`. The release's additive, Core-managed
-migration source is
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql`, carried
-by the application template and CLI. This package defines product
-configuration and does not execute SQL; consumers apply and verify the source
-through their own controlled migration process.
+billing migration sources are carried by the application template and CLI.
+This package defines product configuration and does not execute SQL; consumers
+apply and verify the sources through their own controlled migration process.
 
 The typed product-owned identity and commercial boundary: name, slug, branding,
 navigation, capabilities, plan catalog, feature keys, and usage metrics.
