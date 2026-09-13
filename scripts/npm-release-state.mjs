@@ -45,14 +45,45 @@ function parseDistribution(stdout) {
   return value?.dist && typeof value.dist === "object" ? value.dist : value
 }
 
+function inspectVersionEndpoint(packageName, version) {
+  if (npmCommand !== "npm" || !/^https:\/\/registry\.npmjs\.org\/?$/.test(registry)) return null
+
+  const base = registry.endsWith("/") ? registry : `${registry}/`
+  const marker = "__SAAS_CORE_HTTP_STATUS__"
+  const url = `${base}${encodeURIComponent(packageName)}/${encodeURIComponent(version)}?release_check=${Date.now()}`
+  const result = spawnSync("curl", ["--silent", "--show-error", "--location", "--max-time", "20", "--write-out", `\n${marker}%{http_code}`, url], { encoding: "utf8" })
+  const output = result.stdout || ""
+  const markerIndex = output.lastIndexOf(`\n${marker}`)
+
+  if (result.error || markerIndex < 0) {
+    return { state: RELEASE_STATES.INDETERMINATE, reason: "Registry cache-bypass verification could not complete." }
+  }
+
+  const status = Number(output.slice(markerIndex + marker.length + 1))
+  const body = output.slice(0, markerIndex)
+  if (status === 404) return { state: RELEASE_STATES.ABSENT }
+  if (!Number.isInteger(status) || status < 200 || status >= 300) {
+    return { state: RELEASE_STATES.INDETERMINATE, reason: `Registry cache-bypass verification returned HTTP ${status || "unknown"}.` }
+  }
+
+  return { state: "PRESENT", stdout: body }
+}
+
 export function inspectPackage(packageName, version = expectedVersion) {
   const artifact = artifactPath(packageName, version)
   const local = artifactIdentity(artifact)
   const spec = `${packageName}@${version}`
-  const result = spawnSync(npmCommand, ["view", spec, "dist", "--json", "--registry", registry], { encoding: "utf8" })
+  let result = spawnSync(npmCommand, ["view", spec, "dist", "--json", "--registry", registry], { encoding: "utf8" })
 
   if (isNotFound(result)) {
-    return { packageName, version, artifact, state: RELEASE_STATES.ABSENT, local, registry: null }
+    const cacheBusted = inspectVersionEndpoint(packageName, version)
+    if (!cacheBusted || cacheBusted.state === RELEASE_STATES.ABSENT) {
+      return { packageName, version, artifact, state: RELEASE_STATES.ABSENT, local, registry: null }
+    }
+    if (cacheBusted.state === RELEASE_STATES.INDETERMINATE) {
+      return { packageName, version, artifact, state: RELEASE_STATES.INDETERMINATE, local, registry: null, reason: cacheBusted.reason }
+    }
+    result = { status: 0, stdout: cacheBusted.stdout, stderr: "" }
   }
 
   if (result.status !== 0) {
