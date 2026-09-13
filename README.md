@@ -1,4 +1,4 @@
-# SaaS Core 2.2
+# SaaS Core 2.3
 
 SaaS Core is infrastructure for workspace-based products. This repository is
 a clean extraction from the production ReserveVia foundations: the proven
@@ -6,16 +6,17 @@ authentication, management shell, workspace boundary, billing, domains, PWA,
 operator control plane, and interaction system remain; the restaurant and
 reservation product domain does not.
 
-The current Core runtime and coordinated package release is `2.2.1`. The Core
+The current Core runtime and coordinated package release is `2.3.0`. The Core
 schema compatibility coordinate remains `2.0`, and this release delivers the
-additive, Core-managed migration source
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql` in the
-repository and canonical application template. Package packing and the CLI
-deliver that source to consumers; `init` and `update` never execute SQL. Each
-consumer owns the controlled apply and verification workstream. The release
-boundary and its validation evidence are recorded in
-[docs/RELEASE-2.2.1.md](docs/RELEASE-2.2.1.md). The previous local `2.2.0`
-boundary remains documented in [docs/RELEASE-2.2.md](docs/RELEASE-2.2.md).
+additive, Core-managed migration sources
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` in
+the repository and canonical application template. Package packing and the
+CLI deliver those sources to consumers; `init` and `update` never execute SQL.
+Each consumer owns the controlled apply and verification workstream. The
+release boundary and its validation evidence are recorded in
+[docs/RELEASE-2.3.0.md](docs/RELEASE-2.3.0.md). The previous coordinated
+`2.2.1` boundary remains documented in [docs/RELEASE-2.2.1.md](docs/RELEASE-2.2.1.md).
 
 The governing model is:
 
@@ -174,11 +175,12 @@ default-plan setting. `bootstrap_initial_workspace` never guesses a plan from
 sort order; catalog synchronization must first persist an explicit active
 `defaultPlanKey`.
 
-The additive, provider-neutral billing persistence source is
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql`. It is
-Core-managed and is shipped from the repository root and
-`packages/app/template`; `@sapienx/saas-core-app` and the packed CLI carry it
-through `init` and `update`. Those commands copy and hash the source for the
+The additive, provider-neutral billing and entitlement sources are
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`.
+They are Core-managed and shipped from the repository root and
+`packages/app/template`; `@sapienx/saas-core-app` and the packed CLI carry them
+through `init` and `update`. Those commands copy and hash the sources for the
 consumer manifest but never apply SQL. A consumer must run its own controlled
 migration process and verify the result. Product-owned migrations under
 `supabase/migrations/product/**` remain outside the managed set and survive
@@ -297,7 +299,7 @@ plans completely before mutation, blocks on modified managed files, creates a
 self-contained backup, validates, and rolls back the consumer automatically if
 apply or validation fails. Rollback restores metadata and replaced files and
 removes newly added Core files, including the billing migration. The controlled
-`2.2.0` → `2.2.1` consumer proof covers packed exports, managed billing delivery,
+`2.2.0` → `2.3.0` consumer proof covers packed exports, managed billing delivery,
 product-owned preservation, relocation, and a second frozen install/build.
 
 Generated consumers use `@sapienx/saas-core`, `@sapienx/saas-core-config`, and
@@ -312,8 +314,8 @@ consumer, install the runtime packages and CLI from npm, then initialize the
 application from the packed template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.2.1 @sapienx/saas-core-config@^2.2.1 @sapienx/saas-core-ui@^2.2.1
-pnpm add -D @sapienx/saas-core-cli@^2.2.1
+pnpm add @sapienx/saas-core@^2.3.0 @sapienx/saas-core-config@^2.3.0 @sapienx/saas-core-ui@^2.3.0
+pnpm add -D @sapienx/saas-core-cli@^2.3.0
 pnpm exec saas-core init "My Product" ./my-product
 pnpm install --dir ./my-product
 ```

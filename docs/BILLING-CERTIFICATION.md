@@ -1,15 +1,16 @@
 # Reusable billing certification
 
 This document records the local release-boundary review for the coordinated
-SaaS Core runtime/package release `2.2.1` and Core schema compatibility
+SaaS Core runtime/package release `2.3.0` and Core schema compatibility
 coordinate `2.0`. The release delivers the additive, Core-managed migration
-source `supabase/migrations/20260909094344_reusable_billing_persistence.sql`
+sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`
+and `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`
 from both the repository root and the canonical application template. It
 certifies the packed Core contract, reusable billing boundary, and managed-
-template lifecycle proof, including the controlled `2.2.0` → `2.2.1` upgrade.
+template lifecycle proof, including the controlled `2.2.0` → `2.3.0` upgrade.
 It does not certify either consumer's migration apply/verification or a live
-payment rollout. The release overview is [RELEASE-2.2.1.md](./RELEASE-2.2.1.md);
-the previous local boundary remains in [RELEASE-2.2.md](./RELEASE-2.2.md).
+payment rollout. The release overview is [RELEASE-2.3.0.md](./RELEASE-2.3.0.md);
+the previous coordinated boundary remains in [RELEASE-2.2.1.md](./RELEASE-2.2.1.md).
 
 The audited reference commits are ReserveVia
 `92ffa98dd22e785d90959b292c341de1e57e6873` (`fix(ui): streamline public brand
@@ -24,8 +25,9 @@ later product-owned working-tree changes, which are outside this certification.
 ### 1. What does Core own?
 
 Core owns the provider-neutral billing contract, runtime and schema
-compatibility coordinates, the additive migration source
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
+compatibility coordinates, the additive migration sources
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
 workspace-scoped provider mapping, checkout and mutation journal boundaries,
 verified webhook projection, reconciliation, past-due grace and effective-plan
 policy, generic entitlements, billing actions, and the managed plan and
@@ -70,26 +72,28 @@ checkout engine is not part of the integration.
 
 ### 4. How are package and schema compatibility handled?
 
-The current coordinates are runtime `2.2.1` and schema compatibility coordinate
+The current coordinates are runtime `2.3.0` and schema compatibility coordinate
 `2.0`. All five Core packages use the runtime coordinate, while the CLI is a
 tooling dependency and the application package is the template carrier for the
-managed migration source. Package packing and CLI `init`/`update` deliver
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql` as source
-and never execute SQL. The consumer owns migration ordering, application, and
-database verification. `doctor` reports source readiness, consumer presence
+managed migration sources. Package packing and CLI `init`/`update` deliver
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` as
+source and never execute SQL. The consumer owns migration ordering,
+application, and database verification. `doctor` reports source readiness, consumer presence
 and hash readiness, and manifest ownership/readiness separately; its database
 metadata check runs only with server credentials. Missing credentials produce a
 database warning, while missing or changed source, consumer, or manifest state
 produces an error. `diff` reports runtime movement separately from schema
 movement; the controlled legacy fixture upgrades package versions and runtime
-metadata from `2.2.0` to `2.2.1` while keeping compatibility coordinate `2.0`.
+metadata from `2.2.0` to `2.3.0` while keeping compatibility coordinate `2.0`.
 The updater does not rewrite consumer lockfiles or apply SQL.
 
 ### 5. How do managed ownership and conflicts work?
 
 The CLI records hashes for Core-managed template files and product-owned path
-boundaries in `.saas-core-manifest.json`. The billing source at
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql` is
+boundaries in `.saas-core-manifest.json`. The billing sources at
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` are
 Core-managed; product catalogs, styles, routes, migrations under
 `supabase/migrations/product/**`, and domain files are excluded from managed
 replacement. An untouched managed file is backed up and updated. A locally
@@ -108,7 +112,7 @@ policy, durable webhook leases and retry states, unknown outcomes, and
 exactly-once transition consumption. The catalog and schema-doctor fixtures
 exercise explicit defaults, product keys, usage metrics, RLS metadata, and
 schema mismatch handling. `core:pack` builds and packs the Core, config, UI,
-app, and CLI artifacts, carrying the Core-managed billing migration source.
+app, and CLI artifacts, carrying the Core-managed billing migration sources.
 `core:consumer-proof` installs those tarballs through a disposable local
 registry as a deterministic packaging proof (published consumers use the same
 immutable coordinates from npm), executes packed billing exports and config validation, initializes a
