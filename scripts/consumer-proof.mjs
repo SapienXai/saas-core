@@ -43,6 +43,58 @@ function removeBuildOutputs(directory) {
   for (const name of [".next", ".next-e2e"]) rmSync(path.join(directory, name), { recursive: true, force: true })
 }
 
+function isRunning(child) {
+  return child.exitCode === null && child.signalCode === null
+}
+
+function signalProcessTree(child, signal) {
+  if (!child.pid || !isRunning(child)) return
+
+  if (process.platform === "win32") {
+    const result = spawnSync("taskkill", ["/pid", String(child.pid), "/t", "/f"], { stdio: "ignore" })
+    if (result.status !== 0 && isRunning(child)) {
+      try {
+        child.kill(signal)
+      } catch {
+        // The process may have exited between taskkill and the fallback.
+      }
+    }
+    return
+  }
+
+  try {
+    process.kill(-child.pid, signal)
+  } catch (error) {
+    if (error?.code !== "ESRCH") {
+      try {
+        child.kill(signal)
+      } catch {
+        // The process may have exited between the group and child signals.
+      }
+    }
+  }
+}
+
+async function stopProcessTree(child) {
+  if (!isRunning(child)) {
+    child.stdout?.destroy()
+    child.stderr?.destroy()
+    return
+  }
+
+  const closed = new Promise((resolve) => child.once("close", resolve))
+  signalProcessTree(child, "SIGTERM")
+  await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 5_000))])
+
+  if (isRunning(child)) {
+    signalProcessTree(child, "SIGKILL")
+    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 5_000))])
+  }
+
+  child.stdout?.destroy()
+  child.stderr?.destroy()
+}
+
 function downgradeToLegacyConsumer(directory, agentSurfaceFiles) {
   const packageFile = path.join(directory, "package.json")
   const packageJson = JSON.parse(readFileSync(packageFile, "utf8"))
@@ -181,7 +233,7 @@ async function bootAndSmoke(cwd, port, configured = false, supabaseEnvironment =
   const diagnostics = []
   let browserShell = false
   const serverArgs = configured && supabaseEnvironment ? ["run", "dev", "--", "--port", String(port)] : ["run", "start", "--", "-p", String(port)]
-  const server = spawn("npm", serverArgs, { cwd, env: { ...npmEnvironment, ...(supabaseEnvironment || {}) }, stdio: ["ignore", "pipe", "pipe"] })
+  const server = spawn("npm", serverArgs, { cwd, env: { ...npmEnvironment, ...(supabaseEnvironment || {}) }, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" })
   server.stdout.on("data", (chunk) => diagnostics.push(String(chunk)))
   server.stderr.on("data", (chunk) => diagnostics.push(String(chunk)))
   try {
@@ -207,7 +259,7 @@ async function bootAndSmoke(cwd, port, configured = false, supabaseEnvironment =
     else if (configured) console.warn("Configured-shell browser proof skipped: the isolated local Supabase project is not running.")
     return browserShell
   } finally {
-    server.kill("SIGTERM")
+    await stopProcessTree(server)
   }
 }
 
