@@ -18,6 +18,12 @@ and certification boundary are recorded in
 [`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md) and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
+The managed entitlement runtime imports the product-owned server extension
+`src/product/usage.ts`. Fresh consumers receive a neutral resolver registry;
+updates preserve an existing registry and scaffold it only when a legacy
+consumer does not have the file. The extension is not a Core-managed manifest
+file and is never overwritten by an update.
+
 ## Core/product ownership
 
 Keep Core-owned files and product-owned files separate. A normal product
@@ -163,6 +169,13 @@ product-owned. CLI `init`/`update` and package packing deliver migration source
 only; the consumer controls ordering, SQL application, verification, and any
 rollback of its database state. Never point a clean Core reset at a live
 ReserveVia database, and never rewrite the source product's migration history.
+
+The additive `20260914110000_fix_renew_workspace_invitation.sql` migration is
+delivered by the next coordinated Core update. It replaces the published
+invitation-renewal function in place with qualified `RETURNING` columns, keeps
+the existing RPC grants and behavior, and remains compatible with schema
+coordinate `2.0`. It is source delivery only; the consumer applies it in its
+normal migration workflow.
 
 For every schema update:
 

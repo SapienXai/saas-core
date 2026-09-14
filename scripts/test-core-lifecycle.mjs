@@ -9,10 +9,12 @@ const root = process.cwd()
 const cli = path.join(root, "packages/cli/bin/saas-core.mjs")
 const source = path.join(root, "packages/app/template")
 const LEGACY_VERSION = "2.1.0"
+const productUsageExtension = "src/product/usage.ts"
 const billingMigrations = [
   "supabase/migrations/20260909094344_reusable_billing_persistence.sql",
   "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
   "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
+  "supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
@@ -198,6 +200,14 @@ try {
   assert(result.status === 0, result.stderr || result.stdout || "legacy consumer update failed")
   assert(existsSync(path.join(legacyProduct, "lib/product-shell.ts")), "legacy update did not add the product shell resolver")
   assert((await readFile(legacyConfigFile, "utf8")) === legacyConfigBeforeUpdate, "legacy product config was overwritten during update")
+  await rm(path.join(legacyProduct, productUsageExtension), { force: true })
+  result = run(coreB, ["update", legacyProduct, "--dry-run", "--json"])
+  assert(result.status === 0, result.stderr || "legacy usage extension dry-run failed")
+  const legacyUsageDryRun = JSON.parse(result.stdout)
+  assert(legacyUsageDryRun.scaffolded?.includes(productUsageExtension), "legacy update did not plan the product usage extension scaffold")
+  result = run(coreB, ["update", legacyProduct, "--json"])
+  assert(result.status === 0, result.stderr || result.stdout || "legacy usage extension update failed")
+  assert(existsSync(path.join(legacyProduct, productUsageExtension)), "legacy update did not scaffold the product usage extension")
   const legacyManifest = JSON.parse(await readFile(path.join(legacyProduct, ".saas-core-manifest.json"), "utf8"))
   assert(legacyManifest.productOwnedPaths.includes("styles/product-theme.css"), "legacy update did not record the product theme boundary")
   result = run(coreB, ["doctor", legacyProduct, "--json"])
@@ -270,7 +280,7 @@ try {
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
   assert(result.status !== 0 && result.stdout.includes("Required reusable billing migration source is missing"), "doctor did not expose the missing migration source after rollback")
 
-  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, agentSurfaceUpdate: true, billingManagedUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
+  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, productUsageExtension: true, agentSurfaceUpdate: true, billingManagedUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
 } finally {
   await rm(fixture, { recursive: true, force: true })
 }

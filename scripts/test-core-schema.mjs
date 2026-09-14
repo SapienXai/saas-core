@@ -13,10 +13,14 @@ const templateEntitlementMigration = await readFile(path.join(root, "packages/ap
 const planCatalogMigrationPath = path.join(root, "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql")
 const planCatalogMigration = await readFile(planCatalogMigrationPath, "utf8")
 const templatePlanCatalogMigration = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260914100000_reusable_plan_catalog_management.sql"), "utf8")
+const invitationRenewalFixPath = path.join(root, "supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql")
+const invitationRenewalFix = await readFile(invitationRenewalFixPath, "utf8")
+const templateInvitationRenewalFix = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql"), "utf8")
 const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
 if (persistenceMigration !== templatePersistenceMigration) throw new Error("Root and template reusable billing migrations are not byte-for-byte identical.")
 if (entitlementMigration !== templateEntitlementMigration) throw new Error("Root and template entitlement enforcement migrations are not byte-for-byte identical.")
 if (planCatalogMigration !== templatePlanCatalogMigration) throw new Error("Root and template plan catalog migrations are not byte-for-byte identical.")
+if (invitationRenewalFix !== templateInvitationRenewalFix) throw new Error("Root and template invitation renewal fix migrations are not byte-for-byte identical.")
 const tables = [
   "plans", "workspaces", "workspace_members", "workspace_invitations", "workspace_subscriptions",
   "workspace_usage_periods", "billing_provider_prices", "billing_webhook_events", "billing_checkout_sessions",
@@ -132,6 +136,12 @@ if (!planCatalogMigration.includes("add column if not exists description") || !p
 }
 if (!planCatalogMigration.includes("before update on public.plans") || !planCatalogMigration.includes("revoke all on function private.guard_referenced_plan_change() from public, anon, authenticated")) {
   throw new Error("Plan catalog lifecycle guard is not attached or restricted to server-controlled execution.")
+}
+if (!invitationRenewalFix.includes("create or replace function public.renew_workspace_invitation(") || !invitationRenewalFix.includes("update public.workspace_invitations as invitation") || !invitationRenewalFix.includes("returning invitation.id, invitation.email, invitation.role, invitation.expires_at") || invitationRenewalFix.includes("returning id, email, role, expires_at into")) {
+  throw new Error("Invitation renewal fix is missing the qualified RETURNING contract.")
+}
+if (!invitationRenewalFix.includes("security definer") || !invitationRenewalFix.includes("set search_path = public, private") || !invitationRenewalFix.includes("revoke all on function public.renew_workspace_invitation(uuid, text) from public, anon, authenticated") || !invitationRenewalFix.includes("grant execute on function public.renew_workspace_invitation(uuid, text) to authenticated")) {
+  throw new Error("Invitation renewal fix weakened the existing security boundary.")
 }
 if (["rest" + "aurant", "reserv" + "ation", "seat" + "ing", "paddle"].some((term) => entitlementMigration.toLowerCase().includes(term))) {
   throw new Error("The reusable entitlement enforcement migration contains product/provider-specific vocabulary.")

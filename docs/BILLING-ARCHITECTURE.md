@@ -147,8 +147,10 @@ confirmation.
 ## Product integration boundary
 
 Products provide catalog definitions, prices, feature and limit keys, usage
-metrics, plan presentation, and domain-specific quota writes. Product server
-actions call `createEntitlementService()` and `assertCanConsume()` after
+metrics, the server-only `src/product/usage.ts` resolver registry, plan
+presentation, and domain-specific quota writes. The shared Plan action and
+`createEntitlementService()` compose that registry with Core's built-in
+workspace/member usage; product server actions call `assertCanConsume()` after
 resolving the authenticated Workspace. Core does not know what a product's
 Workspace contains and does not own product tables, domain entities, marketing
 copy, or metrics. For check-then-insert quotas, a product-owned transaction

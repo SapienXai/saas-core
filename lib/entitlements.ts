@@ -10,6 +10,7 @@ import {
 import { isPaymentGraceExpired } from "@/lib/billing/lifecycle"
 import { getConfiguredFallbackPlanKey } from "@/lib/billing/reconciliation"
 import { createServiceRoleClient } from "@/lib/supabase"
+import { getProductUsageResolvers } from "@/src/product/usage"
 
 /**
  * Entitlements are intentionally keyed strings. Core evaluates the contract;
@@ -151,7 +152,7 @@ export type UsageResolverMap = Readonly<Record<string, UsageResolver>>
 export type EntitlementResolutionOptions = {
   userId?: string
   usageResolvers?: UsageResolverMap
-  /** Require an explicit resolver or persisted counter for finite product quotas. */
+  /** Retained for compatibility; unknown usage is always unavailable by default. */
   requireAuthoritativeUsage?: boolean
   now?: Date
   requiredPlan?: PlanKey
@@ -617,8 +618,16 @@ export async function getLimit(workspaceId: string, limit: LimitKey): Promise<nu
 }
 
 function resolveOptions(userIdOrOptions?: string | EntitlementResolutionOptions, options: EntitlementResolutionOptions = {}) {
-  if (typeof userIdOrOptions === "string") return { ...options, userId: userIdOrOptions }
-  return { ...(userIdOrOptions || {}), ...options }
+  const resolved = typeof userIdOrOptions === "string"
+    ? { ...options, userId: userIdOrOptions }
+    : { ...(userIdOrOptions || {}), ...options }
+  const productResolvers = getProductUsageResolvers()
+  const explicitResolvers = resolved.usageResolvers || {}
+  const usageResolvers = Object.fromEntries([
+    ...Object.entries(productResolvers),
+    ...Object.entries(explicitResolvers),
+  ].filter(([, resolver]) => typeof resolver === "function")) as UsageResolverMap
+  return { ...resolved, usageResolvers }
 }
 
 function resolverResult(value: unknown, metric: string): number {
@@ -627,17 +636,6 @@ function resolverResult(value: unknown, metric: string): number {
 }
 
 async function resolveUsageMetric(workspaceId: string, metric: UsageMetric, userId: string | undefined, options: EntitlementResolutionOptions, workspace: any, service: any, now: Date, period: { start: string; end: string }) {
-  const resolver = options.usageResolvers?.[metric]
-  if (resolver) {
-    try {
-      return resolverResult(await resolver({ workspaceId, userId, periodStart: period.start, periodEnd: period.end, now, db: service }), metric)
-    } catch (error) {
-      if (error instanceof EntitlementError) throw error
-      console.error("Unable to resolve product usage:", { metric, code: "USAGE_RESOLVER_FAILED" })
-      throw new EntitlementError("USAGE_UNAVAILABLE", `Authoritative usage for ${metric} is unavailable.`)
-    }
-  }
-
   if (metric === "core.workspaces") {
     if (!workspace?.created_by) return 1
     const { count, error: countError } = await service.from("workspace_members").select("id", { count: "exact", head: true }).eq("user_id", workspace.created_by).eq("role", "owner")
@@ -652,12 +650,23 @@ async function resolveUsageMetric(workspaceId: string, metric: UsageMetric, user
     return (count || 0) + (pending || 0)
   }
 
+  const resolver = options.usageResolvers?.[metric]
+  if (resolver) {
+    try {
+      return resolverResult(await resolver({ workspaceId, userId, periodStart: period.start, periodEnd: period.end, now, db: service }), metric)
+    } catch (error) {
+      if (!(error instanceof EntitlementError && error.code === "USAGE_UNAVAILABLE")) {
+        console.error("Unable to resolve product usage:", { metric, code: "USAGE_RESOLVER_FAILED" })
+      }
+      throw new EntitlementError("USAGE_UNAVAILABLE", `Authoritative usage for ${metric} is unavailable.`)
+    }
+  }
+
   const { data, error } = await service.from("workspace_usage_periods").select("usage").eq("workspace_id", workspaceId).eq("period_start", period.start).eq("period_end", period.end).maybeSingle()
   if (error) throw new Error(error.message)
   const usage = normalizeUsage(data?.usage)
   if (Object.prototype.hasOwnProperty.call(usage, metric)) return usage[metric]
-  if (options.requireAuthoritativeUsage) throw new EntitlementError("USAGE_UNAVAILABLE", `Authoritative usage for ${metric} is unavailable.`)
-  return 0
+  throw new EntitlementError("USAGE_UNAVAILABLE", `Authoritative usage for ${metric} is unavailable.`)
 }
 
 export async function getUsage(workspaceId: string, metric: UsageMetric, userIdOrOptions?: string | EntitlementResolutionOptions, options: EntitlementResolutionOptions = {}) {
@@ -689,8 +698,18 @@ export const getWorkspaceUsage = cache(async function getWorkspaceUsage(workspac
   ])
   if (usageResult.error) throw new Error(usageResult.error.message)
   const metrics = normalizeUsage(usageResult.data?.usage)
-  const resolverEntries = await Promise.all(Object.keys(resolvedOptions.usageResolvers || {}).map(async (metric) => [metric, await getUsage(workspaceId, metric, resolvedOptions)] as const))
-  for (const [metric, value] of resolverEntries) metrics[metric] = value
+  const resolverEntries = await Promise.all(Object.keys(resolvedOptions.usageResolvers || {}).map(async (metric) => {
+    try {
+      return [metric, await getUsage(workspaceId, metric, resolvedOptions)] as const
+    } catch (error) {
+      if (error instanceof EntitlementError && error.code === "USAGE_UNAVAILABLE") {
+        console.error("Unable to resolve product usage for Plan presentation:", { metric, code: error.code })
+        return null
+      }
+      throw error
+    }
+  }))
+  for (const entry of resolverEntries) if (entry) metrics[entry[0]] = entry[1]
   metrics["core.workspaces"] = workspaces
   metrics["core.members"] = users
   return { workspaceId, periodStart: period.start, periodEnd: period.end, metrics, workspaces, users }
@@ -699,11 +718,11 @@ export const getWorkspaceUsage = cache(async function getWorkspaceUsage(workspac
 export async function getRemaining(workspaceId: string, limit: LimitKey, userIdOrOptions?: string | EntitlementResolutionOptions, options: EntitlementResolutionOptions = {}) {
   const resolvedOptions = resolveOptions(userIdOrOptions, options)
   const value = await getLimit(workspaceId, limit)
+  if (value === undefined) return undefined
   const usage = await getUsage(workspaceId, limit, {
     ...resolvedOptions,
-    requireAuthoritativeUsage: resolvedOptions.requireAuthoritativeUsage ?? (typeof value === "number" && !["core.workspaces", "core.members"].includes(limit)),
+    requireAuthoritativeUsage: resolvedOptions.requireAuthoritativeUsage ?? !["core.workspaces", "core.members"].includes(limit),
   })
-  if (value === undefined) return undefined
   return value === null ? null : Math.max(0, value - usage)
 }
 
@@ -712,7 +731,7 @@ export async function getUsageSnapshot(workspaceId: string, capability: string, 
   const limit = await getLimit(workspaceId, capability)
   const current = await getUsage(workspaceId, capability, {
     ...resolvedOptions,
-    requireAuthoritativeUsage: typeof limit === "number" && !["core.workspaces", "core.members"].includes(capability),
+    requireAuthoritativeUsage: !["core.workspaces", "core.members"].includes(capability),
   })
   return { capability, ...buildUsageSnapshot(current, limit) }
 }

@@ -53,6 +53,8 @@ if (planCatalogDoc !== readFileSync(path.join(root, "docs/PLAN-CATALOG.md"), "ut
 
 const managedPlanFiles = [
   "package/template/supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
+  "package/template/supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql",
+  "package/template/src/product/usage.ts",
   "package/template/app/platform/billing/actions.ts",
   "package/template/app/platform/billing/page.tsx",
   "package/template/components/platform/platform-plan-management.tsx",

@@ -11,6 +11,7 @@ import { applyPaddleSubscriptionEvent } from "@/lib/billing/webhook"
 import { getConfiguredDefaultPlanKey, getConfiguredFallbackPlanKey, isTerminalBillingSubscription } from "@/lib/billing/reconciliation"
 import { consumeBillingTransition, recordBillingMutationTransition, updateBillingMutationTransition } from "@/lib/billing/persistence"
 import type { BillingTransitionKind } from "@sapienx/saas-core"
+import { getProductUsageResolvers } from "@/src/product/usage"
 
 const CANCELLATION_REASONS = new Set(["too_expensive", "not_using", "seasonal", "missing_feature", "technical_problem", "switching_solution", "other"])
 
@@ -346,7 +347,7 @@ export async function getPlanUsage() {
     const [{ data: workspace, error: workspaceError }, entitlements, usage, subscription, plans] = await Promise.all([
       supabase.from("workspaces").select("id, name, slug").eq("id", membership.workspace_id).single(),
       getWorkspaceEntitlements(membership.workspace_id),
-      getWorkspaceUsage(membership.workspace_id),
+      getWorkspaceUsage(membership.workspace_id, { usageResolvers: getProductUsageResolvers() }),
       getCurrentBillingSubscription(membership.workspace_id),
       supabase.from("plans").select("key, name, sort_order, active, features, limits, metadata").eq("active", true).order("sort_order"),
     ])

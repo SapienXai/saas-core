@@ -60,7 +60,9 @@ describe("reusable billing UI", () => {
     expect(packageBilling).toContain("Limit unavailable")
     expect(packageBilling).toContain("/ Unlimited")
     expect(read("app/manage/plan/page.tsx")).toContain("usage.metrics[key] ?? undefined")
+    expect(read("app/manage/plan/actions.ts")).toContain("getProductUsageResolvers")
     expect(read("components/manage/manage-responsive.tsx")).toContain("value: number | undefined")
+    expect(read("src/product/usage.ts")).toContain('import "server-only"')
   })
 
   it("keeps source and template billing surfaces in parity", () => {
@@ -74,6 +76,7 @@ describe("reusable billing UI", () => {
       ["app/manage/plan/page.tsx", "packages/app/template/app/manage/plan/page.tsx"],
       ["app/platform/billing/page.tsx", "packages/app/template/app/platform/billing/page.tsx"],
       ["app/manage/plan/actions.ts", "packages/app/template/app/manage/plan/actions.ts"],
+      ["src/product/usage.ts", "packages/app/template/src/product/usage.ts"],
     ] as const
     for (const [sourcePath, templatePath] of pairs) expect(read(sourcePath), templatePath).toBe(read(templatePath))
     expect(read("packages/app/template/app/app/plan/page.tsx")).toContain('export { default } from "@/app/manage/plan/page"')

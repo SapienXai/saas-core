@@ -14,6 +14,7 @@ const billingMigrations = [
   "supabase/migrations/20260909094344_reusable_billing_persistence.sql",
   "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
   "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
+  "supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
@@ -187,18 +188,36 @@ async function configuredShellBrowserProof(port, supabaseEnvironment) {
   const service = createClient(supabaseEnvironment.SUPABASE_URL, supabaseEnvironment.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
   const password = "CoreConsumer!2026-password"
   const email = `consumer-shell-${Date.now()}-${process.pid}@example.test`
-  const created = await service.auth.admin.createUser({ email, password, email_confirm: true })
-  if (created.error || !created.data.user) throw created.error || new Error("Could not create the configured-shell consumer proof account.")
+  const proofPlanKey = `consumer_proof_${Date.now()}_${process.pid}`
+  let createdUserId = ""
   let workspaceId = ""
-  const client = createClient(supabaseEnvironment.SUPABASE_URL, supabaseEnvironment.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
-  const session = await client.auth.signInWithPassword({ email, password })
-  if (session.error) throw session.error
-  const bootstrap = await client.rpc("bootstrap_initial_workspace", { target_workspace_name: "Projects Shell Proof", target_workspace_slug: `projects-shell-${Date.now()}` })
-  if (bootstrap.error || !bootstrap.data?.[0]) throw bootstrap.error || new Error("Could not bootstrap the configured-shell consumer workspace.")
-  workspaceId = bootstrap.data[0].workspace_id
-  await client.auth.signOut()
-  const browser = await chromium.launch({ headless: true })
+  let proofPlanCreated = false
+  let browser = null
   try {
+    const created = await service.auth.admin.createUser({ email, password, email_confirm: true })
+    if (created.error || !created.data.user) throw created.error || new Error("Could not create the configured-shell consumer proof account.")
+    createdUserId = created.data.user.id
+    const client = createClient(supabaseEnvironment.SUPABASE_URL, supabaseEnvironment.NEXT_PUBLIC_SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+    const session = await client.auth.signInWithPassword({ email, password })
+    if (session.error) throw session.error
+    const bootstrap = await client.rpc("bootstrap_initial_workspace", { target_workspace_name: "Projects Shell Proof", target_workspace_slug: `projects-shell-${Date.now()}` })
+    if (bootstrap.error || !bootstrap.data?.[0]) throw bootstrap.error || new Error("Could not bootstrap the configured-shell consumer workspace.")
+    workspaceId = bootstrap.data[0].workspace_id
+    await client.auth.signOut()
+    const insertedPlan = await service.from("plans").insert({
+      key: proofPlanKey,
+      name: "Consumer proof",
+      sort_order: 999,
+      active: true,
+      features: {},
+      limits: { "core.workspaces": 1, "core.members": null, locations: 2, unknown_locations: 2 },
+      metadata: { fixture: true },
+    })
+    if (insertedPlan.error) throw insertedPlan.error
+    proofPlanCreated = true
+    const updatedSubscription = await service.from("workspace_subscriptions").update({ plan_key: proofPlanKey, source: "manual" }).eq("workspace_id", workspaceId).select("plan_key, source").single()
+    if (updatedSubscription.error || updatedSubscription.data?.plan_key !== proofPlanKey) throw updatedSubscription.error || new Error("Could not attach the disposable Plan proof subscription.")
+    browser = await chromium.launch({ headless: true })
     const page = await browser.newPage({ baseURL: `http://127.0.0.1:${port}`, viewport: { width: 1280, height: 900 } })
     await page.goto("/login")
     await page.locator("#login-email").fill(email)
@@ -221,6 +240,16 @@ async function configuredShellBrowserProof(port, supabaseEnvironment) {
     await page.waitForURL(/\/app\/resources(?:\?|$)/, { timeout: 30_000 })
     if (!(await page.getByRole("main").getByRole("heading", { name: "Resources", exact: true }).isVisible())) throw new Error("Configured product navigation did not navigate to its product route.")
 
+    await page.goto("/app/plan")
+    await page.getByRole("heading", { name: "Plan and usage", exact: true }).waitFor({ state: "visible" })
+    await page.getByText("Team members", { exact: true }).first().waitFor({ state: "visible" })
+    await page.getByText("1 / Unlimited", { exact: true }).first().waitFor({ state: "visible" })
+    await page.getByText("Locations", { exact: true }).first().waitFor({ state: "visible" })
+    const planBody = await page.locator("body").innerText()
+    if (!planBody.includes("1 / 2")) throw new Error(`Product usage proof did not render the expected Locations quota. Plan body: ${planBody.slice(-4000)}`)
+    const unknownMetric = page.getByText("Unknown locations", { exact: true }).locator("..")
+    await unknownMetric.getByText("—", { exact: true }).waitFor({ state: "visible" })
+
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto("/app/projects")
     await page.getByRole("button", { name: "Open navigation" }).click()
@@ -229,9 +258,10 @@ async function configuredShellBrowserProof(port, supabaseEnvironment) {
     await dialog.getByRole("button", { name: "Close navigation" }).click()
     return true
   } finally {
-    await browser.close()
+    if (browser) await browser.close()
     if (workspaceId) await service.from("workspaces").delete().eq("id", workspaceId)
-    await service.auth.admin.deleteUser(created.data.user.id)
+    if (createdUserId) await service.auth.admin.deleteUser(createdUserId)
+    if (proofPlanCreated) await service.from("plans").delete().eq("key", proofPlanKey)
   }
 }
 
@@ -283,7 +313,16 @@ try {
   writeFileSync(path.join(product, "app/(product)/app/projects/page.tsx"), 'export default function ProjectsHome() { return <div><h2>Projects home</h2><p>Product-owned workspace home.</p></div> }\n', "utf8")
   writeFileSync(path.join(product, "app/(product)/app/resources/page.tsx"), 'export default function ResourcesPage() { return <div><h2>Resources</h2><p>Product-owned workspace resource list.</p></div> }\n', "utf8")
   const generatedCatalog = JSON.parse(readFileSync(path.join(product, "product.catalog.json"), "utf8"))
+  generatedCatalog.usageMetrics = [
+    { key: "locations", name: "Locations" },
+    { key: "unknown_locations", name: "Unknown locations" },
+  ]
+  generatedCatalog.plans[0].limits = { ...generatedCatalog.plans[0].limits, locations: 2, unknown_locations: 2 }
+  writeFileSync(path.join(product, "product.catalog.json"), `${JSON.stringify(generatedCatalog, null, 2)}\n`, "utf8")
+  const productUsageFile = path.join(product, "src/product/usage.ts")
+  writeFileSync(productUsageFile, `import "server-only"\n\nimport type { UsageResolverMap } from "@/lib/entitlements"\n\nexport const PRODUCT_USAGE_RESOLVERS: UsageResolverMap = {\n  locations: async ({ db, workspaceId }) => {\n    const result = await db.from("workspace_members").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId)\n    if (result.error) throw new Error(result.error.message)\n    return result.count || 0\n  },\n}\n\nexport function getProductUsageResolvers(): UsageResolverMap {\n  return PRODUCT_USAGE_RESOLVERS\n}\n`, "utf8")
   if (generatedCatalog.defaultPlanKey !== "default" || generatedCatalog.plans.length !== 1 || generatedCatalog.plans[0].key !== "default" || generatedCatalog.plans[0].prices) throw new Error("Generated consumer did not receive the neutral product-owned starter catalog.")
+  if (generatedCatalog.usageMetrics.map((metric) => metric.key).join(",") !== "locations,unknown_locations" || generatedCatalog.plans[0].limits.locations !== 2) throw new Error("Generated consumer did not retain the generic product usage catalog proof.")
   const generatedSeed = readFileSync(path.join(product, "supabase/seed.sql"), "utf8")
   if (!generatedSeed.includes("'default'") || !generatedSeed.includes("'{\"core.workspaces\":1,\"core.members\":null}'::jsonb")) throw new Error("Generated consumer seed does not bootstrap the neutral default plan and its explicit workspace limit.")
   const generatedPackage = JSON.parse(readFileSync(path.join(product, "package.json"), "utf8"))
@@ -312,7 +351,10 @@ try {
   ]
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing Agent Surface file: ${relative}`)
   for (const relative of billingManagedFiles) if (!existsSync(path.join(product, relative))) throw new Error(`Fresh consumer is missing managed billing file: ${relative}`)
+  const productUsageExtension = "src/product/usage.ts"
+  if (!existsSync(path.join(product, productUsageExtension))) throw new Error("Fresh consumer is missing the product-owned usage resolver extension.")
   const freshManifest = JSON.parse(readFileSync(path.join(product, ".saas-core-manifest.json"), "utf8"))
+  if (!freshManifest.productOwnedPaths.includes("src/product/")) throw new Error("Fresh consumer manifest does not preserve the product usage extension boundary.")
   for (const migration of billingMigrations) if (!freshManifest.managedFiles[migration]) throw new Error(`Fresh consumer manifest did not record ${migration} as Core-managed.`)
   const productMigrationRelative = "supabase/migrations/product/20990909000000_product-owned-proof.sql"
   mkdirSync(path.dirname(path.join(product, productMigrationRelative)), { recursive: true })
@@ -329,6 +371,7 @@ try {
   run(installedCli, ["init", "Packed CLI Proof", packedProduct], product)
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed CLI consumer is missing Agent Surface file: ${relative}`)
   for (const relative of billingManagedFiles) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed CLI consumer is missing managed billing file: ${relative}`)
+  if (!existsSync(path.join(packedProduct, productUsageExtension))) throw new Error("Packed CLI consumer is missing the product-owned usage resolver extension.")
   run(installedCli, ["doctor", packedProduct], packedProduct)
   const legacyThemeFile = path.join(packedProduct, "styles/product-theme.css")
   const legacyTheme = `${readFileSync(legacyThemeFile, "utf8")}\n:root { --legacy-upgrade-proof: #123456; }\n`
@@ -336,11 +379,13 @@ try {
   mkdirSync(path.dirname(path.join(packedProduct, productMigrationRelative)), { recursive: true })
   writeFileSync(path.join(packedProduct, productMigrationRelative), productMigration, "utf8")
   downgradeToLegacyConsumer(packedProduct, [...agentSurfaceFiles, ...billingManagedFiles])
+  rmSync(path.join(packedProduct, productUsageExtension), { force: true })
   const legacyDiff = JSON.parse(runOutput(installedCli, ["diff", packedProduct, "--json"], packedProduct, {}, 2))
   if (!legacyDiff.versionDrift.includes(`Core version ${LEGACY_VERSION} → ${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy runtime upgrade.")
   if (legacyDiff.schemaDrift.length || legacyDiff.packageDrift.length !== 4 || legacyDiff.packageDrift.some((item) => item.actual !== `^${LEGACY_VERSION}` || item.expected !== `^${RELEASE_VERSION}`)) throw new Error("Packed CLI did not report the legacy package movement while preserving schema 2.0.")
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!legacyDiff.coreDrift.includes(`A ${relative}`)) throw new Error(`Packed CLI legacy diff omitted managed billing/surface addition ${relative}.`)
   const legacyDryRun = JSON.parse(runOutput(installedCli, ["update", packedProduct, "--dry-run", "--json"], packedProduct))
+  if (!legacyDryRun.scaffolded?.includes(productUsageExtension)) throw new Error("Packed CLI did not plan the missing product usage resolver scaffold.")
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!legacyDryRun.added.includes(relative)) throw new Error(`Packed CLI legacy dry-run omitted managed billing/surface addition ${relative}.`)
   if (!legacyDryRun.updated.includes("package.json")) throw new Error("Packed CLI legacy dry-run omitted the package version movement.")
   const legacyApply = JSON.parse(runOutput(installedCli, ["update", packedProduct, "--json"], packedProduct))
@@ -351,6 +396,7 @@ try {
   if (runtimePackages.some((name) => upgradedLegacyPackage.dependencies[name] !== `^${RELEASE_VERSION}`) || toolingPackages.some((name) => upgradedLegacyPackage.devDependencies[name] !== `^${RELEASE_VERSION}`)) throw new Error(`Packed legacy consumer package.json was not upgraded to ^${RELEASE_VERSION}.`)
   if (readFileSync(legacyThemeFile, "utf8") !== legacyTheme) throw new Error("Packed legacy update overwrote the product-owned theme.")
   if (readFileSync(path.join(packedProduct, productMigrationRelative), "utf8") !== productMigration) throw new Error("Packed consumer update changed a product-owned migration.")
+  if (!readFileSync(path.join(packedProduct, productUsageExtension), "utf8").includes("PRODUCT_USAGE_RESOLVERS")) throw new Error("Packed legacy update did not restore the neutral product usage resolver scaffold.")
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed legacy update did not restore managed file: ${relative}`)
   writeFileSync(path.join(packedProduct, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
   run("npm", ["install", "--ignore-scripts", "--audit=false", "--fund=false"], packedProduct)

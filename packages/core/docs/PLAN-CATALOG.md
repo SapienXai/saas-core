@@ -79,27 +79,51 @@ The runtime path is always:
 plan catalog → workspace subscription → effective plan → entitlements → usage
 ```
 
-Use `createEntitlementService()` in the consumer to register an authoritative
-resolver for a product-owned key:
+The generated application includes `src/product/usage.ts`, a product-owned
+server-only extension. Register authoritative product usage there:
+
+```ts
+import type { UsageResolverMap } from "@/lib/entitlements"
+
+export const PRODUCT_USAGE_RESOLVERS: UsageResolverMap = {
+  locations: async ({ workspaceId, db }) => {
+    const { count, error } = await db
+      .from("locations")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+    if (error) throw error
+    return count || 0
+  },
+}
+
+export function getProductUsageResolvers(): UsageResolverMap {
+  return PRODUCT_USAGE_RESOLVERS
+}
+```
+
+The shared Plan action passes this registry to `getWorkspaceUsage()` and Core
+also composes it by default for server-side entitlement services. Core-owned
+`core.workspaces` and `core.members` usage remains built in. A consumer update
+preserves this file; a legacy consumer missing it receives the neutral
+scaffold once. A missing product resolver or an invalid/failed result is
+explicitly unavailable (`USAGE_UNAVAILABLE`), not zero. Usage is
+workspace-scoped in the current Core model. Never accept a plan, workspace,
+limit, or usage value from the browser as authoritative. The resolver module
+imports `server-only` and must never be used by browser code.
+
+For an isolated service, the same `usageResolvers` option remains available:
 
 ```ts
 const billing = createEntitlementService({
   usageResolvers: {
-    venues: async ({ workspaceId, db }) => {
-      const { count, error } = await db
-        .from("venues")
-        .select("id", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
+    locations: async ({ workspaceId, db }) => {
+      const { count, error } = await db.from("locations").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId)
       if (error) throw error
       return count || 0
     },
   },
 })
 ```
-
-Usage is workspace-scoped in the current Core model. Core calculates its own
-workspace/member usage; the consumer calculates domain usage. Never accept a
-plan, workspace, limit, or usage value from the browser as authoritative.
 
 ## Enforce mutations
 

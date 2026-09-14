@@ -67,31 +67,43 @@ Checkout success or a browser callback alone never activates paid access.
 
 ## 3. Register authoritative usage
 
-The managed application helper accepts a product resolver without knowing the
-product table:
+The generated application includes the product-owned server extension
+`src/product/usage.ts`. Replace its empty resolver map with authoritative
+queries for the product's own resource keys:
 
 ```ts
-import { createEntitlementService } from "@/lib/entitlements"
+import type { UsageResolverMap } from "@/lib/entitlements"
 
-const entitlements = createEntitlementService({
-  usageResolvers: {
-    venues: async ({ workspaceId, db }) => {
-      const { count, error } = await db
-        .from("venues")
-        .select("id", { count: "exact", head: true })
-        .eq("workspace_id", workspaceId)
-        .eq("status", "active")
-      if (error) throw error
-      return count || 0
-    },
+export const PRODUCT_USAGE_RESOLVERS: UsageResolverMap = {
+  locations: async ({ workspaceId, db }) => {
+    const { count, error } = await db
+      .from("locations")
+      .select("id", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .eq("archived_at", null)
+    if (error) throw error
+    return count || 0
   },
-})
+}
+
+export function getProductUsageResolvers(): UsageResolverMap {
+  return PRODUCT_USAGE_RESOLVERS
+}
 ```
 
-Resolvers receive the workspace, billing period, current time, and a
-server-only service database handle. Validate their result as a finite
-non-negative number. A resolver failure returns `USAGE_UNAVAILABLE`; it must
-not grant a finite quota.
+`getWorkspaceUsage`, the shared Plan action, and `createEntitlementService()`
+automatically compose this product map with Core's built-in
+`core.workspaces` and `core.members` resolvers. A product may still pass an
+explicit `usageResolvers` map to an isolated service; explicit keys override
+product defaults, while Core-owned structural metrics remain authoritative.
+The file is product-owned, so `saas-core update` never replaces it. An older
+consumer that does not have the file receives a one-time neutral scaffold.
+
+Resolvers run only from server modules and receive the canonical workspace,
+optional actor, billing period, current time, and a server-only database
+handle. Core validates every result as a finite non-negative number. A missing
+resolver, invalid result, or resolver exception is `USAGE_UNAVAILABLE`; it is
+never converted to `0` and never grants a finite quota.
 
 ## 4. Guard a server mutation
 

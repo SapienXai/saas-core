@@ -188,4 +188,76 @@ integration("transactional entitlement lock", () => {
     const directDelete = await ownerClient.from("workspace_members").delete().eq("id", "00000000-0000-4000-8000-000000000099")
     expect(directDelete.error).not.toBeNull()
   })
+
+  it("renews only eligible invitations and returns qualified renewal data", async () => {
+    const unlimitedSubscription = await service!.from("workspace_subscriptions").upsert({
+      workspace_id: workspaceId,
+      plan_key: "fixture_unlimited",
+      status: "active",
+      source: "paddle",
+      provider: "paddle",
+      provider_environment: "sandbox",
+      provider_customer_id: "cus_fixture",
+      provider_subscription_id: "sub_fixture",
+      provider_price_id: fixturePriceId,
+    })
+    expect(unlimitedSubscription.error).toBeNull()
+
+    const invitationIds: string[] = []
+    const createRenewableInvitation = async (email: string) => {
+      const created = await ownerClient.rpc("create_workspace_invitation", {
+        target_workspace_id: workspaceId,
+        target_email: email,
+        target_role: "staff",
+        target_token_hash: `initial-${Date.now()}-${email}`,
+      })
+      expect(created.error).toBeNull()
+      const invitationId = created.data?.[0]?.invitation_id
+      expect(invitationId).toBeTruthy()
+      invitationIds.push(invitationId)
+      const old = new Date(Date.now() - 120_000).toISOString()
+      const expired = await service!.from("workspace_invitations").update({ expires_at: new Date(Date.now() - 60_000).toISOString(), last_sent_at: old }).eq("id", invitationId)
+      expect(expired.error).toBeNull()
+      return invitationId
+    }
+
+    try {
+      const eligibleId = await createRenewableInvitation(`renewable-${Date.now()}@example.test`)
+      const nextToken = `renewed-${Date.now()}`
+      const renewed = await ownerClient.rpc("renew_workspace_invitation", { target_invitation_id: eligibleId, target_token_hash: nextToken })
+      expect(renewed.error).toBeNull()
+      expect(renewed.data?.[0]).toMatchObject({ invitation_id: eligibleId, role: "staff" })
+      const renewedRow = await service!.from("workspace_invitations").select("email, token_hash, expires_at, last_sent_at, email_delivery_status, delivery_error").eq("id", eligibleId).single()
+      expect(renewedRow.error).toBeNull()
+      expect(renewedRow.data).toMatchObject({ token_hash: nextToken, email_delivery_status: "pending", delivery_error: null })
+      expect(new Date(renewedRow.data?.expires_at).getTime()).toBeGreaterThan(Date.now())
+      const cooldown = await ownerClient.rpc("renew_workspace_invitation", { target_invitation_id: eligibleId, target_token_hash: `${nextToken}-again` })
+      expect(cooldown.error?.message).toContain("INVITATION_RESEND_COOLDOWN")
+
+      const acceptedId = await createRenewableInvitation(`accepted-${Date.now()}@example.test`)
+      const accepted = await service!.from("workspace_invitations").update({ accepted_at: new Date().toISOString() }).eq("id", acceptedId)
+      expect(accepted.error).toBeNull()
+      const acceptedRenewal = await ownerClient.rpc("renew_workspace_invitation", { target_invitation_id: acceptedId, target_token_hash: `accepted-renewed-${Date.now()}` })
+      expect(acceptedRenewal.error?.message).toContain("INVITATION_NOT_PENDING")
+
+      const revokedId = await createRenewableInvitation(`revoked-${Date.now()}@example.test`)
+      const revoked = await service!.from("workspace_invitations").update({ revoked_at: new Date().toISOString() }).eq("id", revokedId)
+      expect(revoked.error).toBeNull()
+      const revokedRenewal = await ownerClient.rpc("renew_workspace_invitation", { target_invitation_id: revokedId, target_token_hash: `revoked-renewed-${Date.now()}` })
+      expect(revokedRenewal.error?.message).toContain("INVITATION_NOT_PENDING")
+
+      const unauthorizedId = await createRenewableInvitation(`unauthorized-${Date.now()}@example.test`)
+      const outsiderEmail = `renewal-outsider-${Date.now()}@example.test`
+      const outsider = await service!.auth.admin.createUser({ email: outsiderEmail, password: "RenewalOutsider!2026-password", email_confirm: true })
+      expect(outsider.error || !outsider.data.user).toBeFalsy()
+      const outsiderClient = createClient(url!, anonKey!, { auth: { persistSession: false, autoRefreshToken: false } })
+      const outsiderSession = await outsiderClient.auth.signInWithPassword({ email: outsiderEmail, password: "RenewalOutsider!2026-password" })
+      expect(outsiderSession.error).toBeNull()
+      const unauthorized = await outsiderClient.rpc("renew_workspace_invitation", { target_invitation_id: unauthorizedId, target_token_hash: `unauthorized-renewed-${Date.now()}` })
+      expect(unauthorized.error?.message).toContain("FORBIDDEN")
+      if (outsider.data.user) await service!.auth.admin.deleteUser(outsider.data.user.id)
+    } finally {
+      if (invitationIds.length) await service!.from("workspace_invitations").delete().in("id", invitationIds)
+    }
+  })
 })
