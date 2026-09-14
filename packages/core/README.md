@@ -1,9 +1,9 @@
 # @sapienx/saas-core
 
-Current release: runtime `2.3.0`; Core schema compatibility coordinate `2.0`.
-The release delivers the additive, Core-managed billing persistence and
-entitlement-lock migration sources through the canonical application template
-and CLI. This package exports the generic contracts; it does not execute SQL.
+Current release: runtime `2.4.0`; Core schema compatibility coordinate `2.0`.
+The release delivers the additive, Core-managed billing, entitlement-lock, and
+plan-catalog migration sources through the canonical application template and
+CLI. This package exports the generic contracts; it does not execute SQL.
 Consumers apply and verify the delivered sources through their own controlled
 migration process.
 
@@ -17,7 +17,8 @@ interval, status, transition, outcome, proration, retry, effective-plan,
 presentation, plan, and entitlement contracts, plus deterministic helpers
 such as `resolveBillingPolicy()`, `resolveEffectiveBillingPlan()`,
 `resolveBillingRetry()`, `getUsageSnapshot()`, and
-`evaluateEntitlementConsumption()`, and `getEntitlementGateState()`. A
+`evaluateEntitlementConsumption()`, and `getEntitlementGateState()`. The Plan
+Catalog consumer handoff is shipped at `docs/PLAN-CATALOG.md`. A
 consumer can pack and validate these exports without loading a provider SDK or
 making a network call. Gate state is advisory UI output; server-side mutation
 authorization remains the consumer's responsibility.

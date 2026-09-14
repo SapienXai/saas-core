@@ -1,6 +1,6 @@
 # @sapienx/saas-core-config
 
-Part of the coordinated SaaS Core `2.3.0` runtime/package release; Core schema
+Part of the coordinated SaaS Core `2.4.0` runtime/package release; Core schema
 compatibility coordinate remains `2.0`. The release's additive, Core-managed
 billing migration sources are carried by the application template and CLI.
 This package defines product configuration and does not execute SQL; consumers

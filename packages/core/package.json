@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Workspace tenancy, entitlement, manifest and lifecycle contracts for SaaS Core",
   "license": "UNLICENSED",
   "repository": { "type": "git", "url": "git+https://github.com/SapienXai/saas-core.git" },
@@ -9,7 +9,7 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
   },
-  "files": ["dist", "README.md", "manifest.json"],
+  "files": ["dist", "docs", "README.md", "manifest.json"],
   "scripts": { "build": "tsc -p tsconfig.build.json", "prepack": "pnpm run build" },
   "types": "./dist/index.d.ts"
 }

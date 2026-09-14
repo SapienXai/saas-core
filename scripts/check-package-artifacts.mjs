@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { PACKAGE_NAMES, RELEASE_VERSION } from "./release-constants.mjs"
 
@@ -37,9 +37,19 @@ for (const packageName of PACKAGE_NAMES) {
 
 const coreTarball = path.join(artifacts, `sapienx-saas-core-${RELEASE_VERSION}.tgz`)
 const coreDeclarations = execFileSync("tar", ["-xOf", coreTarball, "package/dist/index.d.ts"], { encoding: "utf8" })
+const coreRuntime = execFileSync("tar", ["-xOf", coreTarball, "package/dist/index.js"], { encoding: "utf8" })
+const coreEntitlementDeclarations = execFileSync("tar", ["-xOf", coreTarball, "package/dist/entitlements.d.ts"], { encoding: "utf8" })
 for (const name of ["PlanDefinition", "validatePlanDefinition", "normalizeProductPlan", "classifyProductPlanChange", "duplicateProductPlan"]) {
   if (!coreDeclarations.includes(name)) throw new Error(`Core artifact is missing the plan catalog contract: ${name}.`)
 }
+for (const name of ["evaluateEntitlementConsumption", "getUsageSnapshot", "getEntitlementGateState"]) {
+  if (!coreRuntime.includes(`export * from \"./entitlements.js\"`) || !coreEntitlementDeclarations.includes(`function ${name}`)) throw new Error(`Core artifact is missing the entitlement API: ${name}.`)
+}
+for (const name of ["EntitlementErrorCode", "EntitlementLimit"]) {
+  if (!coreEntitlementDeclarations.includes(`type ${name}`)) throw new Error(`Core artifact is missing the entitlement type: ${name}.`)
+}
+const planCatalogDoc = execFileSync("tar", ["-xOf", coreTarball, "package/docs/PLAN-CATALOG.md"], { encoding: "utf8" })
+if (planCatalogDoc !== readFileSync(path.join(root, "docs/PLAN-CATALOG.md"), "utf8")) throw new Error("Core artifact contains a stale or incomplete Plan Catalog guide.")
 
 const managedPlanFiles = [
   "package/template/supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",

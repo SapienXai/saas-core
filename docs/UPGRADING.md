@@ -5,15 +5,17 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
-The current coordinated runtime and package release is `2.3.0` on Core schema
+The current coordinated runtime and package release is `2.4.0` on Core schema
 compatibility coordinate `2.0`. It delivers the additive, Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` in
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` in
 the repository root and canonical application template. Package packing and
 CLI `init`/`update` deliver the sources but never execute SQL; each consumer
-owns the controlled apply and verification workstream. The release evidence
+owns the controlled apply and verification workstream. The Plan Catalog guide
+is shipped in the Core package as `docs/PLAN-CATALOG.md`. The release evidence
 and certification boundary are recorded in
-[`RELEASE-2.3.0.md`](./RELEASE-2.3.0.md) and
+[`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md) and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
 ## Core/product ownership
@@ -37,8 +39,8 @@ The normal consumer path installs the coordinated packages from npm. A fresh
 consumer uses the registry-published CLI to materialize the packed template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.3.0 @sapienx/saas-core-config@^2.3.0 @sapienx/saas-core-ui@^2.3.0
-pnpm add -D @sapienx/saas-core-cli@^2.3.0
+pnpm add @sapienx/saas-core@^2.4.0 @sapienx/saas-core-config@^2.4.0 @sapienx/saas-core-ui@^2.4.0
+pnpm add -D @sapienx/saas-core-cli@^2.4.0
 pnpm exec saas-core init "My Product" ./my-product
 pnpm install --dir ./my-product
 ```
@@ -123,9 +125,10 @@ the update. The new foundation is available but registers zero tools until a
 product page explicitly renders `CoreWebMcpTools` with product-owned tools.
 
 The Agent Surface has no schema-specific SQL. The same update also carries the
-Core-managed billing sources
+Core-managed billing and plan-catalog sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, plus
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`,
 while the Core schema compatibility coordinate stays `2.0`. The CLI copies
 the sources, never executes SQL, and leaves the consumer to apply and verify
 them through its own migration process. Validate the normal lifecycle before
@@ -147,10 +150,11 @@ screenshots, or provider credentials between checkouts.
 
 ## Database changes
 
-The baseline migration is clean and independent. The `2.3.0` release carries
+The baseline migration is clean and independent. The `2.4.0` release carries
 the generic, provider-neutral Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`;
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`;
 they are additive and present in both the repository root and
 `packages/app/template`. Their delivery preserves the schema compatibility
 coordinate `2.0`. Product migrations under `supabase/migrations/product/**`
@@ -171,8 +175,9 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and schema compatibility coordinate are separate. The
-current runtime is `2.3.0` and the compatibility coordinate remains `2.0` even
-though the release delivers additive billing and entitlement sources. `doctor`
+current runtime is `2.4.0` and the compatibility coordinate remains `2.0` even
+though the release delivers additive billing, entitlement, and plan-catalog
+sources. `doctor`
 reports Core source readiness, consumer presence/hash readiness, and manifest
 ownership/readiness separately. It verifies actual schema metadata only when
 `SUPABASE_URL` and a server-only `SUPABASE_SERVICE_ROLE_KEY` are available;
@@ -223,10 +228,10 @@ dependency-safe order through either the one-time first-release `NPM_TOKEN`
 bootstrap or npm Trusted Publishing with OIDC. It verifies fresh registry
 installation and creates the GitHub Release only afterward. Any failed gate
 stops before publication. Delete `NPM_TOKEN` after the first successful
-bootstrap and configure Trusted Publishers for all five packages. The `2.3.0` release
+bootstrap and configure Trusted Publishers for all five packages. The `2.4.0` release
 evidence includes the controlled legacy-consumer upgrade, packed exports,
-managed billing-file delivery, product-owned preservation, relocation, and a
-second frozen install/build. The final release should include
+managed billing/plan-catalog delivery, product-owned preservation, relocation,
+and a second frozen install/build. The final release should include
 `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, clean DB tests,
 browser tests, build, `pnpm pack`, a fresh consumer, relocation, and a second
 frozen install/build.

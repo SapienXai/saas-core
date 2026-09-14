@@ -1,11 +1,11 @@
 # @sapienx/saas-core-cli
 
-Current package release: `2.3.0`; Core schema compatibility coordinate remains
+Current package release: `2.4.0`; Core schema compatibility coordinate remains
 `2.0`. The CLI is the source-delivery and readiness boundary for the
-coordinated release. It carries the Core-managed billing persistence and
-entitlement-lock sources through package packing, `init`, and `update`, but
-never executes SQL. Each consumer owns the controlled migration apply and
-verification workstream.
+coordinated release. It carries the Core-managed billing persistence,
+entitlement-lock, and plan-catalog sources through package packing, `init`, and
+`update`, but never executes SQL. Each consumer owns the controlled migration
+apply and verification workstream.
 
 Portable `init`, `doctor`, `diff`, and `update` commands for a SaaS Core
 consumer. The CLI ships the canonical `@sapienx/saas-core-app` template at

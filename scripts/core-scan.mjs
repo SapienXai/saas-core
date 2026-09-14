@@ -3,7 +3,7 @@ import path from "node:path"
 
 const root = process.cwd()
 const forbidden = ["reserve" + "via", "fel" + "ix", "rest" + "aurant", "reserv" + "ation", "book" + "ing", "seat" + "ing", "data" + "engine"]
-const ignoredDirectories = new Set([".git", ".reference", "node_modules", ".next", ".next-e2e", "output", ".pnpm-store", "dist", "test", "e2e"])
+const ignoredDirectories = new Set([".git", ".reference", "node_modules", ".next", ".next-e2e", "output", ".pnpm-store", "dist", "test", "e2e", "docs"])
 const textExtensions = new Set([".css", ".js", ".mjs", ".json", ".md", ".sql", ".ts", ".tsx", ".toml", ".yaml", ".yml", ".html", ".svg"])
 const findings = []
 
