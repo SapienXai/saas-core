@@ -5,17 +5,19 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
-The current coordinated runtime and package release is `2.4.0` on Core schema
+The current coordinated runtime and package release is `2.5.0` on Core schema
 compatibility coordinate `2.0`. It delivers the additive, Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
 `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` in
 the repository root and canonical application template. Package packing and
 CLI `init`/`update` deliver the sources but never execute SQL; each consumer
 owns the controlled apply and verification workstream. The Plan Catalog guide
 is shipped in the Core package as `docs/PLAN-CATALOG.md`. The release evidence
 and certification boundary are recorded in
-[`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md) and
+[`RELEASE-2.5.0.md`](./RELEASE-2.5.0.md), with the prior release retained in
+[`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md), and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
 The managed entitlement runtime imports the product-owned server extension
@@ -45,8 +47,8 @@ The normal consumer path installs the coordinated packages from npm. A fresh
 consumer uses the registry-published CLI to materialize the packed template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.4.0 @sapienx/saas-core-config@^2.4.0 @sapienx/saas-core-ui@^2.4.0
-pnpm add -D @sapienx/saas-core-cli@^2.4.0
+pnpm add @sapienx/saas-core@^2.5.0 @sapienx/saas-core-config@^2.5.0 @sapienx/saas-core-ui@^2.5.0
+pnpm add -D @sapienx/saas-core-cli@^2.5.0
 pnpm exec saas-core init "My Product" ./my-product
 pnpm install --dir ./my-product
 ```
@@ -156,10 +158,11 @@ screenshots, or provider credentials between checkouts.
 
 ## Database changes
 
-The baseline migration is clean and independent. The `2.4.0` release carries
+The baseline migration is clean and independent. The `2.5.0` release carries
 the generic, provider-neutral Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
+`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
 `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`;
 they are additive and present in both the repository root and
 `packages/app/template`. Their delivery preserves the schema compatibility
@@ -171,7 +174,7 @@ rollback of its database state. Never point a clean Core reset at a live
 ReserveVia database, and never rewrite the source product's migration history.
 
 The additive `20260914110000_fix_renew_workspace_invitation.sql` migration is
-delivered by the next coordinated Core update. It replaces the published
+delivered by the `2.5.0` coordinated Core update. It replaces the published
 invitation-renewal function in place with qualified `RETURNING` columns, keeps
 the existing RPC grants and behavior, and remains compatible with schema
 coordinate `2.0`. It is source delivery only; the consumer applies it in its
@@ -188,7 +191,7 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and schema compatibility coordinate are separate. The
-current runtime is `2.4.0` and the compatibility coordinate remains `2.0` even
+current runtime is `2.5.0` and the compatibility coordinate remains `2.0` even
 though the release delivers additive billing, entitlement, and plan-catalog
 sources. `doctor`
 reports Core source readiness, consumer presence/hash readiness, and manifest
@@ -241,10 +244,12 @@ dependency-safe order through either the one-time first-release `NPM_TOKEN`
 bootstrap or npm Trusted Publishing with OIDC. It verifies fresh registry
 installation and creates the GitHub Release only afterward. Any failed gate
 stops before publication. Delete `NPM_TOKEN` after the first successful
-bootstrap and configure Trusted Publishers for all five packages. The `2.4.0` release
-evidence includes the controlled legacy-consumer upgrade, packed exports,
-managed billing/plan-catalog delivery, product-owned preservation, relocation,
-and a second frozen install/build. The final release should include
+bootstrap and configure Trusted Publishers for all five packages. The `2.4.0`
+evidence remains the prior release baseline; the `2.5.0` release candidate adds
+target-plan downgrade eligibility and confirmation-time revalidation while
+retaining the controlled legacy-consumer upgrade, packed exports, managed
+billing/plan-catalog delivery, product-owned preservation, relocation, and a
+second frozen install/build. The final release should include
 `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, clean DB tests,
 browser tests, build, `pnpm pack`, a fresh consumer, relocation, and a second
 frozen install/build.

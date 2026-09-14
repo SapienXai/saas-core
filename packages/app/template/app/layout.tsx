@@ -50,7 +50,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: PRODUCT_CONFIG.name,
     },
     robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 } },
-    generator: "SaaS Core 2.4.0",
+    generator: "SaaS Core 2.5.0",
   }
 }
 

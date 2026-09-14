@@ -120,11 +120,13 @@ function downgradeToLegacyConsumer(directory, agentSurfaceFiles) {
 const packedExportProbe = `
 import { readFileSync } from "node:fs"
 import * as core from "@sapienx/saas-core"
+import * as coreUi from "@sapienx/saas-core-ui"
 import { defineProductConfig } from "@sapienx/saas-core-config"
 for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions", "evaluateEntitlementConsumption", "getUsageSnapshot", "getEntitlementGateState", "isProductPlanKey", "validatePlanDefinition", "normalizeProductPlan", "classifyProductPlanChange", "duplicateProductPlan"]) {
   if (typeof core[name] !== "function") throw new Error("Missing packed runtime export: " + name)
 }
 if (core.CORE_VERSION !== "${RELEASE_VERSION}" || core.CORE_SCHEMA_VERSION !== "${SCHEMA_VERSION}") throw new Error("Packed Core version metadata is incorrect.")
+if (coreUi.UI_SYSTEM_VERSION !== "${RELEASE_VERSION}" || typeof coreUi.BillingUsageMeter !== "function" || typeof coreUi.EntitlementLimitNotice !== "function") throw new Error("Packed Core UI exports are not importable.")
 core.validateAgentToolDefinitions([])
 if (core.BILLING_INTERVALS.join(",") !== "month,year" || core.getBillingProrationMode("upgrade") !== "immediate" || core.getBillingProrationMode("downgrade") !== "next_period") throw new Error("Packed billing interval or proration contract is incorrect.")
 if (core.resolveBillingRetry({ outcome: "unknown" }) !== "reconcile") throw new Error("Packed billing unknown-outcome contract is incorrect.")

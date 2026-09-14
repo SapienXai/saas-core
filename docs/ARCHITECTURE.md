@@ -189,10 +189,11 @@ domains, Platform Control, and source-derived interaction surfaces. It has a
 generic Workspace plus Projects model and does not require industry-specific
 concepts to boot.
 
-The current runtime is `2.4.0`; the Core schema compatibility coordinate
+The current runtime is `2.5.0`; the Core schema compatibility coordinate
 remains `2.0`. The release delivers the additive, Core-managed migration
-sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`
-and `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`,
 plus `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`
 from the repository root and `packages/app/template`. Package packing and CLI
 `init`/`update` carry those sources to consumers and never execute SQL.

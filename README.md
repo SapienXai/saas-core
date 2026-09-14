@@ -1,4 +1,4 @@
-# SaaS Core 2.4
+# SaaS Core 2.5
 
 SaaS Core is infrastructure for workspace-based products. This repository is
 a clean extraction from the production ReserveVia foundations: the proven
@@ -6,18 +6,19 @@ authentication, management shell, workspace boundary, billing, domains, PWA,
 operator control plane, and interaction system remain; the restaurant and
 reservation product domain does not.
 
-The current Core runtime and coordinated package release is `2.4.0`. The Core
+The current Core runtime and coordinated package release is `2.5.0`. The Core
 schema compatibility coordinate remains `2.0`, and this release delivers the
 additive, Core-managed migration sources
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
+`supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
 `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` in
 the repository and canonical application template. Package packing and the
 CLI deliver those sources to consumers; `init` and `update` never execute SQL.
 Each consumer owns the controlled apply and verification workstream. The Plan
 Catalog handoff is also shipped in the Core package at
 `docs/PLAN-CATALOG.md`. The release boundary and its validation evidence are
-recorded in [docs/RELEASE-2.4.0.md](docs/RELEASE-2.4.0.md). The previous
+recorded in [docs/RELEASE-2.5.0.md](docs/RELEASE-2.5.0.md). The previous
 coordinated `2.3.0` boundary remains documented in
 [docs/RELEASE-2.3.0.md](docs/RELEASE-2.3.0.md).
 
@@ -304,7 +305,7 @@ plans completely before mutation, blocks on modified managed files, creates a
 self-contained backup, validates, and rolls back the consumer automatically if
 apply or validation fails. Rollback restores metadata and replaced files and
 removes newly added Core files, including the billing and plan-catalog
-migrations. The controlled `2.2.0` → `2.4.0` consumer proof covers packed
+migrations. The controlled `2.2.0` → `2.5.0` consumer proof covers packed
 exports, managed billing and plan-catalog delivery, product-owned preservation,
 relocation, and a second frozen install/build.
 
@@ -320,8 +321,8 @@ consumer, install the runtime packages and CLI from npm, then initialize the
 application from the packed template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.4.0 @sapienx/saas-core-config@^2.4.0 @sapienx/saas-core-ui@^2.4.0
-pnpm add -D @sapienx/saas-core-cli@^2.4.0
+pnpm add @sapienx/saas-core@^2.5.0 @sapienx/saas-core-config@^2.5.0 @sapienx/saas-core-ui@^2.5.0
+pnpm add -D @sapienx/saas-core-cli@^2.5.0
 pnpm exec saas-core init "My Product" ./my-product
 pnpm install --dir ./my-product
 ```

@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Workspace tenancy, entitlement, manifest and lifecycle contracts for SaaS Core",
   "license": "UNLICENSED",
   "repository": { "type": "git", "url": "git+https://github.com/SapienXai/saas-core.git" },

@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core-ui",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Reusable SaaS Core UI primitives and interaction surfaces",
   "license": "UNLICENSED",
   "repository": { "type": "git", "url": "git+https://github.com/SapienXai/saas-core.git" },
@@ -16,7 +16,7 @@
     "./styles.css": "./styles/globals.css"
   },
   "files": ["dist", "styles", "README.md"],
-  "scripts": { "build": "tsc -p tsconfig.build.json", "prepack": "pnpm run build" },
+  "scripts": { "build": "tsc -p tsconfig.build.json && node ../../scripts/fix-esm-relative-imports.mjs dist", "prepack": "pnpm run build" },
   "types": "./dist/index.d.ts",
   "peerDependencies": { "react": ">=18", "react-dom": ">=18" },
   "devDependencies": {

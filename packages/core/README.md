@@ -1,6 +1,6 @@
 # @sapienx/saas-core
 
-Current release: runtime `2.4.0`; Core schema compatibility coordinate `2.0`.
+Current release: runtime `2.5.0`; Core schema compatibility coordinate `2.0`.
 The release delivers the additive, Core-managed billing, entitlement-lock, and
 plan-catalog migration sources through the canonical application template and
 CLI. This package exports the generic contracts; it does not execute SQL.
@@ -21,7 +21,10 @@ such as `resolveBillingPolicy()`, `resolveEffectiveBillingPlan()`,
 Catalog consumer handoff is shipped at `docs/PLAN-CATALOG.md`. A
 consumer can pack and validate these exports without loading a provider SDK or
 making a network call. Gate state is advisory UI output; server-side mutation
-authorization remains the consumer's responsibility.
+authorization remains the consumer's responsibility. The public
+`evaluatePlanChangeEligibility()` contract provides fail-closed target-plan
+checks for explicit downgrades; `null` is unlimited and missing configuration
+is unavailable.
 
 Plan catalog consumers can also use `validatePlanDefinition()`,
 `normalizeProductPlan()`, `duplicateProductPlan()`, and
