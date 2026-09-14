@@ -13,6 +13,7 @@ const LEGACY_VERSION = "2.2.0"
 const billingMigrations = [
   "supabase/migrations/20260909094344_reusable_billing_persistence.sql",
   "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
+  "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
@@ -119,7 +120,7 @@ const packedExportProbe = `
 import { readFileSync } from "node:fs"
 import * as core from "@sapienx/saas-core"
 import { defineProductConfig } from "@sapienx/saas-core-config"
-for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions", "evaluateEntitlementConsumption", "getUsageSnapshot", "getEntitlementGateState"]) {
+for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions", "evaluateEntitlementConsumption", "getUsageSnapshot", "getEntitlementGateState", "isProductPlanKey", "validatePlanDefinition", "normalizeProductPlan", "classifyProductPlanChange", "duplicateProductPlan"]) {
   if (typeof core[name] !== "function") throw new Error("Missing packed runtime export: " + name)
 }
 if (core.CORE_VERSION !== "${RELEASE_VERSION}" || core.CORE_SCHEMA_VERSION !== "${SCHEMA_VERSION}") throw new Error("Packed Core version metadata is incorrect.")
@@ -127,6 +128,11 @@ core.validateAgentToolDefinitions([])
 if (core.BILLING_INTERVALS.join(",") !== "month,year" || core.getBillingProrationMode("upgrade") !== "immediate" || core.getBillingProrationMode("downgrade") !== "next_period") throw new Error("Packed billing interval or proration contract is incorrect.")
 if (core.resolveBillingRetry({ outcome: "unknown" }) !== "reconcile") throw new Error("Packed billing unknown-outcome contract is incorrect.")
 if (core.resolveEffectiveBillingPlan({ status: "canceled", purchasedPlanKey: "paid", fallbackPlanKey: "free" }) !== "free") throw new Error("Packed billing fallback contract is incorrect.")
+const packedPlan = core.normalizeProductPlan({ key: "starter", name: "Starter", limits: { seats: 2, storage_bytes: null }, prices: { month: { amount: 12, currency: "USD", providerPriceId: "provider_price" } } })
+if (packedPlan.limits.seats !== 2 || packedPlan.limits.storage_bytes !== null || packedPlan.active !== true) throw new Error("Packed plan normalization contract is incorrect.")
+if (core.classifyProductPlanChange(packedPlan, { ...packedPlan, name: "Starter workspaces" }) !== "presentation") throw new Error("Packed plan presentation-change contract is incorrect.")
+const duplicatedPlan = core.duplicateProductPlan(packedPlan, "starter_copy")
+if (duplicatedPlan.active !== false || duplicatedPlan.prices?.month?.providerPriceId !== undefined) throw new Error("Packed plan duplication contract is incorrect.")
 const packedProductConfig = defineProductConfig({
   identity: { name: "Packed Proof", slug: "packed-proof" },
   capabilities: { billing: true },

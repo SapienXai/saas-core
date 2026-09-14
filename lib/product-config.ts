@@ -5,6 +5,10 @@ export type ProductPlanDefinition = {
   key: string
   name: string
   description?: string
+  active?: boolean
+  recommended?: boolean
+  sort_order?: number
+  sortOrder?: number
   prices?: Readonly<Record<string, { amount: number | null; currency: string; providerPriceId?: string }>>
   features?: Readonly<Record<string, boolean>>
   limits?: Readonly<Record<string, number | null>>

@@ -47,6 +47,12 @@ export function assertProviderPriceMapping(value: unknown): asserts value is Pro
   if (!isProviderPriceMapping(value)) throw new Error("Paddle price mapping is invalid.")
 }
 
+async function isActivePlan(supabase: ReturnType<typeof createServiceRoleClient>, planKey: string) {
+  const { data, error } = await supabase.from("plans").select("key, active").eq("key", planKey).maybeSingle()
+  if (error) throw new Error(error.message)
+  return data?.active === true
+}
+
 export async function getActivePaddlePrice(
   planKey: PaidPlanKey,
   environment: BillingEnvironment,
@@ -54,6 +60,7 @@ export async function getActivePaddlePrice(
   currency = "USD",
 ) {
   const supabase = createServiceRoleClient()
+  if (!(await isActivePlan(supabase, planKey))) return null
   const { data, error } = await supabase
     .from("billing_provider_prices")
     .select("id, provider, environment, plan_key, provider_product_id, provider_price_id, billing_interval, currency, active")
@@ -84,6 +91,7 @@ export async function getPaddlePriceByProviderId(providerPriceId: string, enviro
 
   if (error) throw new Error(error.message)
   if (!data || !isProviderPriceMapping(data)) return null
+  if (activeOnly && !(await isActivePlan(supabase, data.plan_key))) return null
   return data
 }
 

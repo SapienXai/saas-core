@@ -1,9 +1,11 @@
 import "server-only"
 
-import { requirePlatformRole, requirePlatformWriteAccess } from "@/lib/platform-authorization"
+import { requirePlatformBillingAccess, requirePlatformRole, requirePlatformWriteAccess } from "@/lib/platform-authorization"
 import { createServiceRoleClient } from "@/lib/supabase"
 import { audit } from "@/lib/platform-audit"
 import { formatPlatformRole } from "@/lib/platform-types"
+import { duplicateProductPlan, hasCommercialPlanChange, normalizeProductPlan, validatePlanDefinition, type ProductPlan } from "@sapienx/saas-core"
+import { getConfiguredFallbackPlanKey } from "@/lib/billing/reconciliation"
 
 const service = () => createServiceRoleClient() as any
 
@@ -278,7 +280,258 @@ export async function listPlatformAuditLogs(query = "") {
   const enriched = rows.map((row: any) => { const user = users.get(row.actor_user_id); const metadata = user?.user_metadata && typeof user.user_metadata === "object" ? user.user_metadata : {}; const name = [metadata.full_name, metadata.name, metadata.display_name, metadata.username].find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim() || null; const email = typeof user?.email === "string" && user.email.trim() ? user.email.trim() : null; return { ...row, actor_label: name || email || "System or unknown actor", actor_email: name && email ? email : null } })
   const value = query.trim().toLowerCase(); return enriched.filter((row: any) => !value || [row.action, row.entity_type, row.entity_id, row.reason, row.actor_user_id, row.actor_label, row.actor_email].filter((field) => typeof field === "string").some((field) => field.toLowerCase().includes(value)))
 }
-export async function listPlatformPlans() { await requirePlatformRole(); const { data, error } = await service().from("plans").select("key, name, active, sort_order, features, limits, metadata").order("sort_order"); if (error) throw new Error(error.message); return data || [] }
+export type PlatformPlanRecord = {
+  key: string
+  name: string
+  description: string | null
+  active: boolean
+  sort_order: number
+  features: Record<string, unknown>
+  limits: Record<string, unknown>
+  metadata: Record<string, unknown>
+  referenced: boolean
+}
+
+export type PlatformPlanActionResult =
+  | { success: true; message: string; planKey: string }
+  | { success: false; message: string }
+
+export type CreatePlatformPlanInput = {
+  key: string
+  name: string
+  description?: string | null
+  sortOrder?: number
+  features?: unknown
+  limits?: unknown
+  metadata?: unknown
+  recommended?: boolean
+  reason: string
+}
+
+export type UpdatePlatformPlanInput = {
+  key: string
+  name: string
+  description?: string | null
+  sortOrder?: number
+  features?: unknown
+  limits?: unknown
+  metadata?: unknown
+  recommended?: boolean
+  reason: string
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function planDefinitionFromRow(row: any): ProductPlan {
+  const storedMetadata = objectValue(row.metadata)
+  const recommended = typeof storedMetadata.recommended === "boolean" ? storedMetadata.recommended : undefined
+  const metadata = Object.fromEntries(Object.entries(storedMetadata).filter(([key]) => key !== "recommended"))
+  return normalizeProductPlan({
+    key: row.key,
+    name: row.name,
+    description: typeof row.description === "string" && row.description.trim() ? row.description : undefined,
+    active: row.active !== false,
+    ...(recommended === undefined ? {} : { recommended }),
+    sort_order: row.sort_order,
+    features: objectValue(row.features),
+    limits: objectValue(row.limits),
+    metadata,
+  })
+}
+
+function planRowFromDefinition(plan: ProductPlan) {
+  const metadata = { ...objectValue(plan.metadata), ...(plan.recommended === undefined ? {} : { recommended: plan.recommended }) }
+  return {
+    key: plan.key,
+    name: plan.name,
+    description: plan.description || null,
+    active: plan.active !== false,
+    sort_order: plan.sort_order ?? plan.sortOrder ?? 0,
+    features: plan.features || {},
+    limits: plan.limits || {},
+    metadata,
+  }
+}
+
+function planAuditValue(plan: ProductPlan) {
+  return {
+    key: plan.key,
+    name: plan.name,
+    description: plan.description || null,
+    active: plan.active !== false,
+    sort_order: plan.sort_order ?? plan.sortOrder ?? 0,
+    features: plan.features || {},
+    limits: plan.limits || {},
+  }
+}
+
+function validPlanReason(reason: string) {
+  return typeof reason === "string" && reason.trim().length >= 3
+}
+
+function planMutationError(error: unknown, fallback: string) {
+  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code || "") : ""
+  const message = error instanceof Error ? error.message : ""
+  if (code === "23505") return "A plan with that key already exists."
+  if (code === "23503") return "This plan is still referenced by billing history."
+  if (message.includes("PLAN_REFERENCED_IMMUTABLE")) return "This plan has subscription history; change its name, copy, or order instead of its entitlements."
+  if (message.includes("PLAN_REFERENCED_ACTIVE")) return "This plan is still used by an active subscription or scheduled change."
+  console.error("Platform plan operation failed", { code: code || "PLAN_OPERATION_FAILED" })
+  return fallback
+}
+
+async function readPlatformPlan(db: any, key: string) {
+  let result = await db.from("plans").select("key, name, description, active, sort_order, features, limits, metadata").eq("key", key).maybeSingle()
+  if (result.error?.code === "42703") result = await db.from("plans").select("key, name, active, sort_order, features, limits, metadata").eq("key", key).maybeSingle()
+  if (result.error) throw result.error
+  return result.data ? planDefinitionFromRow(result.data) : null
+}
+
+async function listPlanRows(db: any) {
+  let result = await db.from("plans").select("key, name, description, active, sort_order, features, limits, metadata").order("sort_order", { ascending: true }).order("key", { ascending: true })
+  if (result.error?.code === "42703") result = await db.from("plans").select("key, name, active, sort_order, features, limits, metadata").order("sort_order", { ascending: true }).order("key", { ascending: true })
+  if (result.error) throw result.error
+  return result.data || []
+}
+
+async function referencedPlanKeys(db: any) {
+  const { data, error } = await db.from("workspace_subscriptions").select("plan_key, scheduled_plan_key, status")
+  if (error) throw error
+  const referenced = new Set<string>()
+  const active = new Set<string>()
+  for (const row of data || []) {
+    for (const key of [row.plan_key, row.scheduled_plan_key]) if (typeof key === "string" && key) referenced.add(key)
+    if (row.status !== "canceled") for (const key of [row.plan_key, row.scheduled_plan_key]) if (typeof key === "string" && key) active.add(key)
+  }
+  return { referenced, active }
+}
+
+function parsePlanDefinition(input: CreatePlatformPlanInput | UpdatePlatformPlanInput, active = true): { plan: ProductPlan } | { error: string } {
+  if (!validPlanReason(input.reason)) return { error: "Add a short reason for this plan change." }
+  try {
+    const candidate = {
+      key: input.key.trim(),
+      name: input.name.trim(),
+      ...(input.description === null || input.description === undefined ? {} : { description: input.description.trim() }),
+      active,
+      ...(input.recommended === undefined ? {} : { recommended: input.recommended }),
+      sort_order: input.sortOrder,
+      features: input.features === undefined ? {} : input.features,
+      limits: input.limits === undefined ? {} : input.limits,
+      metadata: input.metadata === undefined ? {} : input.metadata,
+    }
+    validatePlanDefinition(candidate)
+    return { plan: normalizeProductPlan(candidate) }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "The plan definition is invalid." }
+  }
+}
+
+export async function listPlatformPlans(): Promise<PlatformPlanRecord[]> {
+  await requirePlatformRole()
+  const db = service()
+  const [rows, references] = await Promise.all([listPlanRows(db), referencedPlanKeys(db)])
+  return rows.map((row: any) => ({
+    key: String(row.key),
+    name: String(row.name),
+    description: typeof row.description === "string" ? row.description : null,
+    active: row.active === true,
+    sort_order: Number(row.sort_order),
+    features: objectValue(row.features),
+    limits: objectValue(row.limits),
+    metadata: objectValue(row.metadata),
+    referenced: references.referenced.has(row.key),
+  })) as PlatformPlanRecord[]
+}
+
+export async function createPlatformPlan(input: CreatePlatformPlanInput): Promise<PlatformPlanActionResult> {
+  const { access } = await requirePlatformBillingAccess()
+  const parsed = parsePlanDefinition(input)
+  if ("error" in parsed) return { success: false, message: parsed.error }
+  const db = service()
+  try {
+    const existing = await readPlatformPlan(db, parsed.plan.key)
+    if (existing) return { success: false, message: "A plan with that key already exists." }
+    const { error } = await db.from("plans").insert(planRowFromDefinition(parsed.plan))
+    if (error) return { success: false, message: planMutationError(error, "The plan could not be created.") }
+    await audit({ actorUserId: access.userId, action: "plan.created", entityType: "plan", entityId: parsed.plan.key, after: planAuditValue(parsed.plan) as Record<string, unknown>, reason: input.reason.trim() })
+    return { success: true, message: "Plan created as an active catalog entry.", planKey: parsed.plan.key }
+  } catch (error) {
+    return { success: false, message: planMutationError(error, "The plan could not be created.") }
+  }
+}
+
+export async function updatePlatformPlan(input: UpdatePlatformPlanInput): Promise<PlatformPlanActionResult> {
+  const { access } = await requirePlatformBillingAccess()
+  if (!validPlanReason(input.reason)) return { success: false, message: "Add a short reason for this plan change." }
+  const db = service()
+  try {
+    const current = await readPlatformPlan(db, input.key.trim())
+    if (!current) return { success: false, message: "That plan could not be found." }
+    const parsed = parsePlanDefinition({ ...input, key: current.key, sortOrder: input.sortOrder ?? current.sort_order, features: input.features ?? current.features, limits: input.limits ?? current.limits, metadata: input.metadata ?? current.metadata, description: input.description === undefined ? current.description : input.description, recommended: input.recommended ?? current.recommended }, current.active)
+    if ("error" in parsed) return { success: false, message: parsed.error }
+    const { active } = await referencedPlanKeys(db)
+    if (active.has(current.key) && hasCommercialPlanChange(current, parsed.plan)) return { success: false, message: "This plan is still used by an active subscription; duplicate it before changing its entitlements." }
+    const { error } = await db.from("plans").update({ name: parsed.plan.name, description: parsed.plan.description || null, sort_order: parsed.plan.sort_order, features: parsed.plan.features || {}, limits: parsed.plan.limits || {}, metadata: planRowFromDefinition(parsed.plan).metadata }).eq("key", current.key)
+    if (error) return { success: false, message: planMutationError(error, "The plan could not be updated.") }
+    await audit({ actorUserId: access.userId, action: "plan.updated", entityType: "plan", entityId: current.key, before: planAuditValue(current) as Record<string, unknown>, after: planAuditValue(parsed.plan) as Record<string, unknown>, reason: input.reason.trim() })
+    return { success: true, message: "Plan updated.", planKey: current.key }
+  } catch (error) {
+    return { success: false, message: planMutationError(error, "The plan could not be updated.") }
+  }
+}
+
+async function setPlatformPlanActive(key: string, active: boolean, reason: string): Promise<PlatformPlanActionResult> {
+  const { access } = await requirePlatformBillingAccess()
+  if (!validPlanReason(reason)) return { success: false, message: "Add a short reason for this plan change." }
+  const db = service()
+  try {
+    const current = await readPlatformPlan(db, key.trim())
+    if (!current) return { success: false, message: "That plan could not be found." }
+    if (current.active === active) return { success: true, message: active ? "Plan is already active." : "Plan is already archived.", planKey: current.key }
+    if (!active) {
+      const fallback = await getConfiguredFallbackPlanKey(db)
+      if (fallback === current.key) return { success: false, message: "The configured fallback plan cannot be archived." }
+      const references = await referencedPlanKeys(db)
+      if (references.active.has(current.key)) return { success: false, message: "This plan is still used by an active subscription or scheduled change." }
+    }
+    const { error } = await db.from("plans").update({ active }).eq("key", current.key)
+    if (error) return { success: false, message: planMutationError(error, active ? "The plan could not be activated." : "The plan could not be archived.") }
+    await audit({ actorUserId: access.userId, action: active ? "plan.activated" : "plan.archived", entityType: "plan", entityId: current.key, before: planAuditValue(current) as Record<string, unknown>, after: { ...planAuditValue(current), active }, reason: reason.trim() })
+    return { success: true, message: active ? "Plan activated." : "Plan archived. Historical subscription rows remain intact.", planKey: current.key }
+  } catch (error) {
+    return { success: false, message: planMutationError(error, active ? "The plan could not be activated." : "The plan could not be archived.") }
+  }
+}
+
+export async function activatePlatformPlan(key: string, reason: string) {
+  return setPlatformPlanActive(key, true, reason)
+}
+
+export async function archivePlatformPlan(key: string, reason: string) {
+  return setPlatformPlanActive(key, false, reason)
+}
+
+export async function duplicatePlatformPlan(input: { sourceKey: string; newKey: string; name?: string; reason: string }): Promise<PlatformPlanActionResult> {
+  const { access } = await requirePlatformBillingAccess()
+  if (!validPlanReason(input.reason)) return { success: false, message: "Add a short reason for this plan change." }
+  const db = service()
+  try {
+    const source = await readPlatformPlan(db, input.sourceKey.trim())
+    if (!source) return { success: false, message: "The source plan could not be found." }
+    const existing = await readPlatformPlan(db, input.newKey.trim())
+    if (existing) return { success: false, message: "A plan with that key already exists." }
+    const duplicate = duplicateProductPlan(source, input.newKey.trim(), input.name?.trim() ? { name: input.name.trim() } : {})
+    const { error } = await db.from("plans").insert(planRowFromDefinition(duplicate))
+    if (error) return { success: false, message: planMutationError(error, "The plan could not be duplicated.") }
+    await audit({ actorUserId: access.userId, action: "plan.duplicated", entityType: "plan", entityId: duplicate.key, before: planAuditValue(source) as Record<string, unknown>, after: planAuditValue(duplicate) as Record<string, unknown>, reason: input.reason.trim(), metadata: { sourcePlanKey: source.key, providerMappingsCopied: false } })
+    return { success: true, message: "Plan duplicated as an inactive entry. Add provider mappings before activation.", planKey: duplicate.key }
+  } catch (error) {
+    return { success: false, message: planMutationError(error, "The plan could not be duplicated.") }
+  }
+}
 export async function savePlatformSetting(key: string, value: unknown, reason: string) { const { access } = await requirePlatformWriteAccess(); if (!/^[a-z][a-z0-9_]{1,80}$/.test(key) || reason.trim().length < 3) return { success: false as const, message: "A valid setting and reason are required." }; const db = service(); const before = await db.from("platform_settings").select("value").eq("key", key).maybeSingle(); const { error } = await db.from("platform_settings").upsert({ key, value, updated_by: access.userId, updated_at: new Date().toISOString() }); if (error) return { success: false as const, message: "The setting could not be saved." }; await audit({ actorUserId: access.userId, action: "setting.updated", entityType: "platform_setting", entityId: key, before: before.data || {}, after: { value }, reason }); return { success: true as const } }
 export async function savePlatformMember(input: { userId: string; role: string; status: "active" | "suspended"; reason: string }) { const { access } = await requirePlatformWriteAccess(); if (!input.userId || input.reason.trim().length < 3) return { success: false as const, message: "A user and reason are required." }; const allowed = ["platform_owner", "platform_admin", "billing_admin", "support", "auditor"]; if (!allowed.includes(input.role)) return { success: false as const, message: "That platform role is not valid." }; const { error } = await service().from("platform_members").upsert({ user_id: input.userId, role: input.role, status: input.status, created_by: access.userId, updated_at: new Date().toISOString() }); if (error) return { success: false as const, message: "Platform access could not be saved." }; await audit({ actorUserId: access.userId, action: "platform_member.updated", entityType: "platform_member", entityId: input.userId, after: input, reason: input.reason }); return { success: true as const } }
 export async function searchPlatformEntities(query: string) {

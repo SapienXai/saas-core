@@ -41,6 +41,7 @@ function normalizeCatalog(value) {
   const plans = value.plans.map((plan, index) => {
     if (!isObject(plan) || !isPlanKey(plan.key) || keys.has(plan.key)) fail(`Invalid or duplicate product plan key: ${plan?.key || "missing"}`)
     if (typeof plan.name !== "string" || !plan.name.trim()) fail(`Plan ${plan.key} must have a display name.`)
+    if (plan.description !== undefined && (typeof plan.description !== "string" || !plan.description.trim())) fail(`Plan ${plan.key} description must be non-empty copy.`)
     if (plan.features !== undefined && !isObject(plan.features)) fail(`Plan ${plan.key} features must be an object.`)
     if (plan.limits !== undefined && !isObject(plan.limits)) fail(`Plan ${plan.key} limits must be an object.`)
     if (plan.recommended !== undefined && typeof plan.recommended !== "boolean") fail(`Plan ${plan.key} recommended must be a boolean.`)
@@ -49,6 +50,7 @@ function normalizeCatalog(value) {
     return {
       key: plan.key,
       name: plan.name.trim(),
+      ...(plan.description === undefined ? {} : { description: plan.description.trim() }),
       sort_order: Number.isInteger(plan.sort_order) && plan.sort_order >= 0 ? plan.sort_order : index,
       active: plan.active !== false,
       features: plan.features || {},
@@ -100,6 +102,14 @@ if (!dryRun) {
   if (error) fail(`Could not synchronize the Core plan catalog: ${error.message}`)
   const result = Array.isArray(data) ? data[0] : data
   if (!result || result.configured_default_plan_key !== catalog.defaultPlanKey) fail("Core catalog sync did not persist the configured default plan.")
+  // The baseline sync RPC predates the optional presentation column. Keep the
+  // catalog sync compatible with already-migrated databases while persisting
+  // descriptions when the additive plan-management migration is present.
+  for (const plan of writes) {
+    if (plan.description === undefined) continue
+    const { error: descriptionError } = await supabase.from("plans").update({ description: plan.description }).eq("key", plan.key)
+    if (descriptionError) fail(`Could not persist the description for plan ${plan.key}: ${descriptionError.message}`)
+  }
 }
 
 console.log(JSON.stringify({

@@ -10,9 +10,13 @@ const templatePersistenceMigration = await readFile(path.join(root, "packages/ap
 const entitlementMigrationPath = path.join(root, "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql")
 const entitlementMigration = await readFile(entitlementMigrationPath, "utf8")
 const templateEntitlementMigration = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql"), "utf8")
+const planCatalogMigrationPath = path.join(root, "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql")
+const planCatalogMigration = await readFile(planCatalogMigrationPath, "utf8")
+const templatePlanCatalogMigration = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260914100000_reusable_plan_catalog_management.sql"), "utf8")
 const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
 if (persistenceMigration !== templatePersistenceMigration) throw new Error("Root and template reusable billing migrations are not byte-for-byte identical.")
 if (entitlementMigration !== templateEntitlementMigration) throw new Error("Root and template entitlement enforcement migrations are not byte-for-byte identical.")
+if (planCatalogMigration !== templatePlanCatalogMigration) throw new Error("Root and template plan catalog migrations are not byte-for-byte identical.")
 const tables = [
   "plans", "workspaces", "workspace_members", "workspace_invitations", "workspace_subscriptions",
   "workspace_usage_periods", "billing_provider_prices", "billing_webhook_events", "billing_checkout_sessions",
@@ -122,6 +126,12 @@ if (!entitlementMigration.includes("private.assert_workspace_member_available") 
 }
 if (!entitlementMigration.includes("subscription_row.source <> 'manual'") || !entitlementMigration.includes("provider_customer_id") || !entitlementMigration.includes("provider_subscription_id") || !entitlementMigration.includes("candidate_provider_price_id") || !entitlementMigration.includes("current_period_end_at")) {
   throw new Error("Paid entitlement projections are missing the complete provider-identity fail-closed check.")
+}
+if (!planCatalogMigration.includes("add column if not exists description") || !planCatalogMigration.includes("plans_description_length_check") || !planCatalogMigration.includes("create or replace function private.guard_referenced_plan_change()") || !planCatalogMigration.includes("PLAN_REFERENCED_IMMUTABLE") || !planCatalogMigration.includes("PLAN_REFERENCED_ACTIVE")) {
+  throw new Error("Plan catalog lifecycle migration is missing description persistence or historical entitlement protection.")
+}
+if (!planCatalogMigration.includes("before update on public.plans") || !planCatalogMigration.includes("revoke all on function private.guard_referenced_plan_change() from public, anon, authenticated")) {
+  throw new Error("Plan catalog lifecycle guard is not attached or restricted to server-controlled execution.")
 }
 if (["rest" + "aurant", "reserv" + "ation", "seat" + "ing", "paddle"].some((term) => entitlementMigration.toLowerCase().includes(term))) {
   throw new Error("The reusable entitlement enforcement migration contains product/provider-specific vocabulary.")

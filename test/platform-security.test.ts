@@ -20,6 +20,25 @@ describe("platform control hardening", () => {
     expect(platform).toContain("platform_user_controls")
   })
 
+  it("keeps plan catalog mutations platform-billing-only and historical-safe", () => {
+    const platform = readFileSync("lib/platform-admin.ts", "utf8")
+    const actions = readFileSync("app/platform/billing/actions.ts", "utf8")
+    const component = readFileSync("components/platform/platform-plan-management.tsx", "utf8")
+    expect(platform).toContain("requirePlatformBillingAccess")
+    expect(platform).toContain("createPlatformPlan")
+    expect(platform).toContain("updatePlatformPlan")
+    expect(platform).toContain("archivePlatformPlan")
+    expect(platform).toContain("duplicatePlatformPlan")
+    expect(platform).toContain("hasCommercialPlanChange")
+    expect(platform).toContain('action: "plan.created"')
+    expect(platform).toContain('"plan.archived"')
+    expect(actions).toContain('"use server"')
+    expect(actions).toContain("createPlatformPlanAction")
+    expect(component).toContain("provider price mappings")
+    expect(component).toContain("Entitlement maps are validated on the server")
+    expect(component).toContain('data.set("newKey", form.key)')
+  })
+
   it("keeps domain refresh scoped to provider reads and audit state", () => {
     const operations = readFileSync("lib/domains/domain-service.ts", "utf8")
     expect(operations).toContain("requireWorkspaceRole")

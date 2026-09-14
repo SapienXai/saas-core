@@ -19,6 +19,7 @@ const CORE_PACKAGES = [...RUNTIME_CORE_PACKAGES, ...TOOLING_CORE_PACKAGES]
 const REQUIRED_BILLING_MIGRATIONS = [
   "supabase/migrations/20260909094344_reusable_billing_persistence.sql",
   "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
+  "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
 ]
 const IGNORED_FILES = new Set(["next-env.d.ts", ".gitignore", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"])
 const PRODUCT_PREFIXES = ["src/product/", "app/(product)/", "app/product/", "components/product/", "supabase/migrations/product/"]
@@ -182,6 +183,9 @@ export type ProductPlanDefinition = {
   name: string
   description?: string
   active?: boolean
+  recommended?: boolean
+  sort_order?: number
+  sortOrder?: number
   prices?: Readonly<Record<string, { amount: number | null; currency: string; providerPriceId?: string }>>
   features?: Readonly<Record<string, boolean>>
   limits?: Readonly<Record<string, number | null>>

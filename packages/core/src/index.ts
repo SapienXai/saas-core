@@ -37,6 +37,15 @@ export type ProductPlan = {
   metadata?: Readonly<Record<string, unknown>>
 }
 
+/**
+ * A plan definition is deliberately the same contract used by ProductCatalog.
+ * The key is the stable identifier; consumers own its meaning and display
+ * copy. Core only validates and carries the definition through its lifecycle.
+ */
+export type PlanDefinition = ProductPlan
+
+export type ProductPlanChangeScope = "none" | "presentation" | "commercial" | "identity"
+
 export type ProductUsageMetric = {
   key: CoreUsageMetricKey
   name: string
@@ -301,6 +310,104 @@ function validateProductPlan(plan: unknown, index: number, keys: Set<string>) {
   validateStringKeyMap(plan.limits, `${path}.limits`, (candidate) => candidate === null || typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate >= 0, "a non-negative integer or null")
   if (plan.metadata !== undefined && !isRecord(plan.metadata)) throw new Error(`${path}.metadata must be an object.`)
   keys.add(plan.key)
+}
+
+/** Return whether a value can be used as a stable product plan key. */
+export function isProductPlanKey(value: unknown): value is string {
+  return typeof value === "string" && PRODUCT_PLAN_KEY_PATTERN.test(value)
+}
+
+/** Validate one plan without requiring it to be the catalog fallback plan. */
+export function validatePlanDefinition(value: unknown): ProductPlan {
+  const keys = new Set<string>()
+  validateProductPlan(value, 0, keys)
+  return value as ProductPlan
+}
+
+function canonicalizePlanValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((item) => canonicalizePlanValue(item))
+  if (isRecord(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalizePlanValue(value[key])]))
+  return value
+}
+
+function commercialMetadata(value: Readonly<Record<string, unknown>> | undefined) {
+  const metadata = { ...(value || {}) }
+  // The catalog sync stores this presentation hint in metadata for backwards
+  // compatibility, but it is not an entitlement or pricing decision.
+  delete metadata.recommended
+  return metadata
+}
+
+function planCommercialFingerprint(plan: ProductPlan) {
+  return JSON.stringify(canonicalizePlanValue({
+    // Metadata may contain provider-neutral pricing and is therefore part of
+    // the commercial contract. Description/name/order remain presentation.
+    features: plan.features || {},
+    limits: plan.limits || {},
+    metadata: commercialMetadata(plan.metadata),
+    prices: plan.prices || {},
+  }))
+}
+
+/**
+ * Commercial entitlement changes are protected separately from presentation
+ * changes by the managed application. This keeps historical subscriptions
+ * explainable without freezing labels or ordering.
+ */
+export function hasCommercialPlanChange(before: ProductPlan, after: ProductPlan) {
+  validatePlanDefinition(before)
+  validatePlanDefinition(after)
+  return planCommercialFingerprint(before) !== planCommercialFingerprint(after)
+}
+
+export function classifyProductPlanChange(before: ProductPlan, after: ProductPlan): ProductPlanChangeScope {
+  validatePlanDefinition(before)
+  validatePlanDefinition(after)
+  if (before.key !== after.key) return "identity"
+  if (hasCommercialPlanChange(before, after)) return "commercial"
+  const presentationBefore = JSON.stringify(canonicalizePlanValue({ key: before.key, name: before.name, description: before.description, active: before.active, recommended: before.recommended, sort_order: before.sort_order ?? before.sortOrder }))
+  const presentationAfter = JSON.stringify(canonicalizePlanValue({ key: after.key, name: after.name, description: after.description, active: after.active, recommended: after.recommended, sort_order: after.sort_order ?? after.sortOrder }))
+  return presentationBefore === presentationAfter ? "none" : "presentation"
+}
+
+/**
+ * Normalize the two historical sort-order spellings and optional maps into a
+ * stable, serializable plan definition. The function never mutates its input.
+ */
+export function normalizeProductPlan(value: unknown): ProductPlan {
+  const plan = validatePlanDefinition(value)
+  const normalizedPrices = plan.prices
+    ? Object.fromEntries(Object.entries(plan.prices).map(([interval, price]) => [interval, { amount: price.amount, currency: price.currency, ...(price.providerPriceId ? { providerPriceId: price.providerPriceId } : {}) }]))
+    : undefined
+  return {
+    key: plan.key,
+    name: plan.name.trim(),
+    ...(plan.description === undefined ? {} : { description: plan.description.trim() }),
+    active: plan.active !== false,
+    ...(plan.recommended === undefined ? {} : { recommended: plan.recommended }),
+    sort_order: plan.sort_order ?? plan.sortOrder ?? 0,
+    ...(normalizedPrices ? { prices: normalizedPrices } : {}),
+    features: { ...(plan.features || {}) },
+    limits: { ...(plan.limits || {}) },
+    metadata: { ...(plan.metadata || {}) },
+  }
+}
+
+/**
+ * Duplicate a plan as an inactive definition. Provider price references are
+ * intentionally not copied; a consumer must explicitly map the new key.
+ */
+export function duplicateProductPlan(
+  source: ProductPlan,
+  newKey: string,
+  overrides: Partial<Omit<ProductPlan, "key" | "active">> = {},
+): ProductPlan {
+  const plan = normalizeProductPlan(source)
+  if (!isProductPlanKey(newKey)) throw new Error(`Invalid product plan key: ${newKey}`)
+  const prices = plan.prices
+    ? Object.fromEntries(Object.entries(plan.prices).map(([interval, price]) => [interval, { amount: price.amount, currency: price.currency }]))
+    : undefined
+  return normalizeProductPlan({ ...plan, ...overrides, key: newKey, active: false, ...(prices ? { prices } : {}) })
 }
 
 function validateUsageMetrics(value: unknown) {

@@ -12,6 +12,7 @@ const LEGACY_VERSION = "2.1.0"
 const billingMigrations = [
   "supabase/migrations/20260909094344_reusable_billing_persistence.sql",
   "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
+  "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES

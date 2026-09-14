@@ -1,7 +1,9 @@
 import { listPlatformPlans } from "@/lib/platform-admin"
-import { PlatformCollection } from "@/components/platform/platform-generic"
+import { PlatformPlanManagement } from "@/components/platform/platform-plan-management"
 import { requirePlatformBillingAccess } from "@/lib/platform-authorization"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { ManagePage } from "@/components/manage/manage-responsive"
+import { PlatformPageHeader } from "@/components/platform/platform-primitives"
 
 export const dynamic = "force-dynamic"
 
@@ -16,5 +18,5 @@ export default async function PlatformBillingPage() {
   }
   const copy = product.billingPresentation?.copy || product.billing?.presentation?.copy || product.billingPolicy?.presentation?.copy || product.catalog?.billingPresentation?.copy || product.catalog?.presentation?.copy || {}
   const copyText = (key: string, fallback: string) => copy[key]?.trim() || fallback
-  return <PlatformCollection title={copyText("platformTitle", "Billing catalog")} description={copyText("platformDescription", "Review product-defined plans, limits, and entitlements available to workspaces.")} rows={rows} columns={[{ key: "name", label: copyText("planLabel", "Plan") }, { key: "key", label: copyText("planKeyLabel", "Key") }, { key: "limits", label: copyText("limitsLabel", "Limits") }, { key: "active", label: copyText("activeLabel", "Active") }]} />
+  return <ManagePage><PlatformPageHeader eyebrow={copyText("eyebrow", "Platform billing")} title={copyText("platformTitle", "Billing catalog")} description={copyText("platformDescription", "Review and safely manage product-defined plans, limits, and entitlements available to workspaces.")} /><PlatformPlanManagement rows={rows} /></ManagePage>
 }

@@ -22,6 +22,11 @@ consumer can pack and validate these exports without loading a provider SDK or
 making a network call. Gate state is advisory UI output; server-side mutation
 authorization remains the consumer's responsibility.
 
+Plan catalog consumers can also use `validatePlanDefinition()`,
+`normalizeProductPlan()`, `duplicateProductPlan()`, and
+`classifyProductPlanChange()`. A duplicate is intentionally inactive and has
+no provider price reference; provider mappings must be registered separately.
+
 Portable workspace, entitlement, catalog, schema, manifest, and compatibility
 contracts for SaaS Core products. This package contains no Next.js, Supabase
 service-role, Paddle, migration execution, or product-domain code. Its package

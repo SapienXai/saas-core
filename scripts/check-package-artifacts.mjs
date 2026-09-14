@@ -35,6 +35,24 @@ for (const packageName of PACKAGE_NAMES) {
   if (forbiddenContent.test(JSON.stringify(packageJson))) throw new Error(`${filename} contains a local path, registry URL, or workspace protocol.`)
 }
 
+const coreTarball = path.join(artifacts, `sapienx-saas-core-${RELEASE_VERSION}.tgz`)
+const coreDeclarations = execFileSync("tar", ["-xOf", coreTarball, "package/dist/index.d.ts"], { encoding: "utf8" })
+for (const name of ["PlanDefinition", "validatePlanDefinition", "normalizeProductPlan", "classifyProductPlanChange", "duplicateProductPlan"]) {
+  if (!coreDeclarations.includes(name)) throw new Error(`Core artifact is missing the plan catalog contract: ${name}.`)
+}
+
+const managedPlanFiles = [
+  "package/template/supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
+  "package/template/app/platform/billing/actions.ts",
+  "package/template/app/platform/billing/page.tsx",
+  "package/template/components/platform/platform-plan-management.tsx",
+]
+for (const packageName of ["@sapienx/saas-core-app", "@sapienx/saas-core-cli"]) {
+  const filename = `${packageName.replace(/^@/, "").replace("/", "-")}-${RELEASE_VERSION}.tgz`
+  const listing = execFileSync("tar", ["-tzf", path.join(artifacts, filename)], { encoding: "utf8" })
+  for (const relative of managedPlanFiles) if (!listing.includes(`${relative}\n`)) throw new Error(`${filename} is missing managed plan file ${relative}.`)
+}
+
 const configTarball = path.join(artifacts, `sapienx-saas-core-config-${RELEASE_VERSION}.tgz`)
 const configPackage = JSON.parse(execFileSync("tar", ["-xOf", configTarball, "package/package.json"], { encoding: "utf8" }))
 if (configPackage.dependencies?.["@sapienx/saas-core"] !== `^${RELEASE_VERSION}`) throw new Error("Config tarball did not resolve its Core workspace dependency to the registry range.")
