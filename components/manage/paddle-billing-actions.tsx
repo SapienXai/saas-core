@@ -23,6 +23,7 @@ import { useLanguage } from "@/context/language-context"
 import { useManageContext } from "@/context/manage-context"
 import { formatDate as formatLocalizedDate, formatNumber } from "@/i18n/format"
 import type { TranslationKey } from "@/i18n"
+import type { PlanChangeEligibility } from "@sapienx/saas-core"
 import {
   cancelPaddleSubscription,
   changePaddlePlan,
@@ -211,6 +212,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   const [successExperience, setSuccessExperience] = useState<BillingSuccessState | null>(null)
   const [selectingPlan, setSelectingPlan] = useState<string | null>(null)
   const [billingConfirmation, setBillingConfirmation] = useState<BillingConfirmation | null>(null)
+  const [blockedPlanChange, setBlockedPlanChange] = useState<{ targetPlan: string; eligibility: PlanChangeEligibility } | null>(null)
   const [billingInterval, setBillingInterval] = useState(billing.billingInterval === "year" ? "year" : defaultInterval === "year" ? "year" : "month")
   const [cancellationReason, setCancellationReason] = useState("too_expensive")
   const [cancellationFeedback, setCancellationFeedback] = useState("")
@@ -234,6 +236,21 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   }, [planPresentation, t])
   const displayKey = (key: string) => presentationCopy[key] || presentationCopy[`feature.${key}`] || presentationCopy[`limit.${key}`] || key.replaceAll(/[._-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2")
   const usageMetricName = (key: string) => usageMetrics.find((metric) => metric.key === key)?.name || displayKey(key)
+  const eligibilityCapabilityName = (key: string) => key === "core.workspaces"
+    ? copyText("workspacesLabel", t("manage.planUsage.billing.workspaces"))
+    : key === "core.members"
+    ? copyText("teamMembersLabel", t("manage.planUsage.billing.teamMembers"))
+    : usageMetricName(key)
+  const eligibilityViolationText = (violation: PlanChangeEligibility["violations"][number]) => {
+    const label = eligibilityCapabilityName(violation.capability)
+    if (violation.reason === "LIMIT_EXCEEDED" && typeof violation.current === "number" && typeof violation.targetLimit === "number") {
+      const excess = typeof violation.excess === "number" ? violation.excess : Math.max(0, violation.current - violation.targetLimit)
+      return `${label}: ${violation.current.toLocaleString()} used / ${violation.targetLimit.toLocaleString()} allowed. Reduce usage by ${excess.toLocaleString()} before switching.`
+    }
+    if (violation.reason === "USAGE_UNAVAILABLE") return `${label}: current usage could not be verified. Try again before switching.`
+    if (violation.reason === "CAPABILITY_NOT_CONFIGURED") return `${label}: this capability is not configured on the target plan.`
+    return "The selected plan is not available."
+  }
   const planLimitKeys = (plan: Plan) => {
     const requested = presentation?.limitKeys?.length ? presentation.limitKeys : Object.keys(plan.limits)
     return [...new Set(requested)].filter((key) => Object.prototype.hasOwnProperty.call(plan.limits, key))
@@ -362,6 +379,11 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
       const result = await operation()
       const data = result.data && typeof result.data === "object" ? result.data as { transactionId?: unknown; transitionId?: unknown; token?: unknown; environment?: unknown; url?: unknown } : null
       if (!result.success) {
+        const eligibilityData = result.data && typeof result.data === "object" ? result.data as { targetPlan?: unknown; eligibility?: unknown } : null
+        if (typeof eligibilityData?.targetPlan === "string" && eligibilityData.eligibility && typeof eligibilityData.eligibility === "object") {
+          const eligibility = eligibilityData.eligibility as PlanChangeEligibility
+          if (eligibility.allowed === false && Array.isArray(eligibility.violations)) setBlockedPlanChange({ targetPlan: eligibilityData.targetPlan, eligibility })
+        }
         setMessage(translateMessage(result.message || t("manage.planUsage.billing.actionFailed")))
         return
       }
@@ -431,6 +453,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   }
 
   const startCheckout = (planKey: string) => {
+    setBlockedPlanChange(null)
     beginAction(`checkout-preview:${planKey}`, async () => {
       setMessage(null)
       const preview = await previewPaddleCheckout(planKey, billingInterval)
@@ -444,9 +467,15 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
 
   const changePlan = (planKey: string) => {
     setMessage(null)
+    setBlockedPlanChange(null)
     beginAction(`plan-preview:${planKey}`, async () => {
       const preview = await previewPaddlePlanChange(planKey, billingInterval)
       if (!preview.success || !preview.data) {
+        const eligibilityData = preview.data && typeof preview.data === "object" ? preview.data as { targetPlan?: unknown; eligibility?: unknown } : null
+        if (typeof eligibilityData?.targetPlan === "string" && eligibilityData.eligibility && typeof eligibilityData.eligibility === "object") {
+          const eligibility = eligibilityData.eligibility as PlanChangeEligibility
+          if (eligibility.allowed === false && Array.isArray(eligibility.violations)) setBlockedPlanChange({ targetPlan: eligibilityData.targetPlan, eligibility })
+        }
         setMessage(translateMessage(preview.message || t("manage.planUsage.billing.actionFailed")))
         return
       }
@@ -609,6 +638,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
 
   const selectPlan = (planKey: string) => {
     if (selectedPlanKey === planKey) return
+    setBlockedPlanChange(null)
     setSelectingPlan(planKey)
     const nextParams = new URLSearchParams(searchParams.toString())
     nextParams.set("plan", planKey)
@@ -656,6 +686,12 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
           {billing.billingIssueCode === "grace_expired" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100"><div><p className="font-semibold">{t("manage.planUsage.billing.paymentGraceExpired")}</p><p className="mt-1 text-xs font-normal text-rose-800/75 dark:text-rose-200/75">{t("manage.planUsage.billing.paymentGraceExpiredDescription")}</p></div>{billing.canManage && <Button type="button" onClick={recoverPayment} loading={activeAction === "recover-payment"} className="min-h-9 rounded-lg bg-rose-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-800">{t("manage.planUsage.billing.updatePaymentMethod")}</Button>}</div>}
         </section>
       )}
+
+      {blockedPlanChange && <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100" role="alert" data-plan-change-eligibility={blockedPlanChange.targetPlan}>
+        <p className="font-semibold">This downgrade is not available for the target plan.</p>
+        <p className="mt-1 text-xs leading-5 text-amber-800/80 dark:text-amber-200/80">Existing resources remain intact. Reduce the listed usage or choose another plan before scheduling the change.</p>
+        <ul className="mt-2 space-y-1 text-xs leading-5 text-amber-900 dark:text-amber-100">{blockedPlanChange.eligibility.violations.map((violation, index) => <li key={`${violation.capability}-${violation.reason}-${index}`}>{eligibilityViolationText(violation)}</li>)}</ul>
+      </section>}
 
       <section id="upgrade-plans" className="manage-plan-card scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-6">
         <div className="flex flex-wrap items-end justify-between gap-4">

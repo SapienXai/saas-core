@@ -129,7 +129,48 @@ For advisory client rendering, the provider-neutral Core package exports
 Use it to choose visibility and copy only; the server guard remains the
 authority.
 
-## 5. Protect check-then-insert quota mutations
+## 5. Validate explicit plan changes
+
+An explicit downgrade is eligible only when every capability already in use
+can fit within the target plan. The managed server action uses the
+server-only `validatePlanChangeEligibility(workspaceId, targetPlanKey)` helper
+before presenting a downgrade preview and re-runs it immediately before the
+provider mutation. Upgrades are not blocked by this check.
+
+The provider-neutral package also exports the pure evaluator and structured
+contract for products that need to compose their own preview:
+
+```ts
+import {
+  evaluatePlanChangeEligibility,
+  type PlanChangeEligibility,
+} from "@sapienx/saas-core"
+
+const eligibility: PlanChangeEligibility = evaluatePlanChangeEligibility({
+  targetPlanKey: "free",
+  checks: [
+    { capability: "venues", targetLimit: 1, current: 4, usageAvailable: true },
+    { capability: "core.members", targetLimit: 2, current: 2, usageAvailable: true },
+  ],
+})
+// { allowed: false, violations: [{ capability: "venues",
+//   reason: "LIMIT_EXCEEDED", current: 4, targetLimit: 1, excess: 3 }] }
+```
+
+`null` is unlimited and does not require a usage read. A finite target is
+eligible when `current <= targetLimit`; `undefined`, a missing target
+capability, malformed configuration, or unavailable authoritative usage fails
+closed. Violation reasons are `LIMIT_EXCEEDED`, `USAGE_UNAVAILABLE`,
+`CAPABILITY_NOT_CONFIGURED`, and `INVALID_PLAN`; the result is safe to
+serialize because it contains no provider object or secret.
+
+This eligibility check is intentionally different from cancellation. A
+workspace may schedule cancellation even when its usage is already above the
+configured fallback limits. Existing resources remain intact; after the
+effective cancellation boundary, new restricted mutations are blocked until
+usage is reduced or the workspace returns to an eligible paid plan.
+
+## 6. Protect check-then-insert quota mutations
 
 For a finite quota, a separate JavaScript count followed by an insert is not
 atomic. A product-owned security-definer RPC should call the Core lock helper
@@ -168,7 +209,7 @@ locks the local subscription row, so participating mutations cannot both pass
 the same finite quota check. The helper is server-only; consumers should not
 expose it directly to browser clients.
 
-## 6. Render usage and limit feedback
+## 7. Render usage and limit feedback
 
 The managed app can render all configured metrics through `ManageUsageMetric`.
 The UI package also exports `BillingUsageMeter` and
@@ -190,7 +231,7 @@ The components distinguish `Limit unavailable`, finite limits, and
 does not mention a product domain. Feature visibility and disabled states are
 advisory only. The server guard remains authoritative.
 
-## 7. Downgrade, cancellation, and failure states
+## 8. Downgrade, cancellation, and failure states
 
 A scheduled downgrade or cancellation keeps the current plan until its actual
 effective timestamp. If current usage exceeds the target plan, existing
@@ -203,7 +244,7 @@ missing customer or local subscription is not premium access. Only an explicit
 server-controlled manual plan state may bypass provider identity checks. Paddle
 is not called synchronously for normal entitlement reads.
 
-## 8. Ownership and verification checklist
+## 9. Ownership and verification checklist
 
 The subscription owner is the Core Workspace (`workspace_subscriptions` has a
 workspace primary key). Product usage is normally workspace-scoped. Verify the

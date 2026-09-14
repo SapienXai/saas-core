@@ -144,6 +144,25 @@ only effective entitlements to the fallback and preserves data, usage, and
 provider history. Resume clears a scheduled cancellation after provider
 confirmation.
 
+For an explicit plan change, the managed action adds one provider-neutral
+policy step before the provider mutation:
+
+```text
+target plan
+  → authoritative target limits
+  → authoritative current usage
+  → PlanChangeEligibility
+  → schedule/provider mutation only when allowed
+```
+
+Finite target limits require `current <= targetLimit`; `null` is explicitly
+unlimited; missing configuration or unavailable usage fails closed. The check
+runs during downgrade preview and is repeated at confirmation immediately
+before scheduling or calling Paddle. Upgrades do not require target-usage
+eligibility. Cancellation is a separate lifecycle operation and remains
+available even when a workspace is over fallback limits; existing data is
+never silently deleted.
+
 ## Product integration boundary
 
 Products provide catalog definitions, prices, feature and limit keys, usage

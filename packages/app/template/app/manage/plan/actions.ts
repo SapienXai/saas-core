@@ -4,13 +4,13 @@ import { revalidatePath } from "next/cache"
 import { AuthorizationError, getCurrentWorkspace, requireUser, requireWorkspaceRole } from "@/lib/authorization"
 import { getBillingEnvironment, getPaddleServerClient, getPublicPaddleConfig, isPaddleBillingConfigured } from "@/lib/billing/paddle-client"
 import { getActivePaddlePrice, getPaddlePriceByProviderId, isBillingInterval, isPaidPlanKey, type BillingInterval, type PaidPlanKey, type ProviderPriceMapping } from "@/lib/billing/price-mapping"
-import { getWorkspaceEntitlements, getWorkspaceUsage } from "@/lib/entitlements"
+import { getWorkspaceEntitlements, getWorkspaceUsage, validatePlanChangeEligibility } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import type { Json } from "@/types/supabase"
 import { applyPaddleSubscriptionEvent } from "@/lib/billing/webhook"
 import { getConfiguredDefaultPlanKey, getConfiguredFallbackPlanKey, isTerminalBillingSubscription } from "@/lib/billing/reconciliation"
 import { consumeBillingTransition, recordBillingMutationTransition, updateBillingMutationTransition } from "@/lib/billing/persistence"
-import type { BillingTransitionKind } from "@sapienx/saas-core"
+import type { BillingTransitionKind, PlanChangeEligibility } from "@sapienx/saas-core"
 import { getProductUsageResolvers } from "@/src/product/usage"
 
 const CANCELLATION_REASONS = new Set(["too_expensive", "not_using", "seasonal", "missing_feature", "technical_problem", "switching_solution", "other"])
@@ -193,6 +193,14 @@ function friendlyBillingError(error: unknown) {
   const providerUnavailable = error instanceof Error && /past_due|30 minutes|cannot change|not change/i.test(error.message)
   console.error("Billing action failed", { code: providerUnavailable ? "PROVIDER_CHANGE_UNAVAILABLE" : "BILLING_UNAVAILABLE" })
   return providerUnavailable ? "This billing change is temporarily unavailable. Refresh the page and try again." : "Billing service is temporarily unavailable. Please try again."
+}
+
+function downgradeEligibilityFailure(targetPlan: string, eligibility: PlanChangeEligibility) {
+  return {
+    success: false as const,
+    message: "This downgrade is not currently available because the target plan cannot safely accommodate this workspace's usage.",
+    data: { targetPlan, eligibility },
+  }
 }
 
 function getBillingPresentation() {
@@ -591,6 +599,10 @@ export async function previewPaddlePlanChange(targetPlan: string, targetInterval
     const currentOrder = await getPlanSortOrder(subscription.plan_key)
     const targetOrder = await getPlanSortOrder(targetPlan)
     const isDowngrade = targetOrder < currentOrder
+    if (isDowngrade) {
+      const eligibility = await validatePlanChangeEligibility(subscription.workspace_id, targetPlan)
+      if (!eligibility.allowed) return downgradeEligibilityFailure(targetPlan, eligibility)
+    }
     const prorationBillingMode = isDowngrade ? "do_not_bill" : "prorated_immediately"
     const preview = await getPaddleServerClient().subscriptions.previewUpdate(subscription.provider_subscription_id as string, { items: [{ priceId: mapping.provider_price_id, quantity: 1 }], prorationBillingMode })
     const effectiveAt = isDowngrade ? providerPeriodEnd(providerState, subscription) : preview.nextBilledAt
@@ -644,6 +656,17 @@ export async function changePaddlePlan(targetPlan: string, previewToken?: string
       await finishBillingMutation(mutation.id, "failed", {}, "PREVIEW_CHANGED")
       await finishCanonicalTransition(transition.transition_id, "failed", { reason: "PREVIEW_CHANGED" }, "PREVIEW_CHANGED")
       return { success: false, message: "The billing amount changed. Review the new preview before confirming." }
+    }
+    // Re-read authoritative usage immediately before persisting a scheduled
+    // downgrade or making the provider mutation. The initial preview is only
+    // advisory; this closes the confirmation-time race with product writes.
+    if (isDowngrade) {
+      const eligibility = await validatePlanChangeEligibility(membership.workspace_id, targetPlan)
+      if (!eligibility.allowed) {
+        await finishCanonicalTransition(transition.transition_id, "failed", { reason: "PLAN_CHANGE_NOT_ELIGIBLE", eligibility }, "PLAN_CHANGE_NOT_ELIGIBLE")
+        await finishBillingMutation(mutation.id, "failed", { targetPlan, eligibility }, "PLAN_CHANGE_NOT_ELIGIBLE")
+        return downgradeEligibilityFailure(targetPlan, eligibility)
+      }
     }
     const scheduledEffectiveAt = isDowngrade ? context.currentPeriodEndAt : null
     // Persist the entitlement guard before calling Paddle. A webhook can arrive

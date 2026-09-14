@@ -2,10 +2,13 @@ import "server-only"
 
 import { cache } from "react"
 import {
+  evaluatePlanChangeEligibility,
   evaluateEntitlementConsumption,
   getUsageSnapshot as buildUsageSnapshot,
   type EntitlementErrorCode as CoreEntitlementErrorCode,
   type EntitlementLimit,
+  type PlanChangeEligibility,
+  type PlanChangeEligibilityReason,
 } from "@sapienx/saas-core"
 import { isPaymentGraceExpired } from "@/lib/billing/lifecycle"
 import { getConfiguredFallbackPlanKey } from "@/lib/billing/reconciliation"
@@ -752,6 +755,74 @@ export async function getEntitlement(workspaceId: string, capability: string): P
   }
 }
 
+function blockedPlanChangeEligibility(targetPlanKey: string, reason: PlanChangeEligibilityReason): PlanChangeEligibility {
+  return {
+    targetPlanKey,
+    allowed: false,
+    violations: [{ capability: "plan", reason }],
+  }
+}
+
+/**
+ * Resolve target-plan quota eligibility from the local catalog and
+ * authoritative usage. This function is deliberately provider-neutral: the
+ * caller decides whether the target is an upgrade or downgrade, while the
+ * result is safe to use before any provider mutation.
+ */
+export async function validatePlanChangeEligibility(
+  workspaceId: string,
+  targetPlanKey: PlanKey,
+  options: EntitlementResolutionOptions = {},
+): Promise<PlanChangeEligibility> {
+  const normalizedTargetPlanKey = validPlanKey(targetPlanKey) || ""
+  if (!normalizedTargetPlanKey) return blockedPlanChangeEligibility(normalizedTargetPlanKey, "INVALID_PLAN")
+
+  const service = createServiceRoleClient() as any
+  const { data: targetPlan, error: targetPlanError } = await service
+    .from("plans")
+    .select("key, limits, active")
+    .eq("key", normalizedTargetPlanKey)
+    .eq("active", true)
+    .maybeSingle()
+  if (targetPlanError) {
+    console.error("Unable to load target plan for eligibility:", { code: "TARGET_PLAN_LOOKUP_FAILED" })
+    return blockedPlanChangeEligibility(normalizedTargetPlanKey, "USAGE_UNAVAILABLE")
+  }
+  if (!targetPlan) return blockedPlanChangeEligibility(normalizedTargetPlanKey, "INVALID_PLAN")
+
+  let currentEntitlements: WorkspaceEntitlements
+  try {
+    currentEntitlements = await getWorkspaceEntitlements(workspaceId)
+  } catch {
+    console.error("Unable to resolve current plan for target eligibility:", { code: "CURRENT_PLAN_LOOKUP_FAILED" })
+    return blockedPlanChangeEligibility(normalizedTargetPlanKey, "USAGE_UNAVAILABLE")
+  }
+
+  const rawTargetLimits = asRecord(targetPlan.limits)
+  const targetLimits = normalizeLimits(targetPlan.limits)
+  const capabilities = new Set([...Object.keys(currentEntitlements.limits), ...Object.keys(rawTargetLimits)])
+  const checks = await Promise.all([...capabilities].map(async (capability) => {
+    if (!Object.prototype.hasOwnProperty.call(targetLimits, capability)) {
+      return { capability, targetLimit: undefined, configured: false } as const
+    }
+
+    const targetLimit = targetLimits[capability]
+    // Explicit unlimited does not require a product usage resolver. This is
+    // both cheaper and preserves the distinction between null and undefined.
+    if (targetLimit === null) return { capability, targetLimit, usageAvailable: true } as const
+
+    try {
+      const current = await getUsage(workspaceId, capability, options)
+      return { capability, targetLimit, current, usageAvailable: true } as const
+    } catch {
+      console.error("Unable to resolve target-plan usage:", { capability, code: "TARGET_USAGE_UNAVAILABLE" })
+      return { capability, targetLimit, usageAvailable: false } as const
+    }
+  }))
+
+  return evaluatePlanChangeEligibility({ targetPlanKey: normalizedTargetPlanKey, checks })
+}
+
 export async function canConsume(workspaceId: string, capability: string, amount = 1, userIdOrOptions?: string | EntitlementResolutionOptions, options: EntitlementResolutionOptions = {}): Promise<WorkspaceEntitlementDecision> {
   const resolvedOptions = resolveOptions(userIdOrOptions, options)
   const entitlements = await getWorkspaceEntitlements(workspaceId)
@@ -839,6 +910,7 @@ export function createEntitlementService(defaultOptions: EntitlementResolutionOp
   return {
     getEffectivePlan,
     getEntitlements,
+    validatePlanChangeEligibility: (workspaceId: string, targetPlanKey: PlanKey) => validatePlanChangeEligibility(workspaceId, targetPlanKey, defaultOptions),
     getEntitlement,
     hasFeature,
     getLimit,

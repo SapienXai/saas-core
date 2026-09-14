@@ -125,6 +125,47 @@ const billing = createEntitlementService({
 })
 ```
 
+## Validate a target plan before downgrade
+
+The managed server helper resolves the active target catalog row, the current
+effective plan, and authoritative usage for every target/current limit key:
+
+```ts
+import { validatePlanChangeEligibility } from "@/lib/entitlements"
+
+const eligibility = await validatePlanChangeEligibility(workspaceId, "free")
+if (!eligibility.allowed) {
+  // Do not schedule the provider downgrade. Render the violations and let the
+  // owner reduce usage or choose another plan.
+}
+```
+
+The provider-neutral `@sapienx/saas-core` package exports
+`evaluatePlanChangeEligibility()` and the `PlanChangeEligibility` types for
+non-managed consumers. Its structured result is:
+
+```ts
+{
+  targetPlanKey: "free",
+  allowed: false,
+  violations: [{
+    capability: "venues",
+    reason: "LIMIT_EXCEEDED",
+    current: 4,
+    targetLimit: 1,
+    excess: 3,
+  }],
+}
+```
+
+`LIMIT_EXCEEDED` means current usage is greater than a finite target limit;
+exactly equal usage is eligible. `USAGE_UNAVAILABLE` and
+`CAPABILITY_NOT_CONFIGURED` are restrictive verification failures, not zero
+usage. `null` is explicit unlimited. The managed action revalidates the same
+contract immediately before writing scheduled state or calling Paddle, so a
+new product record created after preview cannot make an ineligible downgrade
+confirmable. Upgrades are unaffected.
+
 ## Enforce mutations
 
 Guard the product mutation on the server after resolving the authenticated
@@ -154,7 +195,9 @@ plan, existing data stays intact and new restricted mutations are blocked.
 
 Missing, expired, canceled, paused, stale, malformed, or unmapped paid state
 resolves to the configured fallback or a restrictive error. It never grants
-premium or unlimited access.
+premium or unlimited access. Cancellation remains available as a separate
+provider lifecycle action even when the workspace is over fallback limits;
+eligibility validation applies to an explicit plan downgrade only.
 
 ## UI handoff
 

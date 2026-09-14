@@ -81,4 +81,21 @@ describe("reusable billing UI", () => {
     for (const [sourcePath, templatePath] of pairs) expect(read(sourcePath), templatePath).toBe(read(templatePath))
     expect(read("packages/app/template/app/app/plan/page.tsx")).toContain('export { default } from "@/app/manage/plan/page"')
   })
+
+  it("checks downgrade eligibility again before scheduling or calling Paddle", () => {
+    const actions = read("app/manage/plan/actions.ts")
+    const templateActions = read("packages/app/template/app/manage/plan/actions.ts")
+    const freshPreview = actions.indexOf("freshPreview =")
+    const confirmationEligibility = actions.indexOf("validatePlanChangeEligibility(membership.workspace_id, targetPlan)", freshPreview)
+    const providerMutation = actions.indexOf("subscriptions.update", confirmationEligibility)
+    const cancellation = actions.indexOf("export async function cancelPaddleSubscription")
+    const resume = actions.indexOf("export async function resumePaddleSubscription")
+
+    expect(actions).toContain("validatePlanChangeEligibility(subscription.workspace_id, targetPlan)")
+    expect(actions).toContain("PLAN_CHANGE_NOT_ELIGIBLE")
+    expect(confirmationEligibility).toBeGreaterThan(freshPreview)
+    expect(providerMutation).toBeGreaterThan(confirmationEligibility)
+    expect(actions.slice(cancellation, resume)).not.toContain("validatePlanChangeEligibility")
+    expect(templateActions).toBe(actions)
+  })
 })

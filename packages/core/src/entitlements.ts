@@ -44,6 +44,74 @@ export type EntitlementGateOptions = {
   unavailableState?: "hidden" | "disabled"
 }
 
+export type PlanChangeEligibilityReason =
+  | "LIMIT_EXCEEDED"
+  | "USAGE_UNAVAILABLE"
+  | "CAPABILITY_NOT_CONFIGURED"
+  | "INVALID_PLAN"
+
+export type PlanChangeEligibilityCheck = {
+  capability: string
+  targetLimit: EntitlementLimit
+  /** Set false when the target plan cannot safely resolve this capability. */
+  configured?: boolean
+  /** Set false when authoritative usage could not be read. */
+  usageAvailable?: boolean
+  current?: number
+}
+
+export type PlanChangeEligibilityViolation = {
+  capability: string
+  reason: PlanChangeEligibilityReason
+  current?: number
+  targetLimit?: EntitlementLimit
+  excess?: number
+}
+
+export type PlanChangeEligibility = {
+  targetPlanKey: string
+  allowed: boolean
+  violations: readonly PlanChangeEligibilityViolation[]
+}
+
+/**
+ * Evaluate whether a target plan can retain the resources already in use.
+ * This is deliberately provider-neutral and does not perform I/O. Missing or
+ * unavailable information blocks a downgrade; only `null` is unlimited.
+ */
+export function evaluatePlanChangeEligibility(input: {
+  targetPlanKey: string
+  checks: readonly PlanChangeEligibilityCheck[]
+}): PlanChangeEligibility {
+  const targetPlanKey = typeof input.targetPlanKey === "string" ? input.targetPlanKey.trim() : ""
+  if (!targetPlanKey) {
+    return { targetPlanKey, allowed: false, violations: [{ capability: "plan", reason: "INVALID_PLAN" }] }
+  }
+
+  const violations: PlanChangeEligibilityViolation[] = []
+  for (const check of input.checks) {
+    const capability = typeof check.capability === "string" ? check.capability.trim() : ""
+    if (!capability || check.configured === false || check.targetLimit === undefined) {
+      violations.push({ capability: capability || "capability", reason: "CAPABILITY_NOT_CONFIGURED", targetLimit: check.targetLimit })
+      continue
+    }
+    if (check.targetLimit === null) continue
+    if (check.usageAvailable === false || typeof check.current !== "number" || !Number.isFinite(check.current) || check.current < 0) {
+      violations.push({ capability, reason: "USAGE_UNAVAILABLE", targetLimit: check.targetLimit })
+      continue
+    }
+    if (!Number.isSafeInteger(check.targetLimit) || check.targetLimit < 0) {
+      violations.push({ capability, reason: "CAPABILITY_NOT_CONFIGURED", targetLimit: undefined })
+      continue
+    }
+    if (check.current > check.targetLimit) {
+      violations.push({ capability, reason: "LIMIT_EXCEEDED", current: check.current, targetLimit: check.targetLimit, excess: check.current - check.targetLimit })
+    }
+  }
+
+  return { targetPlanKey, allowed: violations.length === 0, violations }
+}
+
 export function isUnlimitedEntitlementLimit(limit: EntitlementLimit): limit is null {
   return limit === null
 }
