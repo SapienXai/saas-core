@@ -116,6 +116,58 @@ export function isUnlimitedEntitlementLimit(limit: EntitlementLimit): limit is n
   return limit === null
 }
 
+export type EffectiveConsumptionLimit = {
+  /** The limit the server must use for a new quota-consuming mutation. */
+  limit: EntitlementLimit
+  /** The limit from the currently active/displayed plan. */
+  activeLimit: EntitlementLimit
+  /** The limit from the pending target plan, when one is being enforced. */
+  scheduledLimit?: EntitlementLimit
+  constrainedByScheduledPlan: boolean
+}
+
+/**
+ * Resolve the mutation ceiling without changing the active plan. A pending
+ * explicit downgrade is the only scheduled change that can constrain new
+ * finite-quota consumption. Missing target configuration remains unavailable;
+ * only `null` is explicitly unlimited.
+ */
+export function resolveEffectiveConsumptionLimit(input: {
+  activeLimit: EntitlementLimit
+  scheduledLimit?: EntitlementLimit
+  scheduledPlanIsDowngrade?: boolean
+}): EffectiveConsumptionLimit {
+  const activeLimit = input.activeLimit
+  const scheduledPlanIsDowngrade = input.scheduledPlanIsDowngrade === true
+  if (!scheduledPlanIsDowngrade) {
+    return { limit: activeLimit, activeLimit, scheduledLimit: input.scheduledLimit, constrainedByScheduledPlan: false }
+  }
+
+  const scheduledLimit = input.scheduledLimit
+  // A target plan that cannot resolve this capability must never widen access.
+  if (scheduledLimit === undefined) {
+    return { limit: undefined, activeLimit, scheduledLimit, constrainedByScheduledPlan: true }
+  }
+  // An active plan without a numeric capability can still be constrained by a
+  // finite target capability. Explicit unlimited remains the only unbounded
+  // value, and the active feature evaluator remains responsible for booleans.
+  if (activeLimit === undefined) {
+    return { limit: scheduledLimit, activeLimit, scheduledLimit, constrainedByScheduledPlan: true }
+  }
+  if (activeLimit === null) {
+    return { limit: scheduledLimit, activeLimit, scheduledLimit, constrainedByScheduledPlan: true }
+  }
+  if (scheduledLimit === null) {
+    return { limit: activeLimit, activeLimit, scheduledLimit, constrainedByScheduledPlan: true }
+  }
+  return {
+    limit: Math.min(activeLimit, scheduledLimit),
+    activeLimit,
+    scheduledLimit,
+    constrainedByScheduledPlan: true,
+  }
+}
+
 function assertUsageNumber(value: number, name: string) {
   if (!Number.isFinite(value) || value < 0) throw new RangeError(`${name} must be a finite non-negative number.`)
 }

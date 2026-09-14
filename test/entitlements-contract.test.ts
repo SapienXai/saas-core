@@ -5,6 +5,7 @@ import {
   getEntitlementGateState,
   getUsageSnapshot,
   isUnlimitedEntitlementLimit,
+  resolveEffectiveConsumptionLimit,
 } from "../packages/core/src/index"
 
 describe("provider-neutral entitlement contract", () => {
@@ -47,5 +48,27 @@ describe("provider-neutral entitlement contract", () => {
     expect(getEntitlementGateState({ limit: 1, current: 2, amount: 1 })).toBe("over_limit")
     expect(getEntitlementGateState({})).toBe("upgrade_required")
     expect(getEntitlementGateState({ limit: 1, current: 0, amount: 0 })).toBe("disabled")
+  })
+
+  it("uses the stricter finite target limit only for an explicit scheduled downgrade", () => {
+    expect(resolveEffectiveConsumptionLimit({ activeLimit: 3, scheduledLimit: 1, scheduledPlanIsDowngrade: true })).toMatchObject({
+      limit: 1,
+      activeLimit: 3,
+      scheduledLimit: 1,
+      constrainedByScheduledPlan: true,
+    })
+    expect(resolveEffectiveConsumptionLimit({ activeLimit: 10, scheduledLimit: 3, scheduledPlanIsDowngrade: true }).limit).toBe(3)
+    expect(resolveEffectiveConsumptionLimit({ activeLimit: null, scheduledLimit: 3, scheduledPlanIsDowngrade: true }).limit).toBe(3)
+    expect(resolveEffectiveConsumptionLimit({ activeLimit: 3, scheduledLimit: null, scheduledPlanIsDowngrade: true }).limit).toBe(3)
+    expect(resolveEffectiveConsumptionLimit({ activeLimit: null, scheduledLimit: null, scheduledPlanIsDowngrade: true }).limit).toBeNull()
+  })
+
+  it("preserves active limits for non-downgrade schedules and fails closed for missing targets", () => {
+    expect(resolveEffectiveConsumptionLimit({ activeLimit: 10, scheduledLimit: 1, scheduledPlanIsDowngrade: false }).limit).toBe(10)
+    expect(resolveEffectiveConsumptionLimit({ activeLimit: 3, scheduledPlanIsDowngrade: true })).toMatchObject({
+      limit: undefined,
+      activeLimit: 3,
+      constrainedByScheduledPlan: true,
+    })
   })
 })

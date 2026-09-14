@@ -31,6 +31,12 @@ integration("clean Core tenancy and RLS", () => {
       memberClient.auth.signInWithPassword({ email: member.email, password: "CoreRls!2026-password" }),
     ])
     if (ownerSession.error || memberSession.error) throw ownerSession.error || memberSession.error
+    const configured = await service!.rpc("sync_core_catalog", {
+      target_plans: [{ key: "core-test", name: "Core test", sort_order: 10, active: true, features: { team: true, domains: true, pwa: true, push: true }, limits: { "core.workspaces": 2, "core.members": 10, projects: 100 }, metadata: { fixture: true } }],
+      target_default_plan_key: "core-test",
+      target_deactivate_missing: false,
+    })
+    if (configured.error) throw configured.error
     const bootstrap = await ownerClient.rpc("bootstrap_initial_workspace", { target_workspace_name: `Core RLS ${stamp}`, target_workspace_slug: `core-rls-${stamp}` })
     if (bootstrap.error || !bootstrap.data?.[0]) throw bootstrap.error || new Error("Workspace bootstrap failed.")
     workspaceId = bootstrap.data[0].workspace_id

@@ -1,0 +1,293 @@
+-- Additive quota-policy hardening for pending explicit downgrades.
+--
+-- The active plan returned by this server-only helper remains the display and
+-- feature-gating plan. Only finite resource consumption is capped by a valid
+-- lower scheduled target. Cancellation, pause, and resume preserve the active
+-- plan's limit until their lifecycle boundary.
+
+create or replace function public.lock_workspace_entitlement(
+  target_workspace_id uuid,
+  target_capability text
+)
+returns table (
+  plan_key text,
+  capability_configured boolean,
+  feature_enabled boolean,
+  limit_value integer,
+  unlimited boolean
+)
+language plpgsql
+security definer
+set search_path = public, private
+as $$
+declare
+  capability text := btrim(coalesce(target_capability, ''));
+  workspace_status text;
+  workspace_platform_status text;
+  subscription_row public.workspace_subscriptions%rowtype;
+  subscription_exists boolean;
+  override_plan_key text;
+  fallback_key text;
+  candidate_key text;
+  selected_plan public.plans%rowtype;
+  scheduled_plan public.plans%rowtype;
+  active_limit_json jsonb;
+  scheduled_limit_json jsonb;
+  active_limit_present boolean := false;
+  active_limit_valid boolean := false;
+  scheduled_limit_present boolean := false;
+  scheduled_limit_valid boolean := false;
+  active_limit_value integer;
+  scheduled_limit_value integer;
+  effective_limit_value integer;
+  active_unlimited boolean := false;
+  scheduled_unlimited boolean := false;
+  effective_unlimited boolean := false;
+  effective_limit_configured boolean := false;
+  scheduled_at timestamptz;
+  scheduled_downgrade boolean := false;
+  invalid_scheduled_downgrade boolean := false;
+  candidate_provider_price_id text;
+  now_at timestamptz := now();
+begin
+  if target_workspace_id is null or capability = '' or capability !~ '^[a-z][a-z0-9_.-]{0,63}$' then
+    raise exception using message = 'INVALID_ENTITLEMENT_REQUEST';
+  end if;
+
+  -- Every participating product mutation for the same workspace/capability
+  -- serializes here, preventing check-then-insert quota races.
+  perform pg_advisory_xact_lock(hashtextextended(target_workspace_id::text || ':' || capability, 0));
+
+  select workspace.status, workspace.platform_status
+    into workspace_status, workspace_platform_status
+    from public.workspaces workspace
+   where workspace.id = target_workspace_id;
+  if not found or workspace_status <> 'active' or workspace_platform_status <> 'active' then
+    raise exception using message = 'WORKSPACE_UNAVAILABLE';
+  end if;
+
+  fallback_key := private.core_default_plan_key();
+  select *
+    into subscription_row
+    from public.workspace_subscriptions subscription
+   where subscription.workspace_id = target_workspace_id
+   for update;
+  subscription_exists := found;
+
+  select override_row.plan_key
+    into override_plan_key
+    from public.subscription_overrides override_row
+   where override_row.workspace_id = target_workspace_id
+     and override_row.revoked_at is null
+     and override_row.effective_from <= now_at
+     and (override_row.effective_until is null or override_row.effective_until > now_at)
+   order by override_row.effective_from desc
+   limit 1;
+
+  candidate_key := fallback_key;
+  if override_plan_key is not null then
+    candidate_key := override_plan_key;
+  elsif subscription_exists then
+    if subscription_row.status not in ('active', 'trialing', 'past_due') then
+      candidate_key := fallback_key;
+    elsif subscription_row.status = 'past_due'
+      and (subscription_row.payment_grace_ends_at is null or subscription_row.payment_grace_ends_at <= now_at) then
+      candidate_key := fallback_key;
+    elsif subscription_row.cancel_at_period_end or subscription_row.scheduled_change_action in ('cancel', 'pause') then
+      if coalesce(
+        subscription_row.scheduled_effective_at,
+        subscription_row.scheduled_change_at,
+        subscription_row.current_period_end_at,
+        subscription_row.current_period_end::timestamptz
+      ) is null or coalesce(
+        subscription_row.scheduled_effective_at,
+        subscription_row.scheduled_change_at,
+        subscription_row.current_period_end_at,
+        subscription_row.current_period_end::timestamptz
+      ) <= now_at then
+        candidate_key := fallback_key;
+      else
+        candidate_key := subscription_row.plan_key;
+      end if;
+    elsif subscription_row.scheduled_plan_key is not null then
+      if coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at::timestamptz) is null then
+        candidate_key := fallback_key;
+      elsif coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at::timestamptz) <= now_at then
+        candidate_key := subscription_row.scheduled_plan_key;
+      else
+        candidate_key := subscription_row.plan_key;
+      end if;
+    else
+      candidate_key := subscription_row.plan_key;
+    end if;
+  end if;
+
+  -- A non-manual paid projection is valid only when the local provider
+  -- identity is complete. A customer record without a subscription, a
+  -- missing price, or a system row carrying a paid key must resolve to the
+  -- configured fallback rather than granting premium access.
+  candidate_provider_price_id := case
+    when subscription_exists
+      and subscription_row.scheduled_plan_key is not null
+      and candidate_key = subscription_row.scheduled_plan_key
+      and coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at::timestamptz) is not null
+      and coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at::timestamptz) <= now_at
+      then subscription_row.scheduled_provider_price_id
+    when subscription_exists then subscription_row.provider_price_id
+    else null
+  end;
+  if candidate_key <> fallback_key
+     and subscription_exists
+     and override_plan_key is null
+     and subscription_row.source <> 'manual'
+     and (
+       subscription_row.source = 'system'
+       or nullif(btrim(coalesce(subscription_row.provider, '')), '') is null
+       or nullif(btrim(coalesce(subscription_row.provider_environment, '')), '') is null
+       or nullif(btrim(coalesce(subscription_row.provider_customer_id, '')), '') is null
+       or nullif(btrim(coalesce(subscription_row.provider_subscription_id, '')), '') is null
+       or nullif(btrim(coalesce(candidate_provider_price_id, '')), '') is null
+       or (
+         coalesce(subscription_row.current_period_end_at, subscription_row.current_period_end::timestamptz) is not null
+         and coalesce(subscription_row.current_period_end_at, subscription_row.current_period_end::timestamptz) <= now_at
+       )
+       or not exists (
+         select 1
+           from public.billing_provider_prices provider_price
+          where provider_price.provider = subscription_row.provider
+            and provider_price.environment = subscription_row.provider_environment
+            and provider_price.plan_key = candidate_key
+            and provider_price.provider_price_id = candidate_provider_price_id
+            and provider_price.active
+       )
+     ) then
+    candidate_key := fallback_key;
+  end if;
+
+  select *
+    into selected_plan
+    from public.plans plan
+   where plan.key = candidate_key and plan.active = true;
+  if not found then
+    select *
+      into selected_plan
+      from public.plans plan
+     where plan.key = fallback_key and plan.active = true;
+  end if;
+  if not found then
+    raise exception using message = 'SUBSCRIPTION_REQUIRED';
+  end if;
+
+  -- The provider stores a target plan separately from cancellation state.
+  -- Compare catalog order so an upward scheduled change never receives the
+  -- downgrade ceiling. A malformed lower target is restrictive.
+  if subscription_exists
+     and subscription_row.scheduled_plan_key is not null
+     and not coalesce(subscription_row.cancel_at_period_end, false)
+     and coalesce(subscription_row.scheduled_change_action, '') not in ('cancel', 'pause', 'resume') then
+    scheduled_at := coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at::timestamptz);
+    if scheduled_at is not null and scheduled_at > now_at then
+      select *
+        into scheduled_plan
+        from public.plans plan
+       where plan.key = subscription_row.scheduled_plan_key
+         and plan.active = true;
+      if not found then
+        invalid_scheduled_downgrade := true;
+      elsif scheduled_plan.sort_order < selected_plan.sort_order then
+        scheduled_downgrade := true;
+      end if;
+    end if;
+  end if;
+
+  active_limit_json := selected_plan.limits -> capability;
+  active_limit_present := selected_plan.limits ? capability;
+  active_limit_valid := active_limit_present and (
+    active_limit_json = 'null'::jsonb
+    or (
+      jsonb_typeof(active_limit_json) = 'number'
+      and (selected_plan.limits ->> capability) ~ '^[0-9]+$'
+      and (selected_plan.limits ->> capability)::numeric <= 2147483647
+    )
+  );
+
+  if scheduled_downgrade then
+    scheduled_limit_json := scheduled_plan.limits -> capability;
+    scheduled_limit_present := scheduled_plan.limits ? capability;
+    scheduled_limit_valid := scheduled_limit_present and (
+      scheduled_limit_json = 'null'::jsonb
+      or (
+        jsonb_typeof(scheduled_limit_json) = 'number'
+        and (scheduled_plan.limits ->> capability) ~ '^[0-9]+$'
+        and (scheduled_plan.limits ->> capability)::numeric <= 2147483647
+      )
+    );
+
+    -- Missing or malformed target configuration must not fall through to the
+    -- active limit. Returning an unconfigured policy makes the product RPC
+    -- reject the mutation while retaining existing resources.
+    if invalid_scheduled_downgrade
+       or not scheduled_limit_valid
+       or (active_limit_present and not active_limit_valid) then
+      return query select selected_plan.key, false, false, null::integer, false;
+      return;
+    end if;
+
+    active_unlimited := active_limit_json = 'null'::jsonb;
+    scheduled_unlimited := scheduled_limit_json = 'null'::jsonb;
+    if not active_limit_present then
+      effective_limit_configured := true;
+      effective_unlimited := scheduled_unlimited;
+      if not scheduled_unlimited then
+        scheduled_limit_value := (scheduled_limit_json::text)::integer;
+        effective_limit_value := scheduled_limit_value;
+      end if;
+    elsif active_unlimited then
+      effective_limit_configured := true;
+      effective_unlimited := scheduled_unlimited;
+      if not scheduled_unlimited then
+        scheduled_limit_value := (scheduled_limit_json::text)::integer;
+        effective_limit_value := scheduled_limit_value;
+      end if;
+    elsif scheduled_unlimited then
+      effective_limit_configured := true;
+      effective_limit_value := (active_limit_json::text)::integer;
+    else
+      effective_limit_configured := true;
+      active_limit_value := (active_limit_json::text)::integer;
+      scheduled_limit_value := (scheduled_limit_json::text)::integer;
+      effective_limit_value := least(active_limit_value, scheduled_limit_value);
+    end if;
+  else
+    effective_limit_configured := active_limit_valid;
+    effective_unlimited := active_limit_valid and active_limit_json = 'null'::jsonb;
+    if active_limit_valid and not effective_unlimited then
+      effective_limit_value := (active_limit_json::text)::integer;
+    end if;
+  end if;
+
+  return query
+  select
+    selected_plan.key,
+    (
+      not (scheduled_downgrade or invalid_scheduled_downgrade)
+      and (
+        selected_plan.features ? capability
+        and jsonb_typeof(selected_plan.features -> capability) = 'boolean'
+      )
+    ) or effective_limit_configured,
+    case
+      when selected_plan.features ? capability and jsonb_typeof(selected_plan.features -> capability) = 'boolean'
+        then (selected_plan.features ->> capability)::boolean
+      else false
+    end,
+    case when effective_limit_configured and not effective_unlimited then effective_limit_value else null end,
+    effective_limit_configured and effective_unlimited;
+end;
+$$;
+
+revoke all on function public.lock_workspace_entitlement(uuid, text) from public, anon, authenticated;
+grant execute on function public.lock_workspace_entitlement(uuid, text) to service_role;
+
+comment on function public.lock_workspace_entitlement(uuid, text) is
+  'Resolves the active Core plan and applies the stricter finite ceiling for a pending explicit downgrade while preserving current-plan cancellation access.';

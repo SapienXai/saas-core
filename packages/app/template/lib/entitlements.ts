@@ -5,6 +5,7 @@ import {
   evaluatePlanChangeEligibility,
   evaluateEntitlementConsumption,
   getUsageSnapshot as buildUsageSnapshot,
+  resolveEffectiveConsumptionLimit as resolveCoreEffectiveConsumptionLimit,
   type EntitlementErrorCode as CoreEntitlementErrorCode,
   type EntitlementLimit,
   type PlanChangeEligibility,
@@ -33,10 +34,11 @@ export type WorkspaceEntitlements = {
   workspaceId: string
   planKey: PlanKey
   planName: string
+  planSortOrder: number | null
   pricing: PlanPricing
   features: FeatureMap
   limits: LimitMap
-  scheduledPlan: { key: PlanKey; name: string; pricing: PlanPricing; effectiveAt: string; limits: LimitMap } | null
+  scheduledPlan: { key: PlanKey; name: string; sortOrder: number | null; pricing: PlanPricing; effectiveAt: string; limits: LimitMap } | null
   subscription: {
     status: string
     source: string
@@ -88,6 +90,10 @@ export type EntitlementErrorDetails = {
   limitValue?: number | null
   remaining?: number | null
   unlimited?: boolean
+  activeLimit?: number | null
+  scheduledLimit?: number | null
+  constrainedByScheduledPlan?: boolean
+  scheduledPlanKey?: PlanKey
   requiredPlan?: PlanKey
   planKey?: PlanKey
 }
@@ -103,6 +109,10 @@ export class EntitlementError extends Error {
   readonly limitValue?: number | null
   readonly remaining?: number | null
   readonly unlimited?: boolean
+  readonly activeLimit?: number | null
+  readonly scheduledLimit?: number | null
+  readonly constrainedByScheduledPlan?: boolean
+  readonly scheduledPlanKey?: PlanKey
   readonly requiredPlan?: PlanKey
   readonly planKey?: PlanKey
 
@@ -118,6 +128,10 @@ export class EntitlementError extends Error {
     this.limitValue = details.limitValue
     this.remaining = details.remaining
     this.unlimited = details.unlimited
+    this.activeLimit = details.activeLimit
+    this.scheduledLimit = details.scheduledLimit
+    this.constrainedByScheduledPlan = details.constrainedByScheduledPlan
+    this.scheduledPlanKey = details.scheduledPlanKey
     this.requiredPlan = details.requiredPlan
     this.planKey = details.planKey
   }
@@ -132,6 +146,10 @@ export class EntitlementError extends Error {
         limit: this.limitValue,
         remaining: this.remaining,
         unlimited: this.unlimited,
+        activeLimit: this.activeLimit,
+        scheduledLimit: this.scheduledLimit,
+        constrainedByScheduledPlan: this.constrainedByScheduledPlan,
+        scheduledPlanKey: this.scheduledPlanKey,
         requiredPlan: this.requiredPlan,
         planKey: this.planKey,
       },
@@ -180,6 +198,10 @@ export type WorkspaceEntitlementDecision = {
   unlimited: boolean
   percentage: number | null
   overLimit: boolean
+  activeLimit: EntitlementLimit
+  scheduledLimit?: EntitlementLimit
+  constrainedByScheduledPlan: boolean
+  scheduledPlanKey?: PlanKey
   requiredPlan?: PlanKey
 }
 
@@ -576,12 +598,14 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
     workspaceId,
     planKey: String(plan.key),
     planName: typeof plan.name === "string" ? plan.name : String(plan.key),
+    planSortOrder: Number.isSafeInteger(plan.sort_order) ? plan.sort_order : null,
     pricing: planPricing(plan.metadata),
     features: normalizeFeatures(plan.features),
     limits: normalizeLimits(plan.limits),
     scheduledPlan: scheduled ? {
       key: String(scheduled.key),
       name: scheduled.name,
+      sortOrder: Number.isSafeInteger(scheduled.sort_order) ? scheduled.sort_order : null,
       pricing: planPricing(scheduled.metadata),
       effectiveAt: scheduledPlanAt!,
       limits: normalizeLimits(scheduled.limits),
@@ -607,6 +631,80 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
 export const getWorkspaceEntitlements = getWorkspacePlan
 export const getEffectivePlan = getWorkspacePlan
 export const getEntitlements = getWorkspacePlan
+
+type ScheduledConsumptionState = {
+  mode: "none" | "downgrade" | "invalid"
+  scheduledPlanKey: PlanKey | null
+  scheduledPlan: WorkspaceEntitlements["scheduledPlan"]
+}
+
+function getScheduledConsumptionState(entitlements: WorkspaceEntitlements, now: Date): ScheduledConsumptionState {
+  const subscription = entitlements.subscription
+  const scheduledPlanKey = validPlanKey(subscription.scheduledPlanKey)
+  const scheduledPlanAt = subscription.scheduledPlanAt || entitlements.scheduledPlan?.effectiveAt || null
+  const scheduledPlan = entitlements.scheduledPlan
+  if (!scheduledPlanKey || !isScheduledPlanPending(scheduledPlanAt, now)) {
+    return { mode: "none", scheduledPlanKey: null, scheduledPlan: null }
+  }
+
+  // Cancellation, pause, and resume preserve the current plan's mutation
+  // limits until their own lifecycle boundary. They are not downgrades.
+  if (subscription.cancelAtPeriodEnd || ["cancel", "pause", "resume"].includes(subscription.scheduledChangeAction || "")) {
+    return { mode: "none", scheduledPlanKey: null, scheduledPlan }
+  }
+
+  // A pending target that cannot be resolved or ordered is a malformed
+  // schedule. Treat it as unavailable for quota consumption instead of
+  // granting the active plan's limit indefinitely.
+  if (!scheduledPlan || scheduledPlan.key !== scheduledPlanKey || entitlements.planSortOrder === null || scheduledPlan.sortOrder === null) {
+    return { mode: "invalid", scheduledPlanKey, scheduledPlan }
+  }
+  if (scheduledPlan.sortOrder >= entitlements.planSortOrder) {
+    // A scheduled upgrade or same-plan change does not invoke the downgrade
+    // ceiling; the active plan remains the mutation authority until activation.
+    return { mode: "none", scheduledPlanKey: null, scheduledPlan }
+  }
+  return { mode: "downgrade", scheduledPlanKey, scheduledPlan }
+}
+
+export function isExplicitScheduledDowngrade(entitlements: WorkspaceEntitlements, now = new Date()) {
+  return getScheduledConsumptionState(entitlements, now).mode === "downgrade"
+}
+
+export type WorkspaceEffectiveConsumptionLimit = {
+  limit: EntitlementLimit
+  activeLimit: EntitlementLimit
+  scheduledLimit?: EntitlementLimit
+  constrainedByScheduledPlan: boolean
+  scheduledPlanKey: PlanKey | null
+}
+
+function resolveWorkspaceEffectiveConsumptionLimit(entitlements: WorkspaceEntitlements, capability: string, now: Date): WorkspaceEffectiveConsumptionLimit {
+  const activeLimit = Object.prototype.hasOwnProperty.call(entitlements.limits, capability)
+    ? entitlements.limits[capability]
+    : undefined
+  const scheduled = getScheduledConsumptionState(entitlements, now)
+  const scheduledLimit = scheduled.mode === "downgrade" && scheduled.scheduledPlan && Object.prototype.hasOwnProperty.call(scheduled.scheduledPlan.limits, capability)
+    ? scheduled.scheduledPlan.limits[capability]
+    : undefined
+  const resolved = resolveCoreEffectiveConsumptionLimit({
+    activeLimit,
+    scheduledLimit,
+    scheduledPlanIsDowngrade: scheduled.mode !== "none",
+  })
+  return { ...resolved, scheduledPlanKey: scheduled.mode === "none" ? null : scheduled.scheduledPlanKey }
+}
+
+/**
+ * Return the server-side quota ceiling while leaving getLimit() and the
+ * displayed plan on the active entitlement set. The result is safe for both
+ * product usage resolvers and Core-owned capabilities.
+ */
+export async function getEffectiveConsumptionLimit(workspaceId: string, capability: string, userIdOrOptions?: string | EntitlementResolutionOptions, options: EntitlementResolutionOptions = {}): Promise<WorkspaceEffectiveConsumptionLimit> {
+  const resolvedOptions = resolveOptions(userIdOrOptions, options)
+  const entitlements = await getWorkspaceEntitlements(workspaceId)
+  return resolveWorkspaceEffectiveConsumptionLimit(entitlements, capability, effectiveNow(resolvedOptions.now))
+}
 
 export async function hasFeature(workspaceId: string, feature: FeatureKey) {
   try { return Boolean((await getWorkspaceEntitlements(workspaceId)).features[feature]) }
@@ -827,13 +925,28 @@ export async function canConsume(workspaceId: string, capability: string, amount
   const resolvedOptions = resolveOptions(userIdOrOptions, options)
   const entitlements = await getWorkspaceEntitlements(workspaceId)
   const feature = Object.prototype.hasOwnProperty.call(entitlements.features, capability) ? entitlements.features[capability] : undefined
-  const limit = Object.prototype.hasOwnProperty.call(entitlements.limits, capability) ? entitlements.limits[capability] : undefined
+  const consumption = resolveWorkspaceEffectiveConsumptionLimit(entitlements, capability, effectiveNow(resolvedOptions.now))
+  const limit = consumption.limit
   const current = limit === undefined || limit === null || feature === false ? 0 : await getUsage(workspaceId, capability, {
     ...resolvedOptions,
     requireAuthoritativeUsage: !["core.workspaces", "core.members"].includes(capability),
   })
-  const decision = evaluateEntitlementConsumption({ feature, limit, current, amount })
-  return { capability, ...decision, requiredPlan: resolvedOptions.requiredPlan }
+  const evaluatedDecision = evaluateEntitlementConsumption({ feature, limit, current, amount })
+  // A pending downgrade with a missing target capability is malformed and
+  // must stay unavailable even when the active plan also exposes a boolean
+  // feature with the same key. Only an explicit target `null` is unlimited.
+  const decision = consumption.constrainedByScheduledPlan && consumption.limit === undefined && consumption.activeLimit !== undefined
+    ? { ...evaluatedDecision, allowed: false, code: "CAPABILITY_NOT_CONFIGURED" as const }
+    : evaluatedDecision
+  return {
+    capability,
+    ...decision,
+    activeLimit: consumption.activeLimit,
+    scheduledLimit: consumption.scheduledLimit,
+    constrainedByScheduledPlan: consumption.constrainedByScheduledPlan,
+    scheduledPlanKey: consumption.scheduledPlanKey || undefined,
+    requiredPlan: resolvedOptions.requiredPlan,
+  }
 }
 
 function errorMessage(code: CoreEntitlementErrorCode, capability: string) {
@@ -856,6 +969,10 @@ export async function assertEntitlement(workspaceId: string, capability: string,
       limitValue: decision.limit,
       remaining: decision.remaining === undefined ? undefined : decision.remaining,
       unlimited: decision.unlimited,
+      activeLimit: decision.activeLimit === undefined ? undefined : decision.activeLimit,
+      scheduledLimit: decision.scheduledLimit === undefined ? undefined : decision.scheduledLimit,
+      constrainedByScheduledPlan: decision.constrainedByScheduledPlan,
+      scheduledPlanKey: decision.scheduledPlanKey,
       requiredPlan: decision.requiredPlan,
       planKey: entitlements.planKey,
     })
@@ -883,6 +1000,10 @@ export async function assertWithinLimit(workspaceId: string, limit: LimitKey, us
       limitValue: decision.limit,
       remaining: decision.remaining === undefined ? undefined : decision.remaining,
       unlimited: decision.unlimited,
+      activeLimit: decision.activeLimit === undefined ? undefined : decision.activeLimit,
+      scheduledLimit: decision.scheduledLimit === undefined ? undefined : decision.scheduledLimit,
+      constrainedByScheduledPlan: decision.constrainedByScheduledPlan,
+      scheduledPlanKey: decision.scheduledPlanKey,
       planKey: (await getWorkspaceEntitlements(workspaceId)).planKey,
     })
   }
@@ -911,6 +1032,7 @@ export function createEntitlementService(defaultOptions: EntitlementResolutionOp
     getEffectivePlan,
     getEntitlements,
     validatePlanChangeEligibility: (workspaceId: string, targetPlanKey: PlanKey) => validatePlanChangeEligibility(workspaceId, targetPlanKey, defaultOptions),
+    getEffectiveConsumptionLimit: (workspaceId: string, capability: string, userId?: string) => getEffectiveConsumptionLimit(workspaceId, capability, userId, defaultOptions),
     getEntitlement,
     hasFeature,
     getLimit,

@@ -10,7 +10,8 @@ compatibility coordinate `2.0`. It delivers the additive, Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
 `supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` in
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` in
 the repository root and canonical application template. Package packing and
 CLI `init`/`update` deliver the sources but never execute SQL; each consumer
 owns the controlled apply and verification workstream. The Plan Catalog guide
@@ -179,6 +180,13 @@ invitation-renewal function in place with qualified `RETURNING` columns, keeps
 the existing RPC grants and behavior, and remains compatible with schema
 coordinate `2.0`. It is source delivery only; the consumer applies it in its
 normal migration workflow.
+
+The additive `20260914185445_scheduled_downgrade_consumption_ceiling.sql`
+migration keeps the active plan authoritative for display and features while
+the entitlement lock applies the stricter finite quota for a pending explicit
+downgrade. Scheduled cancellation, pause, and resume retain current-plan
+limits until their lifecycle boundary. It is source delivery only; consumers
+apply and verify it through their normal migration workflow.
 
 For every schema update:
 

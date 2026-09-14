@@ -1,0 +1,241 @@
+import { beforeEach, describe, expect, it, vi } from "vitest"
+
+const { createServiceRoleClient, productResolvers, fallbackPlanKey } = vi.hoisted(() => ({
+  createServiceRoleClient: vi.fn(),
+  productResolvers: {} as Record<string, (context: unknown) => number | Promise<number>>,
+  fallbackPlanKey: vi.fn(async () => "free"),
+}))
+
+vi.mock("@/lib/supabase", () => ({ createServiceRoleClient }))
+vi.mock("@/src/product/usage", () => ({ getProductUsageResolvers: () => productResolvers }))
+vi.mock("@/lib/billing/reconciliation", () => ({
+  getConfiguredFallbackPlanKey: fallbackPlanKey,
+  isPaymentGraceExpired: () => false,
+}))
+
+import {
+  assertEntitlement,
+  canConsume,
+  getEffectiveConsumptionLimit,
+  getWorkspaceEntitlements,
+} from "../lib/entitlements"
+
+type QueryResult = { data: unknown; count?: number; error: null | { message: string; code?: string } }
+
+type FixtureOptions = {
+  workspaceId: string
+  subscription: Record<string, unknown>
+  usage?: number
+  members?: number
+  pendingInvitations?: number
+  targetLimits?: Record<string, number | null>
+}
+
+function createService({ workspaceId, subscription, usage = 0, members = 0, pendingInvitations = 0, targetLimits }: FixtureOptions) {
+  const plans = [
+    { key: "free", name: "Free", sort_order: 0, active: true, features: {}, limits: { venues: 1, "core.members": 2 }, metadata: {} },
+    { key: "starter", name: "Starter", sort_order: 5, active: true, features: {}, limits: targetLimits || { venues: 1, "core.members": 2 }, metadata: {} },
+    { key: "pro", name: "Pro", sort_order: 10, active: true, features: { venues: true }, limits: { venues: 3, "core.members": 10 }, metadata: {} },
+    { key: "business", name: "Business", sort_order: 20, active: true, features: {}, limits: { venues: null, "core.members": null }, metadata: {} },
+  ]
+
+  return {
+    from: vi.fn((table: string) => {
+      const filters = new Map<string, unknown>()
+      const result = (): QueryResult => {
+        if (table === "workspaces") return { data: { id: workspaceId, created_by: "owner", status: "active", platform_status: "active" }, error: null }
+        if (table === "workspace_subscriptions") return { data: { workspace_id: workspaceId, ...subscription }, error: null }
+        if (table === "subscription_overrides") return { data: null, error: null }
+        if (table === "workspace_members") return { data: null, count: members, error: null }
+        if (table === "workspace_invitations") return { data: null, count: pendingInvitations, error: null }
+        if (table === "workspace_usage_periods") return { data: { usage: { venues: usage } }, error: null }
+        if (table === "plans" && filters.has("in:key")) return { data: plans.filter((plan) => (filters.get("in:key") as string[]).includes(plan.key)), error: null }
+        if (table === "plans") return { data: plans.find((plan) => plan.key === filters.get("key")) || null, error: null }
+        return { data: null, error: null }
+      }
+      const builder = {
+        select: vi.fn(() => builder),
+        eq: vi.fn((key: string, value: unknown) => { filters.set(key, value); return builder }),
+        in: vi.fn((key: string, value: unknown) => { filters.set(`in:${key}`, value); return builder }),
+        is: vi.fn(() => builder),
+        gt: vi.fn(() => builder),
+        lte: vi.fn(() => builder),
+        or: vi.fn(() => builder),
+        order: vi.fn(() => builder),
+        limit: vi.fn(() => builder),
+        maybeSingle: vi.fn(async () => result()),
+        then: (onfulfilled: Promise<QueryResult>["then"] extends (onfulfilled?: infer F, onrejected?: infer R) => unknown ? F : never, onrejected?: unknown) => Promise.resolve(result()).then(onfulfilled as never, onrejected as never),
+      }
+      return builder
+    }),
+  }
+}
+
+function subscription(overrides: Record<string, unknown> = {}) {
+  return {
+    plan_key: "pro",
+    status: "active",
+    source: "manual",
+    provider: null,
+    provider_environment: null,
+    provider_customer_id: null,
+    provider_subscription_id: null,
+    provider_price_id: null,
+    current_period_start: null,
+    current_period_end: null,
+    current_period_start_at: null,
+    current_period_end_at: null,
+    cancel_at_period_end: false,
+    scheduled_change_at: null,
+    scheduled_change_action: null,
+    scheduled_plan_key: null,
+    scheduled_plan_at: null,
+    scheduled_effective_at: null,
+    scheduled_provider_price_id: null,
+    payment_failure_started_at: null,
+    payment_grace_ends_at: null,
+    billing_issue_code: null,
+    ...overrides,
+  }
+}
+
+function installFixture(options: FixtureOptions) {
+  createServiceRoleClient.mockReturnValue(createService(options))
+  return { now: new Date("2026-09-14T12:00:00.000Z") }
+}
+
+describe("scheduled downgrade consumption ceiling", () => {
+  beforeEach(() => {
+    for (const key of Object.keys(productResolvers)) delete productResolvers[key]
+  })
+
+  it("keeps the paid plan active for display while denying growth beyond the scheduled target", async () => {
+    const workspaceId = "scheduled-downgrade-display-workspace"
+    const { now } = installFixture({
+      workspaceId,
+      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      usage: 1,
+    })
+    productResolvers.venues = () => 1
+
+    const entitlements = await getWorkspaceEntitlements(workspaceId)
+    expect(entitlements.planKey).toBe("pro")
+    expect(entitlements.scheduledPlan?.key).toBe("starter")
+
+    await expect(getEffectiveConsumptionLimit(workspaceId, "venues", { now })).resolves.toMatchObject({
+      limit: 1,
+      activeLimit: 3,
+      scheduledLimit: 1,
+      constrainedByScheduledPlan: true,
+      scheduledPlanKey: "starter",
+    })
+    await expect(canConsume(workspaceId, "venues", 1, { now })).resolves.toMatchObject({
+      allowed: false,
+      code: "PLAN_LIMIT_REACHED",
+      current: 1,
+      limit: 1,
+      activeLimit: 3,
+      scheduledLimit: 1,
+      constrainedByScheduledPlan: true,
+      scheduledPlanKey: "starter",
+    })
+    await expect(assertEntitlement(workspaceId, "venues", { now })).rejects.toMatchObject({
+      code: "PLAN_LIMIT_REACHED",
+      activeLimit: 3,
+      scheduledLimit: 1,
+      constrainedByScheduledPlan: true,
+      scheduledPlanKey: "starter",
+    })
+  })
+
+  it("allows consumption below the scheduled ceiling and rejects the exact boundary", async () => {
+    const belowId = "scheduled-downgrade-below-workspace"
+    const { now } = installFixture({
+      workspaceId: belowId,
+      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      usage: 1,
+    })
+    productResolvers.venues = () => 1
+    await expect(canConsume(belowId, "venues", 1, { now })).resolves.toMatchObject({ allowed: false, limit: 1 })
+
+    const underId = "scheduled-downgrade-under-boundary-workspace"
+    installFixture({
+      workspaceId: underId,
+      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      usage: 0,
+    })
+    productResolvers.venues = () => 0
+    await expect(canConsume(underId, "venues", 1, { now })).resolves.toMatchObject({ allowed: true, limit: 1, remaining: 1 })
+
+    const atId = "scheduled-downgrade-at-boundary-workspace"
+    installFixture({
+      workspaceId: atId,
+      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      usage: 1,
+    })
+    productResolvers.venues = () => 1
+    await expect(canConsume(atId, "venues", 1, { now })).resolves.toMatchObject({ allowed: false, code: "PLAN_LIMIT_REACHED" })
+  })
+
+  it("keeps current limits for cancellation and scheduled upgrades", async () => {
+    const cancellationId = "scheduled-cancellation-workspace"
+    const { now } = installFixture({
+      workspaceId: cancellationId,
+      subscription: subscription({ cancel_at_period_end: true, scheduled_change_action: "cancel", scheduled_change_at: "2099-01-01T00:00:00.000Z" }),
+      usage: 2,
+    })
+    productResolvers.venues = () => 2
+    await expect(canConsume(cancellationId, "venues", 1, { now })).resolves.toMatchObject({ allowed: true, limit: 3, constrainedByScheduledPlan: false })
+
+    const upgradeId = "scheduled-upgrade-workspace"
+    installFixture({
+      workspaceId: upgradeId,
+      subscription: subscription({ plan_key: "starter", scheduled_plan_key: "pro", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      usage: 1,
+    })
+    productResolvers.venues = () => 1
+    await expect(canConsume(upgradeId, "venues", 1, { now })).resolves.toMatchObject({ allowed: false, limit: 1, constrainedByScheduledPlan: false })
+  })
+
+  it("removes the ceiling after an undo and fails closed for a missing target capability", async () => {
+    const undoId = "scheduled-downgrade-undo-workspace"
+    const { now } = installFixture({ workspaceId: undoId, subscription: subscription(), usage: 2 })
+    productResolvers.venues = () => 2
+    await expect(getEffectiveConsumptionLimit(undoId, "venues", { now })).resolves.toMatchObject({ limit: 3, constrainedByScheduledPlan: false, scheduledPlanKey: null })
+    await expect(canConsume(undoId, "venues", 1, { now })).resolves.toMatchObject({ allowed: true, limit: 3 })
+
+    const missingId = "scheduled-downgrade-missing-capability-workspace"
+    installFixture({
+      workspaceId: missingId,
+      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      usage: 0,
+      targetLimits: { "core.members": 2 },
+    })
+    await expect(getEffectiveConsumptionLimit(missingId, "venues", { now })).resolves.toMatchObject({
+      limit: undefined,
+      activeLimit: 3,
+      scheduledLimit: undefined,
+      constrainedByScheduledPlan: true,
+    })
+    await expect(canConsume(missingId, "venues", 1, { now })).resolves.toMatchObject({ allowed: false, code: "CAPABILITY_NOT_CONFIGURED" })
+  })
+
+  it("applies the same target ceiling to Core members and pending invitations", async () => {
+    const workspaceId = "scheduled-downgrade-members-workspace"
+    const { now } = installFixture({
+      workspaceId,
+      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      members: 2,
+      pendingInvitations: 1,
+    })
+    await expect(canConsume(workspaceId, "core.members", 1, { now })).resolves.toMatchObject({
+      allowed: false,
+      code: "PLAN_LIMIT_REACHED",
+      current: 3,
+      limit: 2,
+      activeLimit: 10,
+      scheduledLimit: 2,
+      constrainedByScheduledPlan: true,
+    })
+  })
+})

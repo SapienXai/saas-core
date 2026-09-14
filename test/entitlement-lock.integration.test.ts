@@ -15,6 +15,7 @@ integration("transactional entitlement lock", () => {
 
   const plans = [
     { key: "fixture_free", name: "Fixture Free", sort_order: 100, active: true, features: { projects: true }, limits: { "core.workspaces": 1, "core.members": 1, projects: 2 }, metadata: { fixture: true } },
+    { key: "fixture_starter", name: "Fixture Starter", sort_order: 50, active: true, features: { projects: true }, limits: { "core.workspaces": 1, "core.members": 1, projects: 1 }, metadata: { fixture: true } },
     { key: "fixture_unlimited", name: "Fixture Unlimited", sort_order: 0, active: true, features: { projects: true }, limits: { "core.workspaces": null, "core.members": null, projects: null }, metadata: { fixture: true } },
   ]
 
@@ -28,7 +29,7 @@ integration("transactional entitlement lock", () => {
 
   async function restoreCatalog() {
     return service!.rpc("sync_core_catalog", {
-      target_plans: [{ key: "core-test", name: "Core test", sort_order: 10, active: true, features: { team: true }, limits: { "core.workspaces": 2, "core.members": 10 }, metadata: { fixture: true } }],
+      target_plans: [{ key: "core-test", name: "Core test", sort_order: 10, active: true, features: { team: true, domains: true, pwa: true, push: true }, limits: { "core.workspaces": 2, "core.members": 10, projects: 100 }, metadata: { fixture: true } }],
       target_default_plan_key: "core-test",
       target_deactivate_missing: false,
     })
@@ -124,6 +125,45 @@ integration("transactional entitlement lock", () => {
     const renewed = await service!.from("workspace_subscriptions").update({ current_period_end: future.toISOString().slice(0, 10), current_period_end_at: future.toISOString(), cancel_at_period_end: false, scheduled_change_action: null, scheduled_change_at: null }).eq("workspace_id", workspaceId)
     expect(renewed.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_unlimited", unlimited: true })
+
+    const scheduledDowngrade = await service!.from("workspace_subscriptions").update({
+      plan_key: "fixture_free",
+      status: "active",
+      source: "system",
+      provider: null,
+      provider_environment: null,
+      provider_customer_id: null,
+      provider_subscription_id: null,
+      provider_price_id: null,
+      cancel_at_period_end: false,
+      scheduled_change_action: null,
+      scheduled_change_at: null,
+      scheduled_plan_key: "fixture_starter",
+      scheduled_plan_at: future.toISOString().slice(0, 10),
+      scheduled_effective_at: future.toISOString(),
+    }).eq("workspace_id", workspaceId)
+    expect(scheduledDowngrade.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({
+      plan_key: "fixture_free",
+      capability_configured: true,
+      feature_enabled: true,
+      limit_value: 1,
+      unlimited: false,
+    })
+
+    const restoredUnlimited = await service!.from("workspace_subscriptions").update({
+      plan_key: "fixture_unlimited",
+      source: "paddle",
+      provider: "paddle",
+      provider_environment: "sandbox",
+      provider_customer_id: "cus_fixture",
+      provider_subscription_id: "sub_fixture",
+      provider_price_id: fixturePriceId,
+      scheduled_plan_key: null,
+      scheduled_plan_at: null,
+      scheduled_effective_at: null,
+    }).eq("workspace_id", workspaceId)
+    expect(restoredUnlimited.error).toBeNull()
 
     const scheduledCancel = await service!.from("workspace_subscriptions").update({ cancel_at_period_end: true, scheduled_change_action: "cancel", scheduled_change_at: future.toISOString(), current_period_end: future.toISOString().slice(0, 10), current_period_end_at: future.toISOString() }).eq("workspace_id", workspaceId)
     expect(scheduledCancel.error).toBeNull()

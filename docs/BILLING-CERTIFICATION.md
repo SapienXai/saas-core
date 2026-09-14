@@ -5,8 +5,9 @@ SaaS Core runtime/package release `2.5.0` and Core schema compatibility
 coordinate `2.0`. The release delivers the additive, Core-managed migration
 sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
-`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`
+`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`,
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`
 from both the repository root and the canonical application template. It
 certifies the packed Core contract, reusable billing boundary, and managed-
 template lifecycle proof, including the controlled legacy-consumer upgrade.
@@ -30,8 +31,9 @@ later product-owned working-tree changes, which are outside this certification.
 Core owns the provider-neutral billing contract, runtime and schema
 compatibility coordinates, the additive migration sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`,
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`,
 workspace-scoped provider mapping, checkout and mutation journal boundaries,
 verified webhook projection, reconciliation, past-due grace and effective-plan
 policy, generic entitlements, target-plan downgrade eligibility, billing actions, and the managed plan and
@@ -82,8 +84,9 @@ tooling dependency and the application package is the template carrier for the
 managed migration sources. Package packing and CLI `init`/`update` deliver
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
-`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` as
+`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`,
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` as
 source and never execute SQL. The consumer owns migration ordering,
 application, and database verification. `doctor` reports source readiness, consumer presence
 and hash readiness, and manifest ownership/readiness separately; its database
@@ -108,8 +111,9 @@ are blocked after the effective boundary.
 The CLI records hashes for Core-managed template files and product-owned path
 boundaries in `.saas-core-manifest.json`. The billing and plan-catalog sources at
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` are
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` are
 Core-managed; product catalogs, styles, routes, migrations under
 `supabase/migrations/product/**`, and domain files are excluded from managed
 replacement. An untouched managed file is backed up and updated. A locally

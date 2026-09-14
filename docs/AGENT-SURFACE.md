@@ -8,8 +8,9 @@ Agent Surface is included in the current `2.5.0` Core runtime/package release.
 Core schema compatibility coordinate remains `2.0`. The release carries the
 additive, Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`;
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`;
 Agent Surface itself has no schema-specific SQL. Package packing and CLI
 `init`/`update` deliver the sources but never execute SQL, and each consumer
 owns its controlled apply and verification.
@@ -212,7 +213,8 @@ result.
 Agent Surface browser files and the Core-managed billing sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` are
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` are
 Core-managed template files. The normal manifest/update lifecycle delivers
 them to existing consumers, preserves product-owned paths including
 `supabase/migrations/product/**`, and retains conflict and rollback

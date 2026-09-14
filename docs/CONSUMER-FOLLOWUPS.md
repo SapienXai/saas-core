@@ -4,8 +4,9 @@ These checklists are the remaining work for the audited consumers after the
 SaaS Core `2.4.0` packaging checkpoint. The release delivers the additive,
 Core-managed source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` while
+`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` while
 keeping schema compatibility coordinate `2.0`. CLI `init`/`update` and package
 packing deliver the files as source and never execute SQL; each consumer owns
 its controlled apply and database verification. These are separate read-only
@@ -23,8 +24,9 @@ and an explicit rollback plan.
 - [ ] Run `saas-core doctor`, `diff`, and `update --dry-run`; inventory every
   managed conflict and resolve it before applying an update. Confirm that
   `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-  `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` and
-  `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`
+  `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+  `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+  `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`
   are present in the consumer and recorded as Core-managed, then apply and
   verify them through ReserveVia's controlled migration process.
 - [ ] Preserve provider customer IDs, subscription IDs, provider price IDs,
@@ -63,8 +65,9 @@ and an explicit rollback plan.
   manifest. Resolve managed conflicts explicitly and review the backup and
   rollback plan before applying anything. Confirm that
   `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-  `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql` and
-  `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`
+  `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
+  `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+  `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`
   are present in the consumer and recorded as Core-managed, then apply and
   verify them through PlaceDJ's controlled migration process.
 - [ ] Preserve provider customer/subscription/price IDs, webhook event order,

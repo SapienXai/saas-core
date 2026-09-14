@@ -21,6 +21,7 @@ const REQUIRED_BILLING_MIGRATIONS = [
   "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
   "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
   "supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql",
+  "supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql",
 ]
 const IGNORED_FILES = new Set(["next-env.d.ts", ".gitignore", "pnpm-lock.yaml", "package-lock.json", "yarn.lock"])
 const PRODUCT_PREFIXES = ["src/product/", "app/(product)/", "app/product/", "components/product/", "supabase/migrations/product/"]

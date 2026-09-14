@@ -12,7 +12,8 @@ additive, Core-managed migration sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
 `supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` in
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` in
 the repository and canonical application template. Package packing and the
 CLI deliver those sources to consumers; `init` and `update` never execute SQL.
 Each consumer owns the controlled apply and verification workstream. The Plan
@@ -182,7 +183,9 @@ sort order; catalog synchronization must first persist an explicit active
 The additive, provider-neutral billing, entitlement, and plan-catalog sources are
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, plus
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`.
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`,
+`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
+`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`.
 They are Core-managed and shipped from the repository root and
 `packages/app/template`; `@sapienx/saas-core-app` and the packed CLI carry them
 through `init` and `update`. Those commands copy and hash the sources for the

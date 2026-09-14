@@ -16,11 +16,15 @@ const templatePlanCatalogMigration = await readFile(path.join(root, "packages/ap
 const invitationRenewalFixPath = path.join(root, "supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql")
 const invitationRenewalFix = await readFile(invitationRenewalFixPath, "utf8")
 const templateInvitationRenewalFix = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql"), "utf8")
+const scheduledDowngradeCeilingPath = path.join(root, "supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql")
+const scheduledDowngradeCeiling = await readFile(scheduledDowngradeCeilingPath, "utf8")
+const templateScheduledDowngradeCeiling = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql"), "utf8")
 const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
 if (persistenceMigration !== templatePersistenceMigration) throw new Error("Root and template reusable billing migrations are not byte-for-byte identical.")
 if (entitlementMigration !== templateEntitlementMigration) throw new Error("Root and template entitlement enforcement migrations are not byte-for-byte identical.")
 if (planCatalogMigration !== templatePlanCatalogMigration) throw new Error("Root and template plan catalog migrations are not byte-for-byte identical.")
 if (invitationRenewalFix !== templateInvitationRenewalFix) throw new Error("Root and template invitation renewal fix migrations are not byte-for-byte identical.")
+if (scheduledDowngradeCeiling !== templateScheduledDowngradeCeiling) throw new Error("Root and template scheduled downgrade ceiling migrations are not byte-for-byte identical.")
 const tables = [
   "plans", "workspaces", "workspace_members", "workspace_invitations", "workspace_subscriptions",
   "workspace_usage_periods", "billing_provider_prices", "billing_webhook_events", "billing_checkout_sessions",
@@ -130,6 +134,12 @@ if (!entitlementMigration.includes("private.assert_workspace_member_available") 
 }
 if (!entitlementMigration.includes("subscription_row.source <> 'manual'") || !entitlementMigration.includes("provider_customer_id") || !entitlementMigration.includes("provider_subscription_id") || !entitlementMigration.includes("candidate_provider_price_id") || !entitlementMigration.includes("current_period_end_at")) {
   throw new Error("Paid entitlement projections are missing the complete provider-identity fail-closed check.")
+}
+if (!scheduledDowngradeCeiling.includes("create or replace function public.lock_workspace_entitlement(") || !scheduledDowngradeCeiling.includes("scheduled_plan.sort_order < selected_plan.sort_order") || !scheduledDowngradeCeiling.includes("scheduled_change_action, '') not in ('cancel', 'pause', 'resume')") || !scheduledDowngradeCeiling.includes("not scheduled_limit_valid") || !scheduledDowngradeCeiling.includes("pg_advisory_xact_lock")) {
+  throw new Error("Scheduled downgrade consumption ceiling is missing the ordered, cancellation-safe entitlement lock policy.")
+}
+if (scheduledDowngradeCeiling.toLowerCase().includes("rest" + "aurant") || scheduledDowngradeCeiling.toLowerCase().includes("reserv" + "ation")) {
+  throw new Error("The scheduled downgrade entitlement migration contains product-domain vocabulary.")
 }
 if (!planCatalogMigration.includes("add column if not exists description") || !planCatalogMigration.includes("plans_description_length_check") || !planCatalogMigration.includes("create or replace function private.guard_referenced_plan_change()") || !planCatalogMigration.includes("PLAN_REFERENCED_IMMUTABLE") || !planCatalogMigration.includes("PLAN_REFERENCED_ACTIVE")) {
   throw new Error("Plan catalog lifecycle migration is missing description persistence or historical entitlement protection.")

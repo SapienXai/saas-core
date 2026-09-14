@@ -19,9 +19,13 @@ no schema-coordinate bump is required for this additive policy layer.
   fallback limit.
 - The managed billing UI reports dynamic target-plan violations without
   turning an ineligible downgrade into a confirmable provider action.
+- An explicit pending downgrade keeps the current plan and features active but
+  immediately caps new finite-quota consumption at the stricter target limit;
+  scheduled cancellation retains current-plan limits until its boundary.
 - The canonical template and CLI continue to carry the additive Core-managed
   migration sources, including
-  `20260914110000_fix_renew_workspace_invitation.sql`.
+  `20260914110000_fix_renew_workspace_invitation.sql` and
+  `20260914185445_scheduled_downgrade_consumption_ceiling.sql`.
 
 ## Package versions
 
@@ -43,6 +47,7 @@ consumer migration. The managed set includes:
 - `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`
 - `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`
 - `supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`
+- `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`
 
 Products define their own commercial limits and product usage resolvers. A
 consumer must apply and verify these sources through its controlled database

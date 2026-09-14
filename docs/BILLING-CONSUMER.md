@@ -170,6 +170,34 @@ configured fallback limits. Existing resources remain intact; after the
 effective cancellation boundary, new restricted mutations are blocked until
 usage is reduced or the workspace returns to an eligible paid plan.
 
+### Pending downgrade consumption ceiling
+
+An explicit scheduled downgrade keeps the current paid plan active for display,
+feature access, and existing resources until its effective boundary. New finite
+quota consumption is different: Core immediately uses the stricter of the
+active limit and the scheduled target limit. This prevents a workspace that was
+eligible at confirmation time from growing beyond the target before the change
+takes effect. Existing product rows are never deleted or changed; once usage is
+at or above the target, new consumption is rejected with `PLAN_LIMIT_REACHED`.
+
+The server helper exposes the policy through the normal consumption path:
+
+```ts
+const ceiling = await billing.getEffectiveConsumptionLimit(workspaceId, "venues", userId)
+await billing.assertCanConsume(workspaceId, "venues", 1, userId)
+```
+
+`getLimit()` and the billing UI continue to describe the active plan. A
+`canConsume()` decision may additionally include `activeLimit`,
+`scheduledLimit`, `constrainedByScheduledPlan`, and `scheduledPlanKey` so a
+consumer can explain why a currently paid workspace is temporarily capped.
+
+Scheduled cancellation, pause, or resume does not use this ceiling. The active
+plan's limits remain authoritative until the cancellation/lifecycle boundary,
+even when the eventual fallback plan has a smaller quota. Missing or malformed
+scheduled downgrade capability data fails closed rather than becoming
+unlimited.
+
 ## 6. Protect check-then-insert quota mutations
 
 For a finite quota, a separate JavaScript count followed by an insert is not

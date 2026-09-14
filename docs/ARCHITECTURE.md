@@ -194,7 +194,8 @@ remains `2.0`. The release delivers the additive, Core-managed migration
 sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
 `supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`,
-plus `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`,
+plus `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`
 from the repository root and `packages/app/template`. Package packing and CLI
 `init`/`update` carry those sources to consumers and never execute SQL.
 Consumers apply and verify them through their own controlled migration process.
