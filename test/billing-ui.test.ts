@@ -70,6 +70,7 @@ describe("reusable billing UI", () => {
       ["components/manage/billing-success-experience.tsx", "packages/app/template/components/manage/billing-success-experience.tsx"],
       ["components/manage/paddle-billing-actions.tsx", "packages/app/template/components/manage/paddle-billing-actions.tsx"],
       ["components/manage/manage-sidebar.tsx", "packages/app/template/components/manage/manage-sidebar.tsx"],
+      ["lib/management-sidebar-usage.ts", "packages/app/template/lib/management-sidebar-usage.ts"],
       ["components/manage/scheduled-plan-change-banner.tsx", "packages/app/template/components/manage/scheduled-plan-change-banner.tsx"],
       ["components/manage/plan-feature-preview.tsx", "packages/app/template/components/manage/plan-feature-preview.tsx"],
       ["components/manage/entitlement-limit-notice.tsx", "packages/app/template/components/manage/entitlement-limit-notice.tsx"],

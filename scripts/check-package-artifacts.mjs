@@ -55,6 +55,7 @@ const managedPlanFiles = [
   "package/template/supabase/migrations/20260914100000_reusable_plan_catalog_management.sql",
   "package/template/supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql",
   "package/template/supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql",
+  "package/template/supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql",
   "package/template/src/product/usage.ts",
   "package/template/app/platform/billing/actions.ts",
   "package/template/app/platform/billing/page.tsx",

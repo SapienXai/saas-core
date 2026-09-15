@@ -148,6 +148,33 @@ describe("scheduled downgrade consumption ceiling", () => {
     })
   })
 
+  it("fails closed when a pending scheduled target cannot be resolved", async () => {
+    const workspaceId = "scheduled-downgrade-invalid-target-workspace"
+    const { now } = installFixture({
+      workspaceId,
+      subscription: subscription({ plan_key: "pro", scheduled_plan_key: "missing-target", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      usage: 0,
+    })
+    productResolvers.venues = () => 0
+
+    await expect(getEffectiveConsumptionLimit(workspaceId, "venues", { now })).resolves.toMatchObject({
+      limit: undefined,
+      activeLimit: 3,
+      scheduledLimit: undefined,
+      constrainedByScheduledPlan: true,
+      scheduledPlanKey: "missing-target",
+    })
+    await expect(canConsume(workspaceId, "venues", 1, { now })).resolves.toMatchObject({
+      allowed: false,
+      code: "CAPABILITY_NOT_CONFIGURED",
+      limit: undefined,
+      activeLimit: 3,
+      scheduledLimit: undefined,
+      constrainedByScheduledPlan: true,
+      scheduledPlanKey: "missing-target",
+    })
+  })
+
   it("allows consumption below the scheduled ceiling and rejects the exact boundary", async () => {
     const belowId = "scheduled-downgrade-below-workspace"
     const { now } = installFixture({

@@ -19,12 +19,16 @@ const templateInvitationRenewalFix = await readFile(path.join(root, "packages/ap
 const scheduledDowngradeCeilingPath = path.join(root, "supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql")
 const scheduledDowngradeCeiling = await readFile(scheduledDowngradeCeilingPath, "utf8")
 const templateScheduledDowngradeCeiling = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql"), "utf8")
+const invalidScheduledDowngradeFixPath = path.join(root, "supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql")
+const invalidScheduledDowngradeFix = await readFile(invalidScheduledDowngradeFixPath, "utf8")
+const templateInvalidScheduledDowngradeFix = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql"), "utf8")
 const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
 if (persistenceMigration !== templatePersistenceMigration) throw new Error("Root and template reusable billing migrations are not byte-for-byte identical.")
 if (entitlementMigration !== templateEntitlementMigration) throw new Error("Root and template entitlement enforcement migrations are not byte-for-byte identical.")
 if (planCatalogMigration !== templatePlanCatalogMigration) throw new Error("Root and template plan catalog migrations are not byte-for-byte identical.")
 if (invitationRenewalFix !== templateInvitationRenewalFix) throw new Error("Root and template invitation renewal fix migrations are not byte-for-byte identical.")
 if (scheduledDowngradeCeiling !== templateScheduledDowngradeCeiling) throw new Error("Root and template scheduled downgrade ceiling migrations are not byte-for-byte identical.")
+if (invalidScheduledDowngradeFix !== templateInvalidScheduledDowngradeFix) throw new Error("Root and template invalid scheduled downgrade fix migrations are not byte-for-byte identical.")
 const tables = [
   "plans", "workspaces", "workspace_members", "workspace_invitations", "workspace_subscriptions",
   "workspace_usage_periods", "billing_provider_prices", "billing_webhook_events", "billing_checkout_sessions",
@@ -137,6 +141,12 @@ if (!entitlementMigration.includes("subscription_row.source <> 'manual'") || !en
 }
 if (!scheduledDowngradeCeiling.includes("create or replace function public.lock_workspace_entitlement(") || !scheduledDowngradeCeiling.includes("scheduled_plan.sort_order < selected_plan.sort_order") || !scheduledDowngradeCeiling.includes("scheduled_change_action, '') not in ('cancel', 'pause', 'resume')") || !scheduledDowngradeCeiling.includes("not scheduled_limit_valid") || !scheduledDowngradeCeiling.includes("pg_advisory_xact_lock")) {
   throw new Error("Scheduled downgrade consumption ceiling is missing the ordered, cancellation-safe entitlement lock policy.")
+}
+if (!invalidScheduledDowngradeFix.includes("create or replace function public.lock_workspace_entitlement(") || !invalidScheduledDowngradeFix.includes("if invalid_scheduled_downgrade then") || !invalidScheduledDowngradeFix.includes("return query select selected_plan.key, false, false, null::integer, false") || !invalidScheduledDowngradeFix.includes("revoke all on function public.lock_workspace_entitlement(uuid, text) from public, anon, authenticated") || !invalidScheduledDowngradeFix.includes("grant execute on function public.lock_workspace_entitlement(uuid, text) to service_role")) {
+  throw new Error("Invalid scheduled downgrade target is not guarded by an additive fail-closed entitlement replacement.")
+}
+if (invalidScheduledDowngradeFix.includes("20260914185445_scheduled_downgrade_consumption_ceiling.sql")) {
+  throw new Error("The invalid scheduled downgrade fix must remain an additive SQL replacement, not an in-place migration edit.")
 }
 if (scheduledDowngradeCeiling.toLowerCase().includes("rest" + "aurant") || scheduledDowngradeCeiling.toLowerCase().includes("reserv" + "ation")) {
   throw new Error("The scheduled downgrade entitlement migration contains product-domain vocabulary.")

@@ -17,6 +17,7 @@ import { WorkspaceSwitcher } from "@/components/manage/workspace-switcher"
 import { WorkspaceUpgradeModal } from "@/components/manage/workspace-upgrade-modal"
 import { localeConfig, type SupportedLanguage } from "@/i18n"
 import { getPlanNavigationHref } from "@/lib/plan-navigation"
+import { resolveSidebarUsageItems, type SidebarUsageItem } from "@/lib/management-sidebar-usage"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
 import { getActiveProductNavigationKey, isProductHomeActive, isProductNavigationVisible, resolveProductShell } from "@/lib/product-shell"
 import { getActivePlatformNavigationKey, isPlatformNavigationVisible, resolvePlatformNavigation } from "@/lib/platform-navigation"
@@ -32,15 +33,13 @@ type SidebarNavigationItem = {
   disabled: boolean
 }
 
-type SidebarUsageItem = {
-  label: string
-  used: number
-  limit: number | null | undefined
-}
-
 type BillingSidebarPresentation = {
   planOrder?: readonly string[]
   plans?: Readonly<Record<string, { label?: string }>>
+  limitKeys?: readonly string[]
+  copy?: Readonly<Record<string, string>>
+  comparison?: readonly { key?: string; label?: string; kind?: "feature" | "limit"; limitKey?: string }[]
+  comparisonRows?: readonly { key?: string; label?: string; kind?: "feature" | "limit"; limitKey?: string }[]
 }
 
 const PRODUCT_NAVIGATION_ICONS: Record<string, LucideIcon> = {
@@ -78,15 +77,16 @@ function SidebarUsageBars({ items }: { items: SidebarUsageItem[] }) {
   return (
     <div className="grid grid-cols-2 gap-x-2.5 gap-y-1.5">
       {items.map((item) => {
-        const percent = typeof item.limit === "number" ? Math.min(100, (item.used / Math.max(item.limit, 1)) * 100) : 0
+        const percent = typeof item.used === "number" && typeof item.limit === "number" ? Math.min(100, (item.used / Math.max(item.limit, 1)) * 100) : 0
+        const valueLabel = typeof item.used === "number" ? item.used : "—"
         return (
-          <div key={item.label} className="min-w-0">
+          <div key={item.key} className="min-w-0">
             <div className="flex items-center justify-between gap-1 text-[10px] leading-none">
               <span className="min-w-0 truncate font-medium text-slate-500 dark:text-slate-400">{item.label}</span>
-              <span className="shrink-0 font-bold tabular-nums text-slate-700 dark:text-slate-200">{item.used}/{item.limit === undefined ? "—" : item.limit === null ? "∞" : item.limit}</span>
+              <span className="shrink-0 font-bold tabular-nums text-slate-700 dark:text-slate-200">{valueLabel}/{item.limit === undefined ? "—" : item.limit === null ? "∞" : item.limit}</span>
             </div>
             <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10" aria-hidden="true">
-              <div className="h-full rounded-full bg-violet-500 transition-[width]" style={{ width: item.limit === null ? "8%" : typeof item.limit === "number" ? `${percent}%` : "0%" }} />
+              <div className="h-full rounded-full bg-violet-500 transition-[width]" style={{ width: item.limit === null && typeof item.used === "number" ? "8%" : typeof item.limit === "number" && typeof item.used === "number" ? `${percent}%` : "0%" }} />
             </div>
           </div>
         )
@@ -131,10 +131,15 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const workspaceUsage = currentWorkspace?.usage
   const workspaceLimits = currentWorkspace?.plan?.limits
   const usageItems: SidebarUsageItem[] = workspaceUsage && workspaceLimits
-    ? [
-        { label: getTranslation("manage.planUsage.workspaces"), used: workspaceUsage.workspaces, limit: workspaceLimits["core.workspaces"] },
-        { label: getTranslation("manage.planUsage.teamMembers"), used: workspaceUsage.users, limit: workspaceLimits["core.members"] },
-      ]
+    ? resolveSidebarUsageItems({
+        usage: workspaceUsage,
+        limits: workspaceLimits,
+        productConfig,
+        coreLabels: {
+          "core.workspaces": getTranslation("manage.planUsage.workspaces"),
+          "core.members": getTranslation("manage.planUsage.teamMembers"),
+        },
+      })
     : []
   const hasWorkspaceUsage = usageItems.length > 0
   const upgradePlanHref = nextPlanKey
