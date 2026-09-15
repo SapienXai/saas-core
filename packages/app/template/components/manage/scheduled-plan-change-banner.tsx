@@ -13,9 +13,10 @@ type ScheduledPlanChangeBannerProps = {
   targetPlanName: string
   effectiveAt: string | null
   canManage: boolean
+  changeKind?: "plan" | "billing-cycle"
 }
 
-export function ScheduledPlanChangeBanner({ currentPlanName, targetPlanName, effectiveAt, canManage }: ScheduledPlanChangeBannerProps) {
+export function ScheduledPlanChangeBanner({ currentPlanName, targetPlanName, effectiveAt, canManage, changeKind = "plan" }: ScheduledPlanChangeBannerProps) {
   const { currentLang, getTranslation, translateMessage } = useLanguage()
   const t = getTranslation
   const router = useRouter()
@@ -43,14 +44,14 @@ export function ScheduledPlanChangeBanner({ currentPlanName, targetPlanName, eff
             <CalendarClock className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-700 dark:text-violet-200">{t("manage.planUsage.billing.scheduledChange")}</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-700 dark:text-violet-200">{changeKind === "billing-cycle" ? t("manage.planUsage.billing.billingCycleChangeLabel") : t("manage.planUsage.billing.scheduledChange")}</p>
             <p className="mt-1 flex flex-wrap items-center gap-1.5 text-base font-bold tracking-tight text-violet-950 dark:text-white">
               <span>{currentPlanName}</span>
               <ArrowRight className="h-4 w-4 text-violet-500" aria-hidden="true" />
               <span>{targetPlanName}</span>
             </p>
             <p className="mt-1 text-xs leading-5 text-violet-800/80 dark:text-violet-100/75">
-              {effectiveDate ? <>{t("manage.planUsage.billing.scheduledPlanStarts", { date: effectiveDate, plan: targetPlanName })} <time dateTime={effectiveAt || undefined} className="sr-only">{effectiveDate}</time></> : t("manage.planUsage.billing.scheduledPlanPending")}
+              {effectiveDate ? <>{changeKind === "billing-cycle" ? <>{t("manage.planUsage.billing.billingCycleChangeScheduled", { date: effectiveDate })} {t("manage.planUsage.billing.billingCycleChangeScheduledDescription")}</> : t("manage.planUsage.billing.scheduledPlanStarts", { date: effectiveDate, plan: targetPlanName })} <time dateTime={effectiveAt || undefined} className="sr-only">{effectiveDate}</time></> : t("manage.planUsage.billing.scheduledPlanPending")}
             </p>
             {message && <p className="mt-2 text-xs font-semibold text-rose-700 dark:text-rose-300" role="alert">{message}</p>}
           </div>

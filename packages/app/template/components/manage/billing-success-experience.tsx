@@ -50,6 +50,8 @@ export function BillingSuccessExperience({
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const effectiveDate = effectiveAt ? formatLocalizedDate(effectiveAt, currentLang, { dateStyle: "medium", timeStyle: "short" }) : null
   const isDowngrade = kind === "downgrade"
+  const isScheduledBilling = kind === "billing" && Boolean(effectiveDate)
+  const isScheduled = isDowngrade || isScheduledBilling
 
   useEffect(() => {
     previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -98,6 +100,8 @@ export function BillingSuccessExperience({
       ? t("manage.planUsage.billing.success.upgraded", { plan: planName })
       : kind === "downgrade"
         ? t("manage.planUsage.billing.success.downgradeScheduled", { plan: planName })
+        : isScheduledBilling
+          ? t("manage.planUsage.billing.billingCycleChangeScheduled", { date: effectiveDate || "" })
         : t("manage.planUsage.billing.success.billingUpdated")
   const description = kind === "purchase"
     ? t("manage.planUsage.billing.success.purchaseDescription")
@@ -107,6 +111,8 @@ export function BillingSuccessExperience({
         ? effectiveDate && fromPlanName
           ? t("manage.planUsage.billing.success.downgradeDescription", { from: fromPlanName, plan: planName, date: effectiveDate })
           : t("manage.planUsage.billing.success.downgradePendingDescription", { plan: planName })
+        : isScheduledBilling
+          ? t("manage.planUsage.billing.changeBillingCyclePeriodEnd")
         : t("manage.planUsage.billing.success.billingDescription")
 
   return (
@@ -134,21 +140,21 @@ export function BillingSuccessExperience({
               <CircleCheck className="h-7 w-7" strokeWidth={1.7} aria-hidden="true" />
             </div>
             <p className="mt-4 flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">
-              <Sparkles className="h-3 w-3" aria-hidden="true" /> {isDowngrade ? t("manage.planUsage.billing.success.changeScheduled") : t("manage.planUsage.billing.success.paymentSuccessful")}
+              <Sparkles className="h-3 w-3" aria-hidden="true" /> {isScheduled ? t("manage.planUsage.billing.success.changeScheduled") : t("manage.planUsage.billing.success.paymentSuccessful")}
             </p>
             <h2 id="billing-success-title" className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">{title}</h2>
             <p id="billing-success-description" className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-600 dark:text-slate-300">{description}</p>
 
             <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-400/15 dark:bg-violet-500/10">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-200">{isDowngrade ? t("manage.planUsage.billing.success.scheduledChange") : t("manage.planUsage.billing.success.activePlan")}</span>
-                <span className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-violet-700 shadow-sm dark:bg-white/10 dark:text-violet-200">{isDowngrade ? effectiveDate ? t("manage.planUsage.billing.success.scheduledStartsOn", { date: effectiveDate }) : t("manage.planUsage.billing.success.scheduled") : interval === "year" ? t("manage.planUsage.billing.success.billedAnnually") : t("manage.planUsage.billing.success.billedMonthly")}</span>
+                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-200">{isScheduled ? t("manage.planUsage.billing.success.scheduledChange") : t("manage.planUsage.billing.success.activePlan")}</span>
+                <span className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-violet-700 shadow-sm dark:bg-white/10 dark:text-violet-200">{isScheduled ? effectiveDate ? t("manage.planUsage.billing.success.scheduledStartsOn", { date: effectiveDate }) : t("manage.planUsage.billing.success.scheduled") : interval === "year" ? t("manage.planUsage.billing.success.billedAnnually") : t("manage.planUsage.billing.success.billedMonthly")}</span>
               </div>
               <p className="mt-1 flex items-center gap-1.5 text-base font-bold text-slate-950 dark:text-white">{fromPlanName && isDowngrade && <><span>{fromPlanName}</span><ArrowRight className="h-3.5 w-3.5 shrink-0 text-violet-500" aria-hidden="true" /></>}<span>{planName}</span></p>
             </div>
 
             <div className="mt-4 text-left">
-              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{isDowngrade ? t("manage.planUsage.billing.success.featuresAfterChange") : t("manage.planUsage.billing.success.featuresReady")}</p>
+              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{isScheduled ? t("manage.planUsage.billing.success.featuresAfterChange") : t("manage.planUsage.billing.success.featuresReady")}</p>
               <div className="mt-2 grid gap-1.5">
                 {highlights.map((highlight, index) => (
                   <div key={highlight} className="billing-success-feature flex items-center gap-2 rounded-lg border border-slate-100 bg-white/75 px-2.5 py-2 text-xs font-medium text-slate-700 opacity-0 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200" style={{ animationDelay: `${160 + index * 80}ms` }}>

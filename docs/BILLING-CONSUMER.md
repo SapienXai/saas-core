@@ -206,7 +206,22 @@ restrictively. The current plan and features remain effective until the
 boundary, while the finite consumption ceiling still uses the stricter target
 limit. Billing overview presentation follows the current local interval and
 provider amount, so a pending target is shown only in the scheduled-change
-banner.
+banner. For an active provider-backed subscription, the displayed current
+charge must come from the authoritative provider amount. If that amount or
+currency is unavailable, render an explicit unavailable state rather than
+silently substituting the catalog price. Manual, internal, and free plans may
+continue to use their intentional catalog semantics; browse-toggle prices are
+not current-charge evidence.
+
+Billing-cycle changes are also asymmetric. A month → year change is immediate
+after preview and confirmation, with provider proration. A year → month change
+uses the provider frequency replacement without an immediate charge, while
+Core keeps the current annual plan, features, limits, and annual display until
+the current period ends; monthly billing starts at that boundary. Both are
+`interval_change` transitions, and a same-interval request is rejected before
+the provider call. A same-plan interval schedule never receives the pending
+downgrade consumption ceiling; the existing plan downgrade rule remains
+unchanged.
 
 ## 6. Protect check-then-insert quota mutations
 

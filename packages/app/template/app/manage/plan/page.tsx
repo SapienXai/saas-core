@@ -63,13 +63,22 @@ export default async function PlanUsagePage() {
   const supportedIntervals = policy.supportedIntervals || ["month", "year"]
   const defaultInterval = policy.defaultInterval || supportedIntervals[0] || "month"
   const copyText = (key: string, fallback: string) => presentation?.copy?.[key]?.trim() || fallback
+  const providerBacked = billing.provider === "paddle"
   const currentSubscriptionPrice = resolveCurrentSubscriptionPrice({
+    providerBacked,
     billingInterval: billing.billingInterval,
     billingCurrency: billing.billingCurrency,
     currentProviderPriceAmount: billing.currentProviderPriceAmount,
     pricing: entitlements.pricing,
   })
-  const currentSubscriptionPriceText = formatCurrentSubscriptionPrice(currentSubscriptionPrice, language)
+  const currentSubscriptionPriceText = providerBacked && (!currentSubscriptionPrice || currentSubscriptionPrice.source === "unavailable")
+    ? translateServer(language, "manage.planUsage.billing.currentPriceUnavailable")
+    : formatCurrentSubscriptionPrice(currentSubscriptionPrice, language)
+  const currentSubscriptionPriceDetail = currentSubscriptionPriceText == null
+    ? copyText("pricingLabel", "Product pricing")
+    : providerBacked && (!currentSubscriptionPrice || currentSubscriptionPrice.source === "unavailable")
+      ? currentSubscriptionPriceText
+      : `${currentSubscriptionPriceText} / ${translateServer(language, currentSubscriptionPrice?.interval === "year" ? "manage.planUsage.billing.annual" : "manage.planUsage.billing.monthly")}`
   const hasLimit = (key: string) => Object.prototype.hasOwnProperty.call(entitlements.limits, key)
   const usageMetricLabel = (key: string) => key === "core.workspaces"
     ? copyText("workspacesLabel", translateServer(language, "manage.planUsage.billing.workspaces"))
@@ -106,9 +115,10 @@ export default async function PlanUsagePage() {
 
   return <ManagePage>
     <ManagePageHeader eyebrow={copyText("eyebrow", "Workspace billing")} title={copyText("title", "Plan and usage")} description={`${workspace.name} · ${workspace.slug}`} />
-    {entitlements.scheduledPlan && <ScheduledPlanChangeBanner currentPlanName={entitlements.planName} targetPlanName={entitlements.scheduledPlan.name} effectiveAt={entitlements.scheduledPlan.effectiveAt} canManage={Boolean(billing.canManage)} />}
+    {entitlements.scheduledPlan && entitlements.scheduledPlan.key !== entitlements.planKey && <ScheduledPlanChangeBanner currentPlanName={entitlements.planName} targetPlanName={entitlements.scheduledPlan.name} effectiveAt={entitlements.scheduledPlan.effectiveAt} canManage={Boolean(billing.canManage)} />}
+    {entitlements.scheduledPlan?.key === entitlements.planKey && billing.scheduledPlanInterval && billing.scheduledPlanInterval !== billing.billingInterval && <ScheduledPlanChangeBanner changeKind="billing-cycle" currentPlanName={translateServer(language, billing.billingInterval === "year" ? "manage.planUsage.billing.annual" : "manage.planUsage.billing.monthly")} targetPlanName={translateServer(language, billing.scheduledPlanInterval === "year" ? "manage.planUsage.billing.annual" : "manage.planUsage.billing.monthly")} effectiveAt={billing.scheduledPlanAt} canManage={Boolean(billing.canManage)} />}
     <ManageMetricGrid>
-      <ManageMetricCard label={copyText("currentPlanLabel", "Current plan")} value={entitlements.planName} detail={currentSubscriptionPriceText == null ? copyText("pricingLabel", "Product pricing") : `${currentSubscriptionPriceText} / ${translateServer(language, currentSubscriptionPrice?.interval === "year" ? "manage.planUsage.billing.annual" : "manage.planUsage.billing.monthly")}`} icon={Sparkles} />
+      <ManageMetricCard label={copyText("currentPlanLabel", "Current plan")} value={entitlements.planName} detail={currentSubscriptionPriceDetail} icon={Sparkles} />
       <ManageMetricCard label={copyText("billingLabel", translateServer(language, "manage.planUsage.billing.billingDetails"))} value={activeStatus} detail={throughLabel} icon={CreditCard} />
       <ManageMetricCard label={copyText("membersLabel", translateServer(language, "manage.planUsage.billing.teamMembers"))} value={usage.users} detail={memberLimit === undefined ? "—" : memberLimit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${memberLimit}`} />
       {productMetric && <ManageMetricCard label={productMetric.label} value={productMetric.value ?? "—"} detail={productMetric.limit === undefined ? "—" : productMetric.limit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${productMetric.limit}`} />}

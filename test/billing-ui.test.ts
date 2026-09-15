@@ -49,16 +49,28 @@ describe("reusable billing UI", () => {
     expect(actions).toContain("data-billing-interval-change")
     expect(actions).toContain("changeBillingCycleDialogTitle")
     expect(actions).toContain("confirmation.preview.interval")
+    expect(actions).toContain('preview.changeTiming === "period_end"')
+    expect(actions).toContain("isScheduledPeriodEnd")
+    expect(actions).toContain("hasPendingBillingCycleChange")
     expect(actions).toContain("billingIssueCode === \"past_due\"")
     expect(actions).toContain("recoverPayment")
     expect(actions).toContain("billing.canManage")
     expect(planActions).toContain("planChangeFingerprint")
     expect(planActions).toContain("The billing state changed. Review the new preview before confirming.")
-    expect(planActions).toContain("targetPlan === context.subscription.plan_key && context.currentInterval !== context.interval")
+    expect(planActions).toContain("subscription.plan_key === targetPlan && !currentInterval")
     expect(planActions).toContain('transitionKind = isIntervalChange ? "interval_change"')
+    expect(planActions).toContain('prorationBillingMode = intervalPolicy.kind === "interval_change"')
+    expect(planActions).toContain('shouldPersistScheduledProjection = isDowngrade || changeTiming === "period_end"')
+    expect(planActions).toContain("fresh.nextBilledAt !== saved.nextBilledAt")
+    expect(planActions).toContain("changeTiming, effectiveAt, providerReference")
+    expect(planActions).toContain('isIntervalChange ? "The pending billing cycle change was undone."')
     expect(planActions).toContain("The workspace is already on that plan and billing cycle.")
     expect(planActions).toContain("Paddle ${environment} ${interval} price mapping is not configured")
     expect(success).toContain("prefers-reduced-motion")
+    expect(success).toContain("isScheduledBilling")
+    expect(banner).toContain('billingCycleChangeLabel')
+    expect(banner).toContain('billingCycleChangeScheduledDescription')
+    expect(banner).not.toContain('billingCycleChangeScheduled", { date: "" })')
   })
 
   it("exposes product-neutral usage and limit-reached primitives", () => {
@@ -88,6 +100,11 @@ describe("reusable billing UI", () => {
       ["app/platform/billing/page.tsx", "packages/app/template/app/platform/billing/page.tsx"],
       ["app/manage/plan/actions.ts", "packages/app/template/app/manage/plan/actions.ts"],
       ["src/product/usage.ts", "packages/app/template/src/product/usage.ts"],
+      ["lib/billing/interval-policy.ts", "packages/app/template/lib/billing/interval-policy.ts"],
+      ["lib/billing/presentation.ts", "packages/app/template/lib/billing/presentation.ts"],
+      ["i18n/locales/en.ts", "packages/app/template/i18n/locales/en.ts"],
+      ["i18n/locales/tr.ts", "packages/app/template/i18n/locales/tr.ts"],
+      ["i18n/locales/es.ts", "packages/app/template/i18n/locales/es.ts"],
     ] as const
     for (const [sourcePath, templatePath] of pairs) expect(read(sourcePath), templatePath).toBe(read(templatePath))
     expect(read("packages/app/template/app/app/plan/page.tsx")).toContain('export { default } from "@/app/manage/plan/page"')

@@ -4,13 +4,14 @@ import { formatNumber } from "@/i18n/format"
 export type BillingDisplayInterval = "month" | "year"
 
 export type CurrentSubscriptionPrice = {
-  amount: number
-  currency: string
+  amount: number | null
+  currency: string | null
   interval: BillingDisplayInterval
-  source: "provider" | "catalog"
+  source: "provider" | "catalog" | "unavailable"
 }
 
 type PriceInput = {
+  providerBacked?: boolean
   billingInterval?: string | null
   billingCurrency?: string | null
   currentProviderPriceAmount?: string | null
@@ -52,6 +53,8 @@ export function resolveCurrentSubscriptionPrice(input: PriceInput): CurrentSubsc
     return { amount: providerAmount / (10 ** providerDigits), currency: providerCurrency, interval, source: "provider" }
   }
 
+  if (input.providerBacked) return { amount: null, currency: providerCurrency, interval, source: "unavailable" }
+
   const catalogPrice = pricing[interval]
   const catalogCurrency = currencyCode(catalogPrice?.currency)
   if (catalogPrice && catalogCurrency && typeof catalogPrice.amount === "number" && Number.isFinite(catalogPrice.amount) && catalogPrice.amount >= 0) {
@@ -61,7 +64,7 @@ export function resolveCurrentSubscriptionPrice(input: PriceInput): CurrentSubsc
 }
 
 export function formatCurrentSubscriptionPrice(price: CurrentSubscriptionPrice | null, language: SupportedLanguage) {
-  if (!price) return null
+  if (!price || price.source === "unavailable" || price.amount === null || !price.currency) return null
   const digits = fractionDigits(price.currency)
   return formatNumber(price.amount, language, {
     style: "currency",

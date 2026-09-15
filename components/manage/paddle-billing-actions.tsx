@@ -148,6 +148,7 @@ type PlanChangePreview = {
   plan: string
   interval: string
   isDowngrade: boolean
+  changeTiming: "immediate" | "period_end"
   prorationBillingMode: string
   action: string | null
   amount: string | null
@@ -169,6 +170,7 @@ type BillingConfirmation =
 
 type PendingBillingOutcome = {
   kind: "purchase" | "upgrade" | "downgrade" | "billing"
+  timing?: "immediate" | "period_end"
   targetPlanKey: string
   targetInterval: string
   transitionId?: string | null
@@ -280,11 +282,11 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
       const data = result.success ? result.data : null
       const providerStatus = data?.billing.providerStatus
       const subscriptionIsActive = providerStatus === "active" || providerStatus === "trialing"
-      const isScheduledDowngrade = pendingOutcome.kind === "downgrade"
-      const planIsVerified = isScheduledDowngrade
+      const isScheduledPeriodEnd = pendingOutcome.kind === "downgrade" || pendingOutcome.timing === "period_end"
+      const planIsVerified = isScheduledPeriodEnd
         ? data?.billing.scheduledPlanKey === pendingOutcome.targetPlanKey
         : data?.entitlements.planKey === pendingOutcome.targetPlanKey
-      const intervalIsVerified = isScheduledDowngrade
+      const intervalIsVerified = isScheduledPeriodEnd
         ? data?.billing.scheduledPlanInterval === pendingOutcome.targetInterval
         : data?.billing.billingInterval === pendingOutcome.targetInterval
       if (data && planIsVerified && intervalIsVerified && subscriptionIsActive) {
@@ -336,7 +338,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
           ...pendingOutcome,
           planName: plan ? planCopy(plan).label : pendingOutcome.targetPlanKey,
           highlights: plan ? planCopy(plan).highlights : [t(GENERIC_PLAN_COPY.highlights[0]), t(GENERIC_PLAN_COPY.highlights[1])],
-          effectiveAt: isScheduledDowngrade ? data?.billing.scheduledPlanAt || pendingOutcome.effectiveAt : null,
+          effectiveAt: isScheduledPeriodEnd ? data?.billing.scheduledPlanAt || pendingOutcome.effectiveAt : null,
         })
         router.refresh()
         return
@@ -576,6 +578,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   const planChangeConfirmation = billingConfirmation?.type === "plan-change" ? billingConfirmation : null
   const checkoutConfirmation = billingConfirmation?.type === "checkout" ? billingConfirmation : null
   const previewIsDowngrade = Boolean(planChangeConfirmation?.preview.isDowngrade)
+  const previewIsPeriodEnd = planChangeConfirmation?.preview.changeTiming === "period_end"
   const previewIsIntervalChange = Boolean(
     planChangeConfirmation &&
     planChangeConfirmation.planKey === currentPlan &&
@@ -599,6 +602,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
       : t("manage.planUsage.billing.changePlanNoCharge")
   const previewTimingLabel = previewIsDowngrade
     ? t("manage.planUsage.billing.changePlanDowngradeTiming")
+    : previewIsPeriodEnd
+    ? t("manage.planUsage.billing.changeBillingCyclePeriodEnd")
     : planChangeConfirmation?.preview.prorationBillingMode === "prorated_immediately"
     ? t("manage.planUsage.billing.changePlanProrationImmediate")
     : t("manage.planUsage.billing.changePlanProrationNext")
@@ -620,6 +625,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         kind: confirmation.preview.isDowngrade
           ? "downgrade" as const
           : confirmation.planKey === currentPlan ? "billing" as const : "upgrade" as const,
+        timing: confirmation.preview.changeTiming,
         targetPlanKey: confirmation.planKey,
         targetInterval: confirmation.preview.interval,
         effectiveAt: confirmation.preview.effectiveAt,
@@ -665,6 +671,12 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     ? `${billing.paymentMethod.type}${billing.paymentMethod.last4 ? ` ending in ${billing.paymentMethod.last4}` : ""}`
     : t("manage.planUsage.billing.securePaymentDetails")
   const currentSubscriptionInterval = billing.billingInterval === "month" || billing.billingInterval === "year" ? billing.billingInterval : null
+  const hasPendingBillingCycleChange = Boolean(
+    billing.scheduledPlanKey === currentPlan &&
+    currentSubscriptionInterval &&
+    (billing.scheduledPlanInterval === "month" || billing.scheduledPlanInterval === "year") &&
+    billing.scheduledPlanInterval !== currentSubscriptionInterval,
+  )
   const alternateBillingInterval = currentSubscriptionInterval
     ? resolvedPresentation.supportedIntervals.find((interval) => interval !== currentSubscriptionInterval)
     : null
@@ -725,8 +737,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
               <p className="text-sm font-semibold text-violet-950 dark:text-violet-100">{t("manage.planUsage.billing.billingCycle")}: {currentSubscriptionInterval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly")}</p>
               <p className="mt-0.5 text-xs text-violet-800/75 dark:text-violet-200/75">{t("manage.planUsage.billing.changeBillingCycleDescription")}</p>
             </div>
-            <Button type="button" onClick={() => changePlan(currentPlan, alternateBillingInterval)} loading={activeAction === `plan-preview:${currentPlan}`} disabled={!billing.paddleConfigured || !alternateBillingIntervalConfigured} className="min-h-9 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
-              {billing.paddleConfigured && alternateBillingIntervalConfigured ? t("manage.planUsage.billing.switchBillingCycle", { interval: alternateBillingInterval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly") }) : t("manage.planUsage.billing.billingSetupRequired")}
+            <Button type="button" onClick={() => changePlan(currentPlan, alternateBillingInterval)} loading={activeAction === `plan-preview:${currentPlan}`} disabled={!billing.paddleConfigured || !alternateBillingIntervalConfigured || hasPendingBillingCycleChange} className="min-h-9 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {hasPendingBillingCycleChange ? t("manage.planUsage.billing.billingCycleChangeScheduled", { date: dateLabel(billing.scheduledPlanAt) || "—" }) : billing.paddleConfigured && alternateBillingIntervalConfigured ? t("manage.planUsage.billing.switchBillingCycle", { interval: alternateBillingInterval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly") }) : t("manage.planUsage.billing.billingSetupRequired")}
             </Button>
           </div>
         )}
@@ -877,7 +889,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                 {checkoutConfirmation
                   ? "Review the exact amount charged now and the configured recurring billing cycle before opening secure checkout."
                   : planChangeConfirmation
-                  ? t(previewIsIntervalChange ? "manage.planUsage.billing.changeBillingCycleDialogDescription" : previewIsDowngrade ? "manage.planUsage.billing.changePlanDowngradeDescription" : "manage.planUsage.billing.changePlanDialogDescription")
+                  ? t(previewIsIntervalChange && previewIsPeriodEnd ? "manage.planUsage.billing.changeBillingCyclePeriodEnd" : previewIsIntervalChange ? "manage.planUsage.billing.changeBillingCycleDialogDescription" : previewIsDowngrade ? "manage.planUsage.billing.changePlanDowngradeDescription" : "manage.planUsage.billing.changePlanDialogDescription")
                   : t("manage.planUsage.billing.cancelDialogDescription")}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -917,7 +929,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                   {previewAmount && <p className={`shrink-0 text-base font-bold tabular-nums ${previewIsCredit ? "text-emerald-700 dark:text-emerald-200" : "text-violet-700 dark:text-violet-200"}`}>{previewAmount}</p>}
                 </div>
                 {previewCreditToBalance && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] leading-4 text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200">{t("manage.planUsage.billing.changePlanCreditRemaining", { amount: previewCreditToBalance })}</p>}
-                <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-xs dark:border-white/10 dark:bg-white/[0.03]"><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">New recurring price</p><p className="mt-0.5 font-bold text-slate-900 dark:text-white">{formatPaddleAmount(planChangeConfirmation.preview.recurringAmount, planChangeConfirmation.preview.recurringCurrency || planChangeConfirmation.preview.currency) || "—"} / {planChangeConfirmation.preview.interval}</p></div><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">{previewIsDowngrade ? "Effective date" : "Next billing date"}</p><p className="mt-0.5 font-bold text-slate-900 dark:text-white">{dateLabel(previewIsDowngrade ? planChangeConfirmation.preview.effectiveAt : (planChangeConfirmation.preview.nextBilledAt || planChangeConfirmation.preview.effectiveAt)) || "—"}</p></div></div>
+                <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-xs dark:border-white/10 dark:bg-white/[0.03]"><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">New recurring price</p><p className="mt-0.5 font-bold text-slate-900 dark:text-white">{formatPaddleAmount(planChangeConfirmation.preview.recurringAmount, planChangeConfirmation.preview.recurringCurrency || planChangeConfirmation.preview.currency) || "—"} / {planChangeConfirmation.preview.interval}</p></div><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">{previewIsDowngrade || previewIsPeriodEnd ? "Effective date" : "Next billing date"}</p><p className="mt-0.5 font-bold text-slate-900 dark:text-white">{dateLabel(previewIsDowngrade || previewIsPeriodEnd ? planChangeConfirmation.preview.effectiveAt : (planChangeConfirmation.preview.nextBilledAt || planChangeConfirmation.preview.effectiveAt)) || "—"}</p></div></div>
               </>
             ) : (
               <div className="space-y-2.5 rounded-xl border border-rose-200 bg-rose-50/80 p-3 dark:border-rose-400/20 dark:bg-rose-500/10 sm:space-y-3 sm:rounded-2xl sm:p-4">

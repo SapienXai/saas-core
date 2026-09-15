@@ -127,4 +127,45 @@ describe("canonical billing lifecycle", () => {
     expect(boundary.billingInterval).toBe("year")
     expect(boundary.scheduledPlanKey).toBeNull()
   })
+
+  it("keeps a same-plan annual subscription active until a deferred monthly boundary", () => {
+    const monthlyMapping = { ...mapping, provider_price_id: "pri-paid-month", billing_interval: "month" as const }
+    const current = {
+      plan_key: "paid",
+      billing_interval: "year",
+      billing_currency: "USD",
+      scheduled_plan_key: "paid",
+      scheduled_plan_at: "2026-10-01T00:00:00Z",
+      scheduled_effective_at: "2026-10-01T00:00:00Z",
+      scheduled_plan_interval: "month",
+      scheduled_provider_price_id: "pri-paid-month",
+    }
+    const pending = projectCanonicalSubscription({
+      eventId: "evt-interval-pending",
+      occurredAt: "2026-09-20T00:00:00Z",
+      subscription: { ...subscription, items: [{ priceId: "pri-paid-month", productId: "pro-1", quantity: 1 }] },
+      mapping: monthlyMapping,
+      fallbackPlanKey: "workspace",
+      current,
+      now: new Date("2026-09-20T00:00:00Z"),
+    })
+    expect(pending.planKey).toBe("paid")
+    expect(pending.billingInterval).toBe("year")
+    expect(pending.scheduledPlanKey).toBe("paid")
+    expect(pending.scheduledPlanInterval).toBe("month")
+
+    const boundary = projectCanonicalSubscription({
+      eventId: "evt-interval-boundary",
+      occurredAt: "2026-10-01T00:00:00Z",
+      subscription: { ...subscription, items: [{ priceId: "pri-paid-month", productId: "pro-1", quantity: 1 }] },
+      mapping: monthlyMapping,
+      fallbackPlanKey: "workspace",
+      current,
+      now: new Date("2026-10-01T00:00:00Z"),
+    })
+    expect(boundary.planKey).toBe("paid")
+    expect(boundary.billingInterval).toBe("month")
+    expect(boundary.scheduledPlanKey).toBeNull()
+    expect(boundary.scheduledPlanInterval).toBeNull()
+  })
 })

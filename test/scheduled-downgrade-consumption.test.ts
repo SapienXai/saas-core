@@ -286,6 +286,68 @@ describe("scheduled downgrade consumption ceiling", () => {
     await expect(canConsume(upgradeId, "venues", 1, { now })).resolves.toMatchObject({ allowed: false, limit: 1, constrainedByScheduledPlan: false })
   })
 
+  it("does not impose a downgrade ceiling for a Pro annual-to-monthly interval schedule", async () => {
+    const workspaceId = "scheduled-pro-interval-workspace"
+    const { now } = installFixture({
+      workspaceId,
+      subscription: subscription({
+        source: "paddle",
+        provider: "paddle",
+        provider_environment: "sandbox",
+        provider_customer_id: "cus_interval",
+        provider_subscription_id: "sub_interval",
+        provider_price_id: "pri_pro_year",
+        billing_interval: "year",
+        scheduled_plan_key: "pro",
+        scheduled_plan_at: "2099-01-01T00:00:00.000Z",
+        scheduled_effective_at: "2099-01-01T00:00:00.000Z",
+        scheduled_plan_interval: "month",
+        scheduled_provider_price_id: "pri_pro_month",
+      }),
+      providerMappings: [
+        { plan_key: "pro", provider_price_id: "pri_pro_year" },
+        { plan_key: "pro", provider_price_id: "pri_pro_month" },
+      ],
+      usage: 2,
+    })
+    productResolvers.venues = () => 2
+
+    const entitlements = await getWorkspaceEntitlements(workspaceId)
+    expect(entitlements.planKey).toBe("pro")
+    expect(entitlements.scheduledPlan?.key).toBe("pro")
+    await expect(getEffectiveConsumptionLimit(workspaceId, "venues", { now })).resolves.toMatchObject({
+      limit: 3,
+      activeLimit: 3,
+      constrainedByScheduledPlan: false,
+      scheduledPlanKey: null,
+    })
+    await expect(canConsume(workspaceId, "venues", 1, { now })).resolves.toMatchObject({ allowed: true, limit: 3, constrainedByScheduledPlan: false })
+
+    const boundaryId = "scheduled-pro-interval-boundary-workspace"
+    installFixture({
+      workspaceId: boundaryId,
+      subscription: subscription({
+        source: "paddle",
+        provider: "paddle",
+        provider_environment: "sandbox",
+        provider_customer_id: "cus_interval_boundary",
+        provider_subscription_id: "sub_interval_boundary",
+        provider_price_id: "pri_pro_month",
+        billing_interval: "month",
+        scheduled_plan_key: "pro",
+        scheduled_plan_at: "2020-01-01T00:00:00.000Z",
+        scheduled_effective_at: "2020-01-01T00:00:00.000Z",
+        scheduled_plan_interval: "month",
+        scheduled_provider_price_id: "pri_pro_month",
+      }),
+      providerMappings: [{ plan_key: "pro", provider_price_id: "pri_pro_month" }],
+    })
+    const boundary = await getWorkspaceEntitlements(boundaryId)
+    expect(boundary.planKey).toBe("pro")
+    expect(boundary.scheduledPlan).toBeNull()
+    expect(boundary.subscription.billingIssueCode).toBeNull()
+  })
+
   it("removes the ceiling after an undo and fails closed for a missing target capability", async () => {
     const undoId = "scheduled-downgrade-undo-workspace"
     const { now } = installFixture({ workspaceId: undoId, subscription: subscription(), usage: 2 })

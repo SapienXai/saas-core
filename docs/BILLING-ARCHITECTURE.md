@@ -144,9 +144,16 @@ only effective entitlements to the fallback and preserves data, usage, and
 provider history. Resume clears a scheduled cancellation after provider
 confirmation.
 
-A same-plan billing-cycle change is an immediate provider mutation recorded as
-`interval_change`. It uses the normal preview, confirmation, reconciliation,
-and durable transition path without downgrade eligibility or downgrade copy.
+A same-plan billing-cycle change is recorded as `interval_change` and uses the
+normal preview, explicit confirmation, provider mutation, reconciliation, and
+durable transition path without downgrade eligibility or downgrade copy. The
+policy is intentionally asymmetric: month → year is immediate and uses
+`prorated_immediately`; year → month uses the provider's frequency replacement
+with `do_not_bill`, keeps the already-paid annual period and current annual
+entitlements through its exact period end, and projects the monthly interval
+locally for that boundary. It does not shorten the annual period, bill early,
+or apply a scheduled downgrade ceiling. A same-interval request is rejected
+before provider work.
 
 For an explicit plan change, the managed action adds one provider-neutral
 policy step before the provider mutation:
