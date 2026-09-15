@@ -51,8 +51,10 @@ and manifest metadata while removing newly added Core files.
 `init` also creates runnable consumer scripts for local Supabase start/stop/
 reset, generated database types, catalog sync (with `.env.local` support),
 lint, typecheck, tests, build and `verify`. It writes a product-specific
-`README.md` and `AGENTS.md`; those files plus `.env.example` and generated
-`types/supabase.ts` are explicitly product-owned and are never overwritten by
+`README.md`, `AGENTS.md` and `.gitignore`; the ignore policy is seeded from the
+canonical `template/consumer.gitignore` and is only created when missing.
+Those files plus `.env.example` and generated `types/supabase.ts` are
+explicitly product-owned or consumer-local and are never overwritten by
 `update`. The executable ownership list is
 `packages/cli/bin/ownership.mjs`, which is also used by the root/template
 parity check.

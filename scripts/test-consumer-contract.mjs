@@ -35,7 +35,7 @@ try {
   const init = run(["init", "Contract Demo", product])
   assert(init.status === 0, `fresh saas-core init failed: ${init.stderr || init.stdout}`)
 
-  const contractFiles = ["README.md", "AGENTS.md", ".env.example"]
+  const contractFiles = ["README.md", "AGENTS.md", ".env.example", ".gitignore"]
   for (const relative of contractFiles) {
     const file = path.join(product, relative)
     assert(existsSync(file), `fresh consumer is missing ${relative}`)
@@ -44,9 +44,11 @@ try {
   }
   const readme = await readFile(path.join(product, "README.md"), "utf8")
   const agents = await readFile(path.join(product, "AGENTS.md"), "utf8")
+  const gitignore = await readFile(path.join(product, ".gitignore"), "utf8")
   assert(readme.startsWith("# Contract Demo\n"), "generated README is not dynamic")
   for (const phrase of ["pnpm db:start", "pnpm db:types", "billing:sync-catalog", "workspace_id", "source-only"]) assert(readme.includes(phrase), `generated README is missing ${phrase}`)
   for (const phrase of ["Product implementation rules", "Verification contract", "workspace_id", "server-only", "BEGIN:nextjs-agent-rules"]) assert(agents.includes(phrase), `generated AGENTS.md is missing ${phrase}`)
+  for (const phrase of [".next/", ".playwright-cli/", "supabase/.temp/", "*.tgz", "!.env.example"]) assert(gitignore.includes(phrase), `generated .gitignore is missing ${phrase}`)
 
   const packageJson = JSON.parse(await readFile(path.join(product, "package.json"), "utf8"))
   assert(packageJson.packageManager === "pnpm@11.21.0", "generated consumer did not inherit the supported package manager")
@@ -89,6 +91,7 @@ try {
   for (const relative of [...PRODUCT_PREFIXES, ...PRODUCT_FILES]) assert(ownershipDoc.includes(`\`${relative}`) || ownershipDoc.includes(`\`${relative}**`), `ownership documentation omitted ${relative}`)
   assert((await readFile(path.join(root, "packages/cli/templates/README.md"), "utf8")) === (await readFile(path.join(template, "README.md"), "utf8")), "CLI fallback README drifted from the canonical template")
   assert((await readFile(path.join(root, "packages/cli/templates/AGENTS.md"), "utf8")) === (await readFile(path.join(template, "AGENTS.md"), "utf8")), "CLI fallback AGENTS drifted from the canonical template")
+  assert((await readFile(path.join(root, "packages/cli/templates/consumer.gitignore"), "utf8")) === (await readFile(path.join(template, "consumer.gitignore"), "utf8")), "CLI fallback consumer ignore drifted from the canonical template")
 
   console.log(JSON.stringify({ status: "PASS", consumer: "fresh CLI init", release: RELEASE_VERSION, schema: SCHEMA_VERSION, contractFiles, migrationSources: migrations.length, databaseCheck: "warning without credentials", ownership: "CLI module and docs aligned" }, null, 2))
 } finally {

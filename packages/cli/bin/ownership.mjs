@@ -4,6 +4,7 @@ export const IGNORED_FILES = new Set([
   "pnpm-lock.yaml",
   "package-lock.json",
   "yarn.lock",
+  "consumer.gitignore",
 ])
 
 // These paths are intentionally the CLI's ownership contract. Keep product
@@ -42,8 +43,13 @@ export function isIgnoredPath(relative) {
   return IGNORED_FILES.has(relative)
     || relative === ".saas-core-manifest.json"
     || relative === "supabase/.gitignore"
+    || relative.startsWith(".playwright-cli/")
     || relative.startsWith(".next/")
     || relative.startsWith("node_modules/")
+    || relative.startsWith(".turbo/")
+    || relative.startsWith("coverage/")
+    || relative.startsWith("playwright-report/")
+    || relative.startsWith("test-results/")
     || relative.startsWith("output/")
     || relative.startsWith("artifacts/")
     || relative.startsWith("supabase/.branches/")

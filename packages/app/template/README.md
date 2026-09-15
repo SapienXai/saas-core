@@ -26,6 +26,11 @@ through the app at `/api/dev/mailpit` or directly at
 `http://localhost:55524`. Keep `SUPABASE_SERVICE_ROLE_KEY` server-only; only
 the `NEXT_PUBLIC_*` values belong in browser code.
 
+The generated `.gitignore` protects this product repository from dependency
+installs, Next/Turbo/build output, browser evidence, local Supabase state,
+package tarballs, logs, credentials and editor state. Extend it for product
+tools when needed; Core updates do not overwrite it.
+
 ## The boundary
 
 ```mermaid

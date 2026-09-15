@@ -9,7 +9,7 @@ consumer updates.
 
 ## Reading order
 
-1. `README.md` and `.env.example` for the local journey.
+1. `README.md`, `.env.example` and `.gitignore` for the local journey.
 2. `lib/product-config.ts`, `product.catalog.json` and `src/product/usage.ts` for
    this product's identity, navigation, plans and usage.
 3. `supabase/migrations/product/` and `types/supabase.ts` for product data.
@@ -30,6 +30,9 @@ Product-owned files are:
   `public/product-*`
 - `supabase/migrations/product/**`, `supabase/seed.sql`,
   `supabase/config.toml`, `types/supabase.ts`
+
+The generated `.gitignore` is consumer-local operational policy. It is seeded
+from Core but is not a managed hash and is never overwritten by `update`.
 
 `package.json` is mixed ownership: keep product scripts/dependencies and let
 the CLI update only Core package versions. Do not edit a Core-managed file to

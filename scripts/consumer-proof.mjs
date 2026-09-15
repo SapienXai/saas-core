@@ -47,6 +47,15 @@ function removeBuildOutputs(directory) {
   for (const name of [".next", ".next-e2e"]) rmSync(path.join(directory, name), { recursive: true, force: true })
 }
 
+function assertConsumerIgnore(directory) {
+  const file = path.join(directory, ".gitignore")
+  if (!existsSync(file)) throw new Error(`Generated consumer is missing its .gitignore: ${directory}`)
+  const content = readFileSync(file, "utf8")
+  for (const phrase of [".next/", ".playwright-cli/", "supabase/.temp/", "*.tgz", "!.env.example"]) {
+    if (!content.includes(phrase)) throw new Error(`Generated consumer .gitignore is missing ${phrase}: ${directory}`)
+  }
+}
+
 function isRunning(child) {
   return child.exitCode === null && child.signalCode === null
 }
@@ -305,6 +314,7 @@ async function bootAndSmoke(cwd, port, configured = false, supabaseEnvironment =
 
 try {
   run(process.execPath, [packageCli, "init", "Projects Proof", product], root)
+  assertConsumerIgnore(product)
   const productConfigFile = path.join(product, "lib/product-config.ts")
   const productConfig = readFileSync(productConfigFile, "utf8").replace(
     "  catalog: productCatalog,",
@@ -373,6 +383,7 @@ try {
   run(installedCli, ["doctor", product], product)
   run(process.execPath, ["--input-type=module", "-e", packedExportProbe], product)
   run(installedCli, ["init", "Packed CLI Proof", packedProduct], product)
+  assertConsumerIgnore(packedProduct)
   for (const relative of agentSurfaceFiles) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed CLI consumer is missing Agent Surface file: ${relative}`)
   for (const relative of billingManagedFiles) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed CLI consumer is missing managed billing file: ${relative}`)
   if (!existsSync(path.join(packedProduct, productUsageExtension))) throw new Error("Packed CLI consumer is missing the product-owned usage resolver extension.")
@@ -380,6 +391,9 @@ try {
   const legacyThemeFile = path.join(packedProduct, "styles/product-theme.css")
   const legacyTheme = `${readFileSync(legacyThemeFile, "utf8")}\n:root { --legacy-upgrade-proof: #123456; }\n`
   writeFileSync(legacyThemeFile, legacyTheme, "utf8")
+  const consumerGitignoreFile = path.join(packedProduct, ".gitignore")
+  const consumerGitignore = `${readFileSync(consumerGitignoreFile, "utf8")}\n# Product-local ignore extension\nproduct-local-cache/\n`
+  writeFileSync(consumerGitignoreFile, consumerGitignore, "utf8")
   mkdirSync(path.dirname(path.join(packedProduct, productMigrationRelative)), { recursive: true })
   writeFileSync(path.join(packedProduct, productMigrationRelative), productMigration, "utf8")
   downgradeToLegacyConsumer(packedProduct, [...agentSurfaceFiles, ...billingManagedFiles])
@@ -399,6 +413,7 @@ try {
   const upgradedLegacyPackage = JSON.parse(readFileSync(path.join(packedProduct, "package.json"), "utf8"))
   if (runtimePackages.some((name) => upgradedLegacyPackage.dependencies[name] !== `^${RELEASE_VERSION}`) || toolingPackages.some((name) => upgradedLegacyPackage.devDependencies[name] !== `^${RELEASE_VERSION}`)) throw new Error(`Packed legacy consumer package.json was not upgraded to ^${RELEASE_VERSION}.`)
   if (readFileSync(legacyThemeFile, "utf8") !== legacyTheme) throw new Error("Packed legacy update overwrote the product-owned theme.")
+  if (readFileSync(consumerGitignoreFile, "utf8") !== consumerGitignore) throw new Error("Packed consumer update overwrote the product-local .gitignore policy.")
   if (readFileSync(path.join(packedProduct, productMigrationRelative), "utf8") !== productMigration) throw new Error("Packed consumer update changed a product-owned migration.")
   if (!readFileSync(path.join(packedProduct, productUsageExtension), "utf8").includes("PRODUCT_USAGE_RESOLVERS")) throw new Error("Packed legacy update did not restore the neutral product usage resolver scaffold.")
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed legacy update did not restore managed file: ${relative}`)
@@ -436,7 +451,7 @@ try {
   const packageJson = JSON.parse(readFileSync(path.join(relocated, "package.json"), "utf8"))
   const persistedPackage = JSON.stringify(packageJson)
   if (/file:|link:|workspace:|registry\.url|\/Users\/|\/private\//.test(persistedPackage) || persistedPackage.includes(root)) throw new Error("Generated consumer contains a local dependency path.")
-  console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", packedExports: true, packedBillingContract: true, freshConsumer: `${RELEASE_VERSION} / schema ${SCHEMA_VERSION}`, legacyConsumerUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, billingManagedUpdate: true, legacyProductOwnedPreserved: true, legacyTypecheck: true, legacyTests: true, legacyBuild: true, configuredShell: true, browserShell: browserShell && relocatedBrowserShell, relocation: true, frozenInstall: true }))
+  console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", packedExports: true, packedBillingContract: true, freshConsumer: `${RELEASE_VERSION} / schema ${SCHEMA_VERSION}`, legacyConsumerUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, billingManagedUpdate: true, legacyProductOwnedPreserved: true, consumerIgnorePreserved: true, legacyTypecheck: true, legacyTests: true, legacyBuild: true, configuredShell: true, browserShell: browserShell && relocatedBrowserShell, relocation: true, frozenInstall: true }))
 } finally {
   registryProcess.kill("SIGTERM")
   rmSync(product, { recursive: true, force: true })

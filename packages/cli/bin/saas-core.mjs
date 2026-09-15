@@ -18,7 +18,7 @@ const DEFAULT_TEMPLATE_ROOT = process.env.SAAS_CORE_TEMPLATE ? path.resolve(proc
 const RUNTIME_CORE_PACKAGES = ["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"]
 const TOOLING_CORE_PACKAGES = ["@sapienx/saas-core-cli"]
 const CORE_PACKAGES = [...RUNTIME_CORE_PACKAGES, ...TOOLING_CORE_PACKAGES]
-const CONSUMER_CONTRACT_FILES = ["README.md", "AGENTS.md", ".env.example"]
+const CONSUMER_CONTRACT_FILES = ["README.md", "AGENTS.md", ".env.example", ".gitignore"]
 const REQUIRED_BILLING_MIGRATIONS = [
   "supabase/migrations/20260909094344_reusable_billing_persistence.sql",
   "supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql",
@@ -130,10 +130,11 @@ function renderConsumerTemplate(content, name, slug) {
 }
 
 async function consumerContractTemplate(relative, sourceRoot) {
+  const templateRelative = relative === ".gitignore" ? "consumer.gitignore" : relative
   const candidates = [
-    path.join(sourceRoot, relative),
-    path.join(PACKED_TEMPLATE, relative),
-    path.join(CLI_ROOT, "templates", relative),
+    path.join(sourceRoot, templateRelative),
+    path.join(PACKED_TEMPLATE, templateRelative),
+    path.join(CLI_ROOT, "templates", templateRelative),
   ]
   for (const candidate of candidates) if (existsSync(candidate)) return readFile(candidate, "utf8")
   throw new Error(`The Core distribution is missing its consumer contract template: ${relative}`)

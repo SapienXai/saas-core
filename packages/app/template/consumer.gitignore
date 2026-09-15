@@ -1,0 +1,66 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.pnp.*
+.yarn/cache/
+.yarn/install-state.gz
+
+# Framework and build output
+.next/
+out/
+build/
+dist/
+.vercel/
+.turbo/
+*.tsbuildinfo
+
+# Test and browser output
+coverage/
+playwright-report/
+test-results/
+output/playwright/
+.playwright-cli/
+playwright/.cache/
+
+# Local database and runtime state
+supabase/.branches/
+supabase/.temp/
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.sql.gz
+
+# Package and release artifacts
+artifacts/
+*.tgz
+.saas-core-backups/
+
+# Logs and temporary files
+*.log
+*.pid
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Operating system and editor state
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment files and local credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+.env.keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
