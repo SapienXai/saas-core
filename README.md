@@ -160,9 +160,11 @@ pnpm repo:hygiene
 pnpm repo:hygiene:test
 ```
 
-`repo:hygiene` reads tracked paths from Git, rejects forbidden artifact names,
-conservative high-confidence secrets, local package references and tracked
-files above the 1 MiB guard. `pnpm verify` runs both checks before lint,
+`repo:hygiene` reads tracked paths from Git, rejects known generated/runtime
+locations, conservative high-confidence secrets (including in example env and
+Markdown files), local package references and tracked files above the 1 MiB
+guard. Clearly placeholder-shaped token values are tolerated without exempting
+the file from scanning. `pnpm verify` runs both checks before lint,
 typecheck, tests, root/template parity and the fresh consumer contract. Package
 packing writes five disposable tarballs under ignored `artifacts/`; the
 artifact audit confirms the intended runtime/template files and the explicit

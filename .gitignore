@@ -8,9 +8,12 @@ node_modules/
 # Framework and build output
 .next/
 .next-e2e/
-out/
-build/
-dist/
+/out/
+/build/
+/dist/
+/packages/*/out/
+/packages/*/build/
+/packages/*/dist/
 .vercel/
 .turbo/
 *.tsbuildinfo
@@ -19,7 +22,7 @@ dist/
 coverage/
 playwright-report/
 test-results/
-output/playwright/
+/output/
 .playwright-cli/
 playwright/.cache/
 
@@ -33,7 +36,7 @@ supabase/.temp/
 *.sql.gz
 
 # Package and release artifacts
-artifacts/
+/artifacts/
 packages/cli/template/
 packages/cli/app-package.json
 *.tgz
@@ -43,8 +46,8 @@ packages/cli/app-package.json
 *.pid
 .saas-core-backups/
 .reference/
-tmp/
-temp/
+/tmp/
+/temp/
 *.tmp
 *.bak
 

@@ -7,9 +7,12 @@ node_modules/
 
 # Framework and build output
 .next/
-out/
-build/
-dist/
+/out/
+/build/
+/dist/
+/packages/*/out/
+/packages/*/build/
+/packages/*/dist/
 .vercel/
 .turbo/
 *.tsbuildinfo
@@ -18,7 +21,7 @@ dist/
 coverage/
 playwright-report/
 test-results/
-output/playwright/
+/output/
 .playwright-cli/
 playwright/.cache/
 
@@ -32,15 +35,15 @@ supabase/.temp/
 *.sql.gz
 
 # Package and release artifacts
-artifacts/
+/artifacts/
 *.tgz
 .saas-core-backups/
 
 # Logs and temporary files
 *.log
 *.pid
-tmp/
-temp/
+/tmp/
+/temp/
 *.tmp
 *.bak
 

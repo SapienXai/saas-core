@@ -10,19 +10,17 @@ export const MAX_TRACKED_FILE_BYTES = 1_048_576
 // to exceed the default guard. Never allow a directory or a filename pattern.
 export const LARGE_FILE_ALLOWLIST = new Set()
 
-const FORBIDDEN_DIRECTORY_RULES = [
-  { names: ["node_modules"], reason: "dependency installation state" },
-  { names: [".next", ".next-e2e"], reason: "Next.js build or development output" },
-  { names: [".turbo", ".cache", ".pnpm-store"], reason: "build or package-manager cache" },
-  { names: ["dist", "build", "out"], reason: "generated build output" },
-  { names: ["coverage", "playwright-report", "test-results"], reason: "test or browser output" },
-  { names: [".playwright-cli", "playwright"], reason: "browser automation runtime state" },
-  { names: [".branches", ".temp"], reason: "local Supabase runtime state" },
-  { names: ["artifacts", "output"], reason: "package or test artifact output" },
-  { names: ["local-registry", "package-inspection", "consumer-proof", "packed-consumer"], reason: "temporary package or consumer proof state" },
-  { names: ["tmp", "temp"], reason: "temporary working state" },
-  { names: [".saas-core-backups"], reason: "local update backup" },
-  { names: [".idea", ".vscode"], reason: "editor state" },
+const FORBIDDEN_PATH_RULES = [
+  { pattern: /(?:^|\/)node_modules(?:\/|$)/, reason: "dependency installation state" },
+  { pattern: /(?:^|\/)(?:\.next|\.next-e2e|\.turbo|\.cache|\.pnpm-store)(?:\/|$)/, reason: "framework, build, or package-manager cache" },
+  { pattern: /(?:^|\/)(?:coverage|playwright-report|test-results)(?:\/|$)/, reason: "test or browser output" },
+  { pattern: /^(?:out|build|dist|artifacts|output|tmp|temp)(?:\/|$)/, reason: "root-generated build or artifact output" },
+  { pattern: /^packages\/[^/]+\/(?:out|build|dist)(?:\/|$)/, reason: "package-generated build output" },
+  { pattern: /^(?:local-registry|package-inspection|consumer-proof|packed-consumer)(?:\/|$)/, reason: "temporary package or consumer proof state" },
+  { pattern: /(?:^|\/)\.playwright-cli(?:\/|$)/, reason: "browser automation runtime state" },
+  { pattern: /(?:^|\/)supabase\/(?:\.branches|\.temp)(?:\/|$)/, reason: "local Supabase runtime state" },
+  { pattern: /^(?:\.saas-core-backups|\.reference)(?:\/|$)/, reason: "local update backup or reference state" },
+  { pattern: /(?:^|\/)(?:\.idea|\.vscode)(?:\/|$)/, reason: "editor state" },
 ]
 
 const SOURCE_PREFIXES = [
@@ -34,18 +32,86 @@ const SOURCE_PREFIXES = [
   "packages/cli/scripts/",
 ]
 
-const TEXT_FILE = /\.(?:[cm]?[jt]sx?|mjs|cjs|json|ya?ml|toml|css|scss|html|sql|sh|rb|lock)$/i
+const TEXT_FILE_EXTENSIONS = new Set([
+  "bash",
+  "bat",
+  "cfg",
+  "cmd",
+  "command",
+  "conf",
+  "cjs",
+  "css",
+  "csv",
+  "diff",
+  "env",
+  "gql",
+  "graphql",
+  "hcl",
+  "html",
+  "ini",
+  "js",
+  "json",
+  "jsonc",
+  "lock",
+  "md",
+  "mdx",
+  "mjs",
+  "patch",
+  "pem",
+  "prisma",
+  "properties",
+  "ps1",
+  "rb",
+  "scss",
+  "sh",
+  "sql",
+  "svg",
+  "svelte",
+  "toml",
+  "ts",
+  "tsx",
+  "txt",
+  "vue",
+  "webmanifest",
+  "xml",
+  "xsd",
+  "yaml",
+  "yml",
+  "zsh",
+])
+const TEXT_FILE_BASENAMES = new Set([
+  ".env",
+  ".gitattributes",
+  ".gitignore",
+  ".npmrc",
+  ".nvmrc",
+  "agents",
+  "brewfile",
+  "claude",
+  "dockerfile",
+  "gemfile",
+  "license",
+  "makefile",
+  "procfile",
+  "rakefile",
+  "vagrantfile",
+])
+const TEXT_FILE_PREFIXES = [".github/", "bin/", "config/", "scripts/", "supabase/"]
+export const MAX_TEXT_SCAN_BYTES = 2 * 1024 * 1024
 const CODE_FILE = /\.(?:[cm]?[jt]sx?|mjs|cjs|json)$/i
 const MACHINE_LOCAL_REFERENCE = /\/(?:Users|private\/var|var\/folders)\/[^\s"'`]+/
 const GENERATED_LOCAL_IMPORT = /(?:from\s+|import\s*\(|require\s*\()\s*["'`][^"'`]*(?:\.next|node_modules|artifacts|output|test-results|playwright-report|\.playwright-cli)(?:[\/\\]|$)/i
 const SECRET_RULES = [
-  { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, reason: "private key material" },
-  { pattern: /\b(?:gh[pousr]_|github_pat_|xox[baprs]-|sk_(?:live|test)_|rk_(?:live|test)_)[A-Za-z0-9_-]{16,}\b/, reason: "high-confidence access token" },
+  { pattern: /-----BEGIN (?:[A-Z0-9][A-Z0-9 _-]* )?PRIVATE KEY-----/, reason: "private key material" },
+  { pattern: /\b(?:gh[pousr]_|github_pat_|xox[baprs]-|sk_(?:live|test)_|rk_(?:live|test)_|sk-(?:proj|svcacct)-|whsec_)[A-Za-z0-9_-]{16,}\b/, reason: "high-confidence access token" },
   { pattern: /\bAKIA[0-9A-Z]{16}\b/, reason: "AWS access key" },
 ]
+const TOKEN_PREFIX = /^(?:gh[pousr]_|github_pat_|xox[baprs]-|sk_(?:live|test)_|rk_(?:live|test)_|sk-(?:proj|svcacct)-|whsec_)/i
+const PLACEHOLDER_SEGMENT = "(?:change[-_]?me|changeme|dummy|example|fake|placeholder|replace[-_]?me|sample|todo|token|your(?:[-_][a-z0-9]+)+)"
+const PLACEHOLDER_TOKEN = new RegExp(`^(?:${PLACEHOLDER_SEGMENT})(?:[-_]${PLACEHOLDER_SEGMENT})*$`, "i")
 
 function normalize(relative) {
-  return relative.split(path.sep).join("/")
+  return relative.replaceAll(path.sep, "/").replaceAll("\\", "/").replace(/^\.\//, "")
 }
 
 function basename(relative) {
@@ -61,18 +127,34 @@ function isLocalEnvironmentFile(relative) {
   return name === ".env" || (name.startsWith(".env.") && !isExampleEnvironmentFile(relative))
 }
 
+export function isLikelyTextFile(relative) {
+  const file = normalize(relative)
+  const name = basename(file).toLowerCase()
+  if (TEXT_FILE_BASENAMES.has(name) || /^\.env(?:\.|$)/i.test(name)) return true
+  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : ""
+  if (TEXT_FILE_EXTENSIONS.has(extension)) return true
+  return !extension && TEXT_FILE_PREFIXES.some((prefix) => file.toLowerCase().startsWith(prefix))
+}
+
+function matchesSecretRule(content, rule) {
+  const pattern = new RegExp(rule.pattern.source, rule.pattern.flags.includes("g") ? rule.pattern.flags : `${rule.pattern.flags}g`)
+  return [...content.matchAll(pattern)].some((match) => {
+    const value = match[0]
+    if (rule.reason !== "high-confidence access token") return true
+    const suffix = value.replace(TOKEN_PREFIX, "")
+    return !PLACEHOLDER_TOKEN.test(suffix)
+  })
+}
+
 function addViolation(violations, file, reason) {
   if (!violations.some((item) => item.file === file && item.reason === reason)) violations.push({ file, reason })
 }
 
 export function findPathViolations(relative) {
   const file = normalize(relative)
-  const segments = file.split("/")
   const violations = []
 
-  for (const rule of FORBIDDEN_DIRECTORY_RULES) {
-    if (segments.some((segment) => rule.names.includes(segment))) addViolation(violations, file, rule.reason)
-  }
+  for (const rule of FORBIDDEN_PATH_RULES) if (rule.pattern.test(file)) addViolation(violations, file, rule.reason)
   if (file === "packages/cli/app-package.json" || file.startsWith("packages/cli/template/")) addViolation(violations, file, "CLI pack-time generated source")
   if (file === ".DS_Store" || file.endsWith("/.DS_Store") || file === "Thumbs.db" || file.endsWith("/Thumbs.db") || file === "desktop.ini" || file.endsWith("/desktop.ini")) addViolation(violations, file, "operating-system metadata")
   if (isLocalEnvironmentFile(file)) addViolation(violations, file, "local environment or credential file")
@@ -90,10 +172,7 @@ function isSourceFile(relative) {
 
 export function findContentViolations(relative, content) {
   const file = normalize(relative)
-  const violations = []
-  if (!isExampleEnvironmentFile(file)) {
-    for (const rule of SECRET_RULES) if (rule.pattern.test(content)) addViolation(violations, file, rule.reason)
-  }
+  const violations = findSecretViolations(file, content)
   if (isSourceFile(file)) {
     if (MACHINE_LOCAL_REFERENCE.test(content)) addViolation(violations, file, "machine-local absolute path")
     if (GENERATED_LOCAL_IMPORT.test(content)) addViolation(violations, file, "import from generated or local runtime state")
@@ -107,11 +186,18 @@ export function findContentViolations(relative, content) {
         ...packageJson.optionalDependencies,
         ...packageJson.peerDependencies,
       })
-      if (dependencies.some((value) => typeof value === "string" && /^(?:file:|link:|\/Users\/|\/private\/|[A-Za-z]:[\\/])/.test(value))) addViolation(violations, file, "package dependency points to local machine state")
+      if (dependencies.some((value) => typeof value === "string" && /^(?:file:|link:|\/(?:Users|private|var|tmp)(?:\/|$)|[A-Za-z]:[\\/]|~[\\/])/.test(value))) addViolation(violations, file, "package dependency points to local machine state")
     } catch {
       addViolation(violations, file, "invalid package manifest")
     }
   }
+  return violations
+}
+
+export function findSecretViolations(relative, content) {
+  const file = normalize(relative)
+  const violations = []
+  for (const rule of SECRET_RULES) if (matchesSecretRule(content, rule)) addViolation(violations, file, rule.reason)
   return violations
 }
 
@@ -121,7 +207,7 @@ export function getTrackedFiles(root) {
   return output.split("\0").filter((file) => file && !deleted.has(file))
 }
 
-export function inspectTrackedFiles({ root, files = getTrackedFiles(root), maxBytes = MAX_TRACKED_FILE_BYTES } = {}) {
+export function inspectTrackedFiles({ root, files = getTrackedFiles(root), maxBytes = MAX_TRACKED_FILE_BYTES, largeFileAllowlist = LARGE_FILE_ALLOWLIST } = {}) {
   const violations = []
   for (const relative of files) {
     const file = normalize(relative)
@@ -129,8 +215,8 @@ export function inspectTrackedFiles({ root, files = getTrackedFiles(root), maxBy
     const absolute = path.join(root, file)
     if (!existsSync(absolute)) continue
     const stats = lstatSync(absolute)
-    if (stats.isFile() && stats.size > maxBytes && !LARGE_FILE_ALLOWLIST.has(file)) addViolation(violations, file, `tracked file is ${stats.size} bytes; maximum is ${maxBytes} bytes`)
-    if (!stats.isFile() || stats.size > 2 * 1024 * 1024 || !TEXT_FILE.test(file)) continue
+    if (stats.isFile() && stats.size > maxBytes && !largeFileAllowlist.has(file)) addViolation(violations, file, `tracked file is ${stats.size} bytes; maximum is ${maxBytes} bytes`)
+    if (!stats.isFile() || stats.size > MAX_TEXT_SCAN_BYTES || !isLikelyTextFile(file)) continue
     const bytes = readFileSync(absolute)
     if (bytes.includes(0)) continue
     violations.push(...findContentViolations(file, bytes.toString("utf8")))

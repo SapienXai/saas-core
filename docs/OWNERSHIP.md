@@ -82,8 +82,13 @@ consumer ignore contract covers dependency installs, Next/Turbo/build output,
 browser evidence, local Supabase state, package tarballs, logs, credentials,
 editor state and temporary files. `repo:hygiene` checks the Git tracked set,
 not merely the filesystem, and applies a 1 MiB tracked-file guard. Its
-high-confidence secret checks skip example environment files to avoid treating
-template placeholders as credentials.
+high-confidence secret checks also scan example environment files and
+documentation; only clearly placeholder-shaped token suffixes are tolerated,
+while the report contains the path and category but never the credential value.
+Generic source names such as `tests/playwright`, `src/build`, `src/output`,
+`src/tmp` and `src/artifacts` are not rejected; only known runtime locations
+and root/package output locations are blocked. The reviewed large-file
+allowlist is currently empty; a future exception must name one exact path.
 
 Core/config/UI `dist` source maps are intentionally produced at pack time and
 shipped because their package exports point to those runtime/declaration files.

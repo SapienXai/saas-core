@@ -1,7 +1,9 @@
 import { execFileSync, spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import { PACKAGE_NAMES, RELEASE_VERSION } from "./release-constants.mjs"
+import { findSecretViolations, isLikelyTextFile, MAX_TEXT_SCAN_BYTES } from "./repo-hygiene.mjs"
 
 const root = process.cwd()
 const artifacts = path.join(root, "artifacts")
@@ -26,6 +28,35 @@ const intentionalTestFiles = new Set([
 ])
 const sourceMapPackages = new Set(["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"])
 
+function listFiles(directory) {
+  const files = []
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name)
+    if (entry.isDirectory()) files.push(...listFiles(absolute))
+    else if (entry.isFile()) files.push(absolute)
+  }
+  return files
+}
+
+function inspectPackagedSecrets(filename, tarball) {
+  const extractionRoot = mkdtempSync(path.join(os.tmpdir(), "saas-core-package-audit-"))
+  try {
+    execFileSync("tar", ["-xzf", tarball, "-C", extractionRoot])
+    const packageRoot = path.join(extractionRoot, "package")
+    for (const absolute of listFiles(packageRoot)) {
+      const relative = path.relative(packageRoot, absolute).split(path.sep).join("/")
+      const stats = lstatSync(absolute)
+      if (stats.size > MAX_TEXT_SCAN_BYTES || !isLikelyTextFile(relative)) continue
+      const bytes = readFileSync(absolute)
+      if (bytes.includes(0)) continue
+      const violations = findSecretViolations(relative, bytes.toString("utf8"))
+      if (violations.length) throw new Error(`${filename} contains ${violations[0].reason}: package/${relative}`)
+    }
+  } finally {
+    rmSync(extractionRoot, { recursive: true, force: true })
+  }
+}
+
 for (const packageName of PACKAGE_NAMES) {
   const directory = packageDirectories[packageName]
   const dryRun = spawnSync("npm", ["pack", "--dry-run", "--json"], { cwd: path.join(root, directory), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
@@ -40,6 +71,7 @@ for (const packageName of PACKAGE_NAMES) {
   const dependencyValues = Object.values({ ...packageJson.dependencies, ...packageJson.devDependencies, ...packageJson.optionalDependencies, ...packageJson.peerDependencies })
   if (dependencyValues.some((value) => typeof value === "string" && forbiddenContent.test(value))) throw new Error(`${filename} contains a local/workspace dependency reference.`)
   const listing = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" }).split("\n").filter(Boolean)
+  inspectPackagedSecrets(filename, tarball)
   for (const { pattern, reason } of forbiddenPathRules) {
     const offending = listing.find((entry) => pattern.test(entry))
     if (offending) throw new Error(`${filename} contains ${reason}: ${offending}`)
