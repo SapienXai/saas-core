@@ -9,11 +9,22 @@ Every product should provide:
 
 1. a product configuration with name, slug, mark/icon, theme, metadata,
    optional shell extensions, and enabled Core capabilities;
-2. product migrations whose tenant-owned tables include `workspace_id`;
+2. flat, timestamped product migrations under `supabase/migrations/` whose
+   tenant-owned tables include `workspace_id`;
 3. server actions and route handlers that call Core authorization before any
    product read or write;
 4. product-owned navigation and dashboard composition;
 5. product tests for its own workflows and RLS policies.
+
+Product migration ownership is explicit but separate from Supabase execution
+ordering. Every exact migration path shipped by the Core template and recorded
+as managed in the consumer manifest is Core-owned. A migration created by the
+product at another flat path is Product-owned, remains outside the Core
+managed hash set, and is preserved by `saas-core update`. Core does not infer
+ownership from a filename, timestamp, SQL contents or product vocabulary. The
+legacy `supabase/migrations/product/` namespace is preserved for existing
+consumers, but new migrations should use the flat native directory so normal
+`supabase db reset`/apply commands execute them.
 
 `lib/product-config.ts` is the current default boundary. The product may
 replace this module at its application boundary. It must not scatter identity

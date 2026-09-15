@@ -12,7 +12,8 @@ consumer updates.
 1. `README.md`, `.env.example` and `.gitignore` for the local journey.
 2. `lib/product-config.ts`, `product.catalog.json` and `src/product/usage.ts` for
    this product's identity, navigation, plans and usage.
-3. `supabase/migrations/product/` and `types/supabase.ts` for product data.
+3. `supabase/migrations/` and `types/supabase.ts` for product data. Existing
+   `supabase/migrations/product/` files are a legacy compatibility namespace.
 4. The upstream Core guides for architecture, database/RLS, security and
    upgrades when a change crosses the Workspace boundary.
 
@@ -28,7 +29,8 @@ Product-owned files are:
 - `app/(product)/`, `app/product/`, `components/product/`, `src/product/`
 - `app/page.tsx`, `app/manage/page.tsx`, product styles and
   `public/product-*`
-- `supabase/migrations/product/**`, `supabase/seed.sql`,
+- flat `supabase/migrations/*.sql` files not claimed by the Core source or
+  manifest, legacy `supabase/migrations/product/**`, `supabase/seed.sql`,
   `supabase/config.toml`, `types/supabase.ts`
 
 The generated `.gitignore` is consumer-local operational policy. It is seeded
@@ -51,8 +53,11 @@ capability instead.
   explicit.
 - Keep provider price IDs and live billing decisions out of the generic plan
   catalog sync.
-- Use the database migration workflow controlled by this product. The CLI
-  delivers source and does not execute SQL.
+- Use a new additive timestamped migration directly under
+  `supabase/migrations/`. Core claims only exact paths shipped by its source or
+  manifest; unknown flat migrations remain Product-owned and are preserved.
+  The CLI delivers source and does not execute SQL. Do not edit historical
+  Core migrations or move/rename existing Product migrations.
 
 ## Verification contract
 

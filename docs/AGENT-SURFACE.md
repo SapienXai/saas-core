@@ -216,8 +216,8 @@ Agent Surface browser files and the Core-managed billing sources
 `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql` and
 `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` are
 Core-managed template files. The normal manifest/update lifecycle delivers
-them to existing consumers, preserves product-owned paths including
-`supabase/migrations/product/**`, and retains conflict and rollback
+them to existing consumers, preserves product-owned paths including flat
+Product migrations not claimed by Core and legacy `supabase/migrations/product/**`, and retains conflict and rollback
 protections. The CLI delivers source and metadata only; consumers apply and
 verify the migration through their own database process while the schema
 compatibility coordinate remains `2.0`.

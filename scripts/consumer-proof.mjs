@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { createServer } from "node:net"
 import os from "node:os"
 import path from "node:path"
 import { createClient } from "@supabase/supabase-js"
@@ -8,6 +9,7 @@ import { RELEASE_VERSION, RUNTIME_PACKAGES, SCHEMA_VERSION, TOOLING_PACKAGES } f
 
 const root = process.cwd()
 const packageCli = path.join(root, "packages/cli/bin/saas-core.mjs")
+const supabaseBinary = path.join(root, "node_modules/.bin/supabase")
 const artifacts = path.join(root, "artifacts")
 const LEGACY_VERSION = "2.2.0"
 const billingMigrations = [
@@ -42,6 +44,76 @@ function runOutput(command, args, cwd, extraEnvironment = {}, expectedStatus = 0
   const result = spawnSync(command, args, { cwd, env: { ...npmEnvironment, ...extraEnvironment }, encoding: "utf8" })
   if (result.status !== expectedStatus) throw new Error(`${command} ${args.join(" ")} failed with ${result.status ?? "unknown status"}: ${result.stderr || result.stdout}`)
   return result.stdout
+}
+
+function configureDisposableSupabase(directory, label, portBase) {
+  const configFile = path.join(directory, "supabase/config.toml")
+  const projectId = `saas-core-${label}-${process.pid}-${Date.now()}`.replace(/[^a-z0-9_-]/gi, "-").slice(0, 63)
+  let config = readFileSync(configFile, "utf8").replace(/^project_id\s*=\s*"[^"]+"/m, `project_id = "${projectId}"`)
+  config = config
+    .replace(/^port = 55521$/m, `port = ${portBase + 1}`)
+    .replace(/^port = 55522$/m, `port = ${portBase + 2}`)
+    .replace(/^shadow_port = 55520$/m, `shadow_port = ${portBase}`)
+    .replace(/^port = 54329$/m, `port = ${portBase + 9}`)
+    .replace(/^port = 55523$/m, `port = ${portBase + 3}`)
+    .replace(/^port = 55524$/m, `port = ${portBase + 4}`)
+    .replace(/^inspector_port = 55528$/m, `inspector_port = ${portBase + 8}`)
+    .replace(/^port = 55527$/m, `port = ${portBase + 7}`)
+  writeFileSync(configFile, config, "utf8")
+}
+
+function isPortAvailable(port) {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.once("error", () => resolve(false))
+    server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)))
+  })
+}
+
+async function findDisposablePortBase() {
+  for (let base = 56000; base < 56900; base += 10) {
+    const ports = [base, base + 1, base + 2, base + 3, base + 4, base + 9]
+    if ((await Promise.all(ports.map((port) => isPortAvailable(port)))).every(Boolean)) return base
+  }
+  throw new Error("Could not find an available disposable Supabase port block.")
+}
+
+function startDisposableSupabase(directory) {
+  run(supabaseBinary, ["start", "--workdir", directory], directory, { SUPABASE_TELEMETRY_DISABLED: "1" })
+}
+
+function stopDisposableSupabase(directory) {
+  if (!existsSync(path.join(directory, "supabase/config.toml"))) return
+  spawnSync(supabaseBinary, ["stop", "--workdir", directory], {
+    cwd: directory,
+    env: { ...npmEnvironment, SUPABASE_TELEMETRY_DISABLED: "1" },
+    stdio: "ignore",
+  })
+}
+
+function disposableSupabaseStatus(directory) {
+  const result = spawnSync(supabaseBinary, ["status", "--workdir", directory, "-o", "json"], {
+    cwd: directory,
+    env: { ...npmEnvironment, SUPABASE_TELEMETRY_DISABLED: "1" },
+    encoding: "utf8",
+  })
+  if (result.status !== 0) throw new Error(`Could not read disposable Supabase status: ${result.stderr || result.stdout}`)
+  const output = result.stdout || ""
+  const start = output.indexOf("{")
+  const end = output.lastIndexOf("}")
+  if (start < 0 || end < start) throw new Error(`Disposable Supabase status was not JSON: ${output}`)
+  return JSON.parse(output.slice(start, end + 1))
+}
+
+async function assertDisposableSchema(directory, productTables) {
+  const status = disposableSupabaseStatus(directory)
+  if (!status.API_URL || !status.SERVICE_ROLE_KEY) throw new Error("Disposable Supabase status did not include an API URL and service-role key.")
+  const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } })
+  for (const table of ["workspaces", ...productTables]) {
+    const result = await service.from(table).select("*", { count: "exact", head: true })
+    if (result.error) throw new Error(`Disposable Supabase schema is missing ${table}: ${result.error.message}`)
+  }
+  return status
 }
 
 function removeBuildOutputs(directory) {
@@ -371,17 +443,31 @@ try {
   const freshManifest = JSON.parse(readFileSync(path.join(product, ".saas-core-manifest.json"), "utf8"))
   if (!freshManifest.productOwnedPaths.includes("src/product/")) throw new Error("Fresh consumer manifest does not preserve the product usage extension boundary.")
   for (const migration of billingMigrations) if (!freshManifest.managedFiles[migration]) throw new Error(`Fresh consumer manifest did not record ${migration} as Core-managed.`)
-  const productMigrationRelative = "supabase/migrations/product/20990909000000_product-owned-proof.sql"
-  mkdirSync(path.dirname(path.join(product, productMigrationRelative)), { recursive: true })
-  const productMigration = "-- Product-owned migration fixture\ncreate table if not exists public.product_owned_proof (id uuid primary key);\n"
+  const productMigrationRelative = "supabase/migrations/20990909000000_product-owned-proof.sql"
+  const productMigrationTable = "product_owned_proof"
+  const productMigration = "-- Flat Product-owned migration fixture\ncreate table if not exists public.product_owned_proof (id uuid primary key);\ngrant all on table public.product_owned_proof to service_role;\n"
   writeFileSync(path.join(product, productMigrationRelative), productMigration, "utf8")
+  if (freshManifest.managedFiles?.[productMigrationRelative]) throw new Error("Fresh flat Product migration was incorrectly recorded as Core-managed.")
   run(process.execPath, [packageCli, "doctor", product], root)
+  const freshDoctor = JSON.parse(runOutput(process.execPath, [packageCli, "doctor", product, "--json"], root))
+  if (freshDoctor.errors !== 0 || !freshDoctor.checks.some((check) => check.category === "PRODUCT" && check.detail.includes("Product-owned migration(s)"))) throw new Error("Fresh doctor did not accept the flat Product migration ownership.")
+  const freshDiff = JSON.parse(runOutput(process.execPath, [packageCli, "diff", product, "--json"], root))
+  if (freshDiff.coreDrift.length || !freshDiff.productMigrationsIgnored.includes(productMigrationRelative)) throw new Error("Fresh diff did not preserve the flat Product migration ownership.")
+  const freshDryRun = JSON.parse(runOutput(process.execPath, [packageCli, "update", product, "--dry-run", "--json"], root))
+  if (freshDryRun.productMigrationsIgnored.includes(productMigrationRelative) === false || freshDryRun.added.includes(productMigrationRelative) || freshDryRun.removed.includes(productMigrationRelative)) throw new Error("Fresh update dry-run did not preserve the flat Product migration.")
+  configureDisposableSupabase(product, "fresh", await findDisposablePortBase())
+  startDisposableSupabase(product)
+  run(supabaseBinary, ["db", "reset", "--local", "--workdir", product], product, { SUPABASE_TELEMETRY_DISABLED: "1" })
+  await assertDisposableSchema(product, [productMigrationTable])
   const supabaseEnvironment = localSupabaseEnvironment()
   writeFileSync(path.join(product, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
   run("npm", ["install", "--ignore-scripts", "--audit=false", "--fund=false"], product)
   const installedCli = path.join(product, "node_modules/.bin/saas-core")
   if (!existsSync(installedCli)) throw new Error("Packed Core CLI was not installed in the generated consumer.")
   run(installedCli, ["doctor", product], product)
+  run("npm", ["run", "db:types"], product, { SUPABASE_TELEMETRY_DISABLED: "1" })
+  if (!readFileSync(path.join(product, "types/supabase.ts"), "utf8").includes(`${productMigrationTable}:`)) throw new Error("Generated consumer types do not include the executed flat Product table.")
+  stopDisposableSupabase(product)
   run(process.execPath, ["--input-type=module", "-e", packedExportProbe], product)
   run(installedCli, ["init", "Packed CLI Proof", packedProduct], product)
   assertConsumerIgnore(packedProduct)
@@ -395,8 +481,18 @@ try {
   const consumerGitignoreFile = path.join(packedProduct, ".gitignore")
   const consumerGitignore = `${readFileSync(consumerGitignoreFile, "utf8")}\n# Product-local ignore extension\nproduct-local-cache/\n`
   writeFileSync(consumerGitignoreFile, consumerGitignore, "utf8")
-  mkdirSync(path.dirname(path.join(packedProduct, productMigrationRelative)), { recursive: true })
-  writeFileSync(path.join(packedProduct, productMigrationRelative), productMigration, "utf8")
+  const legacyProductMigrations = [
+    [productMigrationRelative, productMigration, productMigrationTable],
+    ["supabase/migrations/20260916000000_product-proof-venues.sql", "create table if not exists public.product_proof_venues (id uuid primary key default gen_random_uuid(), workspace_id uuid not null references public.workspaces(id) on delete cascade, name text not null);\nalter table public.product_proof_venues enable row level security;\ngrant all on table public.product_proof_venues to service_role;\n", "product_proof_venues"],
+    ["supabase/migrations/20260916000001_product-proof-schedules.sql", "create table if not exists public.product_proof_schedules (id uuid primary key default gen_random_uuid(), workspace_id uuid not null references public.workspaces(id) on delete cascade, venue_id uuid not null references public.product_proof_venues(id) on delete cascade, starts_at timestamptz not null);\nalter table public.product_proof_schedules enable row level security;\ngrant all on table public.product_proof_schedules to service_role;\n", "product_proof_schedules"],
+    ["supabase/migrations/20260916000002_product-proof-catalog-items.sql", "create table if not exists public.product_proof_catalog_items (id uuid primary key default gen_random_uuid(), workspace_id uuid not null references public.workspaces(id) on delete cascade, title text not null);\nalter table public.product_proof_catalog_items enable row level security;\ngrant all on table public.product_proof_catalog_items to service_role;\n", "product_proof_catalog_items"],
+  ]
+  const legacyMigrationSnapshots = new Map()
+  for (const [relative, content] of legacyProductMigrations) {
+    mkdirSync(path.dirname(path.join(packedProduct, relative)), { recursive: true })
+    writeFileSync(path.join(packedProduct, relative), content, "utf8")
+    legacyMigrationSnapshots.set(relative, content)
+  }
   downgradeToLegacyConsumer(packedProduct, [...agentSurfaceFiles, ...billingManagedFiles])
   rmSync(path.join(packedProduct, productUsageExtension), { force: true })
   const legacyDiff = JSON.parse(runOutput(installedCli, ["diff", packedProduct, "--json"], packedProduct, {}, 2))
@@ -415,14 +511,25 @@ try {
   if (runtimePackages.some((name) => upgradedLegacyPackage.dependencies[name] !== `^${RELEASE_VERSION}`) || toolingPackages.some((name) => upgradedLegacyPackage.devDependencies[name] !== `^${RELEASE_VERSION}`)) throw new Error(`Packed legacy consumer package.json was not upgraded to ^${RELEASE_VERSION}.`)
   if (readFileSync(legacyThemeFile, "utf8") !== legacyTheme) throw new Error("Packed legacy update overwrote the product-owned theme.")
   if (readFileSync(consumerGitignoreFile, "utf8") !== consumerGitignore) throw new Error("Packed consumer update overwrote the product-local .gitignore policy.")
-  if (readFileSync(path.join(packedProduct, productMigrationRelative), "utf8") !== productMigration) throw new Error("Packed consumer update changed a product-owned migration.")
+  for (const [relative, content] of legacyMigrationSnapshots) {
+    if (readFileSync(path.join(packedProduct, relative), "utf8") !== content) throw new Error(`Packed consumer update changed a product-owned migration: ${relative}`)
+    if (upgradedLegacyManifest.managedFiles?.[relative]) throw new Error(`Packed legacy manifest adopted a Product migration: ${relative}`)
+  }
   if (!readFileSync(path.join(packedProduct, productUsageExtension), "utf8").includes("PRODUCT_USAGE_RESOLVERS")) throw new Error("Packed legacy update did not restore the neutral product usage resolver scaffold.")
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) if (!existsSync(path.join(packedProduct, relative))) throw new Error(`Packed legacy update did not restore managed file: ${relative}`)
+  configureDisposableSupabase(packedProduct, "legacy", await findDisposablePortBase())
+  startDisposableSupabase(packedProduct)
+  run(supabaseBinary, ["db", "reset", "--local", "--workdir", packedProduct], packedProduct, { SUPABASE_TELEMETRY_DISABLED: "1" })
+  await assertDisposableSchema(packedProduct, legacyProductMigrations.map(([, , table]) => table))
   writeFileSync(path.join(packedProduct, ".npmrc"), `registry=https://registry.npmjs.org/\n@sapienx:registry=${registryUrl}\n`, "utf8")
   run("npm", ["install", "--ignore-scripts", "--audit=false", "--fund=false"], packedProduct)
   const legacyInstalledCli = path.join(packedProduct, "node_modules/.bin/saas-core")
   run(legacyInstalledCli, ["doctor", packedProduct], packedProduct)
   run(process.execPath, ["--input-type=module", "-e", packedExportProbe], packedProduct)
+  run("npm", ["run", "db:types"], packedProduct, { SUPABASE_TELEMETRY_DISABLED: "1" })
+  const legacyTypes = readFileSync(path.join(packedProduct, "types/supabase.ts"), "utf8")
+  for (const [, , table] of legacyProductMigrations) if (!legacyTypes.includes(`${table}:`)) throw new Error(`Legacy consumer generated types do not include ${table}.`)
+  stopDisposableSupabase(packedProduct)
   run("npm", ["run", "typecheck"], packedProduct)
   run("npm", ["test"], packedProduct)
   run("npm", ["run", "build"], packedProduct, supabaseEnvironment || {})
@@ -454,6 +561,8 @@ try {
   if (/file:|link:|workspace:|registry\.url|\/Users\/|\/private\//.test(persistedPackage) || persistedPackage.includes(root)) throw new Error("Generated consumer contains a local dependency path.")
   console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", packedExports: true, packedBillingContract: true, freshConsumer: `${RELEASE_VERSION} / schema ${SCHEMA_VERSION}`, legacyConsumerUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, billingManagedUpdate: true, legacyProductOwnedPreserved: true, consumerIgnorePreserved: true, legacyTypecheck: true, legacyTests: true, legacyBuild: true, configuredShell: true, browserShell: browserShell && relocatedBrowserShell, relocation: true, frozenInstall: true }))
 } finally {
+  stopDisposableSupabase(product)
+  stopDisposableSupabase(packedProduct)
   registryProcess.kill("SIGTERM")
   rmSync(product, { recursive: true, force: true })
   rmSync(packedProduct, { recursive: true, force: true })

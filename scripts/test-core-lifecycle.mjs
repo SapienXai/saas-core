@@ -219,11 +219,24 @@ try {
   result = run(coreA, ["init", "Lifecycle Clean", cleanProduct])
   assert(result.status === 0, result.stderr || "clean init failed")
   await writeFile(path.join(cleanProduct, "app/page.tsx"), `${await readFile(path.join(cleanProduct, "app/page.tsx"), "utf8")}\n// product-owned customization\n`, "utf8")
-  const productMigrationRelative = "supabase/migrations/product/20990909000000_product-owned-proof.sql"
-  const productMigrationFile = path.join(cleanProduct, productMigrationRelative)
-  await mkdir(path.dirname(productMigrationFile), { recursive: true })
-  const productMigrationContent = "-- Product-owned migration fixture\ncreate table if not exists public.product_owned_proof (id uuid primary key);\n"
-  await writeFile(productMigrationFile, productMigrationContent, "utf8")
+  const flatProductMigrationRelative = "supabase/migrations/20260801000000_product-owned-before-core.sql"
+  const interleavedProductMigrationRelative = "supabase/migrations/20260910000000_product-owned-between-core.sql"
+  const flatProductMigrationAfterRelative = "supabase/migrations/20990909000000_product-owned-proof.sql"
+  const legacyProductMigrationRelative = "supabase/migrations/product/20990909000001_legacy-product-owned-proof.sql"
+  const flatProductMigrationContent = "-- Product-owned migration fixture before a later Core migration\ncreate table if not exists public.product_owned_before_core (id uuid primary key);\n"
+  const interleavedProductMigrationContent = "-- Product-owned migration fixture between Core migrations\ncreate table if not exists public.product_owned_between_core (id uuid primary key);\n"
+  const flatProductMigrationAfterContent = "-- Product-owned migration fixture after the current Core sources\ncreate table if not exists public.product_owned_proof (id uuid primary key);\n"
+  const legacyProductMigrationContent = "-- Legacy nested Product migration fixture\ncreate table if not exists public.legacy_product_owned_proof (id uuid primary key);\n"
+  for (const [relative, content] of [
+    [flatProductMigrationRelative, flatProductMigrationContent],
+    [interleavedProductMigrationRelative, interleavedProductMigrationContent],
+    [flatProductMigrationAfterRelative, flatProductMigrationAfterContent],
+    [legacyProductMigrationRelative, legacyProductMigrationContent],
+  ]) {
+    const file = path.join(cleanProduct, relative)
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeFile(file, content, "utf8")
+  }
   await writeFile(path.join(cleanProduct, "product.catalog.json"), JSON.stringify({ defaultPlanKey: "hobby", plans: [{ key: "hobby", name: "Hobby", prices: { month: { amount: 7, currency: "EUR" } }, limits: { "core.workspaces": 2 } }], usageMetrics: [{ key: "projects", name: "Projects" }] }, null, 2) + "\n", "utf8")
   const cleanPackage = JSON.parse(await readFile(path.join(cleanProduct, "package.json"), "utf8"))
   cleanPackage.dependencies["@sapienx/saas-core-ui"] = "^1.0.0"
@@ -232,15 +245,54 @@ try {
   assert(result.status === 0, result.stderr || "dry-run failed")
   const dryRun = JSON.parse(result.stdout)
   assert(dryRun.updated.includes("app/error.tsx") && dryRun.updated.includes("package.json") && dryRun.added.includes("app/core-lifecycle-fixture.ts") && billingMigrations.every((migration) => dryRun.added.includes(migration)) && dryRun.removed.includes("app/robots.ts"), "dry-run did not report changed/added/removed managed files, billing migrations, and package drift")
+  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative, legacyProductMigrationRelative]) {
+    assert(dryRun.productMigrationsIgnored.includes(relative), `dry-run did not classify ${relative} as Product-owned`)
+    assert(!dryRun.added.includes(relative) && !dryRun.updated.includes(relative) && !dryRun.removed.includes(relative), `dry-run proposed a Core mutation for Product migration ${relative}`)
+  }
   result = run(coreB, ["update", cleanProduct, "--json"])
   assert(result.status === 0, `${result.stderr || result.stdout || "clean update failed"}`)
   const cleanReport = JSON.parse(result.stdout)
   assert(cleanReport.backup && existsSync(cleanReport.backup), "clean update did not create a backup")
   assert(JSON.stringify(cleanReport.updated) === JSON.stringify(dryRun.updated) && JSON.stringify(cleanReport.added) === JSON.stringify(dryRun.added) && JSON.stringify(cleanReport.removed) === JSON.stringify(dryRun.removed), "dry-run plan did not match the real update plan")
   assert((await readFile(path.join(cleanProduct, "app/page.tsx"), "utf8")).includes("product-owned customization"), "product customization was overwritten")
-  assert((await readFile(productMigrationFile, "utf8")) === productMigrationContent, "update changed a product-owned migration")
+  for (const [relative, content] of [
+    [flatProductMigrationRelative, flatProductMigrationContent],
+    [interleavedProductMigrationRelative, interleavedProductMigrationContent],
+    [flatProductMigrationAfterRelative, flatProductMigrationAfterContent],
+    [legacyProductMigrationRelative, legacyProductMigrationContent],
+  ]) assert((await readFile(path.join(cleanProduct, relative), "utf8")) === content, `update changed a product-owned migration: ${relative}`)
   result = run(coreB, ["doctor", cleanProduct, "--json"])
   assert(result.status === 0, result.stderr || "post-update doctor failed")
+  const cleanManifest = JSON.parse(await readFile(path.join(cleanProduct, ".saas-core-manifest.json"), "utf8"))
+  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative, legacyProductMigrationRelative]) assert(!cleanManifest.managedFiles?.[relative], `Product migration was recorded as Core-managed: ${relative}`)
+  const cleanDiff = run(coreB, ["diff", cleanProduct, "--json"])
+  assert(cleanDiff.status === 0, cleanDiff.stderr || "Product migrations created false diff drift")
+  const cleanDiffReport = JSON.parse(cleanDiff.stdout)
+  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative, legacyProductMigrationRelative]) assert(cleanDiffReport.productMigrationsIgnored.includes(relative), `diff did not preserve Product migration classification: ${relative}`)
+
+  const historicalCoreMigration = billingMigrations[billingMigrations.length - 1]
+  const historicalCoreFile = path.join(cleanProduct, historicalCoreMigration)
+  const historicalCoreContent = await readFile(historicalCoreFile, "utf8")
+  await writeFile(historicalCoreFile, `${historicalCoreContent}\n-- local historical Core drift\n`, "utf8")
+  result = run(coreB, ["update", cleanProduct, "--dry-run", "--json"])
+  assert(result.status === 2, "modified historical Core migration did not block update")
+  const historicalDrift = JSON.parse(result.stdout)
+  assert(historicalDrift.conflicts.includes(historicalCoreMigration) && historicalDrift.conflictReasons[historicalCoreMigration].includes("historical SQL is immutable"), "historical Core migration drift reason was not explicit")
+  await writeFile(historicalCoreFile, historicalCoreContent, "utf8")
+  await rm(historicalCoreFile)
+  result = run(coreB, ["update", cleanProduct, "--dry-run", "--json"])
+  assert(result.status === 2, "missing historical Core migration did not block update")
+  const historicalMissing = JSON.parse(result.stdout)
+  assert(historicalMissing.conflicts.includes(historicalCoreMigration) && historicalMissing.conflictReasons[historicalCoreMigration].includes("will not recreate applied migration history"), "missing historical Core migration reason was not explicit")
+  assert(!historicalMissing.added.includes(historicalCoreMigration), "missing historical Core migration was incorrectly planned for recreation")
+  await writeFile(historicalCoreFile, historicalCoreContent, "utf8")
+
+  const editedProductMigrationFile = path.join(cleanProduct, flatProductMigrationAfterRelative)
+  await writeFile(editedProductMigrationFile, `${flatProductMigrationAfterContent}\n-- Product-local edit\n`, "utf8")
+  result = run(coreB, ["update", cleanProduct, "--dry-run", "--json"])
+  assert(result.status === 0, result.stderr || "Product migration edit incorrectly blocked update")
+  const editedProductDryRun = JSON.parse(result.stdout)
+  assert(editedProductDryRun.productMigrationsIgnored.includes(flatProductMigrationAfterRelative), "edited Product migration was not preserved as Product-owned")
 
   result = run(coreA, ["init", "Lifecycle Conflict", conflictProduct])
   assert(result.status === 0, result.stderr || "conflict init failed")
@@ -259,6 +311,7 @@ try {
   const conflictReport = JSON.parse(result.stdout)
   assert(conflictReport.conflicts.includes("app/error.tsx"), "conflict report omitted modified managed file")
   assert(conflictReport.conflicts.includes(billingMigrations[0]), "conflict report omitted same-path Core migration")
+  assert(conflictReport.conflictReasons[billingMigrations[0]].includes("Core/Product migration path collision"), "same-path migration collision did not report its ownership reason")
   assert((await readFile(conflictFile, "utf8")) === localContent, "conflicting managed file was overwritten")
   assert((await readFile(conflictMigrationFile, "utf8")) === conflictMigrationContent, "same-path Core migration conflict was overwritten")
   assert((await readFile(path.join(conflictProduct, "app/robots.ts"), "utf8")) === conflictRobotsBefore, "conflict update partially removed an unrelated managed file")
@@ -283,7 +336,7 @@ try {
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
   assert(result.status !== 0 && result.stdout.includes("Required reusable billing migration source is missing"), "doctor did not expose the missing migration source after rollback")
 
-  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, productUsageExtension: true, agentSurfaceUpdate: true, billingManagedUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
+  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, flatProductMigrations: true, interleavedProductMigration: true, legacyNestedProductMigration: true, productMigrationEditsAllowed: true, historicalCoreMigrationImmutable: true, missingHistoricalCoreMigrationBlocked: true, exactPathMigrationCollision: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, productUsageExtension: true, agentSurfaceUpdate: true, billingManagedUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
 } finally {
   await rm(fixture, { recursive: true, force: true })
 }

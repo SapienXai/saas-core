@@ -105,10 +105,12 @@ the update; and a failed apply restores the independent backup. Neither
 checklist authorizes live payments, production mutations, deployment, push,
 merge, secret changes, or edits to the other consumer.
 
-The Core migration source is separate from product-owned migrations under
-`supabase/migrations/product/**`. A same-path consumer file at the Core source
-path is a conflict and must block before mutation. A failed update must restore
-the package and manifest metadata and remove the newly added Core source; that
+The Core migration source is separate from product-owned migrations: any flat
+`supabase/migrations/*.sql` path not claimed by the Core source/manifest is
+Product-owned, while `supabase/migrations/product/**` remains a legacy
+compatibility namespace. A same-path consumer file at the Core source path is
+a conflict and must block before mutation. A failed update must restore the
+package and manifest metadata and remove the newly added Core source; that
 rollback does not apply or reverse SQL in a consumer database.
 
 Publishing Core `2.4.0` does not mark either checklist complete. ReserveVia and

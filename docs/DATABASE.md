@@ -66,9 +66,12 @@ workspace-aware object policies.
 
 ## Product table recipe
 
-Put an adapted version of this in a product migration under
-`supabase/migrations/product/`. Apply it once with a product-specific table and
-policy name; the CLI will preserve it during Core updates.
+Put an adapted version of this in a new, timestamped Product migration directly
+under `supabase/migrations/`. Apply it once with a product-specific table and
+policy name; the standard Supabase CLI will execute it and Core will preserve
+it during updates. Existing consumers may retain legacy files under
+`supabase/migrations/product/`; Core preserves that namespace but new work
+should use the flat Supabase-native layout.
 
 ```sql
 create table public.projects (
@@ -123,11 +126,15 @@ key to browser code.
 
 ## Migration lifecycle
 
-Core migration sources are direct files under `supabase/migrations/*.sql` and
-are shipped by the application template and CLI. Product migrations belong
-under `supabase/migrations/product/**`. The CLI copies, hashes and compares
-source; it does not run SQL, reset a database or overwrite a product
-migration.
+Core migration sources are the exact direct files under
+`supabase/migrations/*.sql` shipped by the application template and CLI.
+Product migrations use the same flat directory but are the direct `.sql` paths
+not claimed by that Core source/manifest set. Existing nested
+`supabase/migrations/product/**` files remain Product-owned for compatibility.
+The CLI copies, hashes and compares source; it does not run SQL, reset a
+database or overwrite a Product migration. Ownership and chronological
+Supabase execution are separate concerns: Core and Product files may be
+interleaved by timestamp.
 
 ```bash
 pnpm db:start

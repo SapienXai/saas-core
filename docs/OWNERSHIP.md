@@ -14,9 +14,11 @@ conflict-aware `saas-core update`.
 
 That includes the reusable application shell and its auth, Workspace,
 membership, role/authorization, billing, entitlement, Platform, PWA, domain,
-email, push, agent-surface and shared UI capabilities. Direct SQL files under
-`supabase/migrations/*.sql` are Core migration sources. The template also
-ships the generic local-type and catalog-sync helpers.
+email, push, agent-surface and shared UI capabilities. The exact SQL files
+shipped by the authoritative Core template under `supabase/migrations/*.sql`
+are Core migration sources. A flat migration path that is not in that source
+set is not inferred to be Core merely because it is under the same directory.
+The template also ships the generic local-type and catalog-sync helpers.
 
 The CLI never applies those SQL files. A consumer decides when and how to run
 `supabase db reset`, migration application, type generation and database
@@ -28,10 +30,10 @@ These prefixes and exact paths are the CLI contract:
 
 | Kind | Paths |
 | --- | --- |
-| Prefixes | `src/product/`, `app/(product)/`, `app/product/`, `components/product/`, `supabase/migrations/product/` |
+| Prefixes | `src/product/`, `app/(product)/`, `app/product/`, `components/product/`, `supabase/migrations/product/` (legacy migration namespace) |
 | Identity and catalog | `lib/product-config.ts`, `product.catalog.json` |
 | Product entry and styling | `app/page.tsx`, `app/manage/page.tsx`, `styles/product-theme.css`, `styles/product.css`, `public/product-*` |
-| Product database inputs | `supabase/migrations/product/**`, `supabase/seed.sql`, `supabase/config.toml` |
+| Product database inputs | `supabase/migrations/*.sql` paths not claimed by Core, legacy `supabase/migrations/product/**`, `supabase/seed.sql`, `supabase/config.toml` |
 | Consumer contract | `README.md`, `AGENTS.md`, `.env.example` |
 | Generated schema view | `types/supabase.ts` |
 
@@ -42,7 +44,43 @@ controlled schema changes and review the diff.
 
 Product-owned changes are reported as preserved/ignored changes by the CLI.
 They are not written to the manifest's managed hash set, and product
-migrations remain safe when Core is updated.
+migrations remain safe when Core is updated. Product migration ownership is
+not inferred from filename words, SQL contents, timestamps or product names:
+the exact Core source set plus the consumer manifest identify Core migrations;
+every other migration in the consumer namespace is Product-owned. A new Core
+migration colliding with an existing Product file at the exact same path is a
+hard conflict and is never overwritten or adopted.
+
+## Migration layout and ownership
+
+Core and Product migrations intentionally share the normal Supabase-native
+directory and one chronological execution stream:
+
+```text
+supabase/migrations/
+├── 20260901000000_core_auth.sql       # Core-owned exact source path
+├── 20260902000000_create_venues.sql  # Product-owned unknown flat path
+└── 20260903000000_core_billing.sql   # Core-owned exact source path
+```
+
+The CLI sits above Supabase's filesystem and never executes SQL. `doctor`,
+`diff`, and `update` derive the current Core migration set from the template
+and retain previously manifest-managed Core migration paths as historical
+identity. An unknown flat `.sql` file is Product-owned, omitted from the
+managed hash set, reported separately as preserved, and never removed by a
+Core update. This remains true whether its timestamp sorts before, between,
+or after Core migrations.
+
+The older `supabase/migrations/product/**` namespace remains recognized and
+preserved for backward compatibility. It is not the recommended new layout:
+new Product migrations should be flat so the standard Supabase CLI applies
+them through the same native migration flow. Core does not move, rename,
+retimestamp, execute, or delete legacy nested files.
+
+Historical Core migrations are immutable. A changed or missing manifest-owned
+Core migration is a doctor/update error; new schema work must use an additive
+migration. An exact path collision between a new Core migration and a
+different Product file is reported as a conflict before any update mutation.
 
 ## Mixed files and ignored files
 

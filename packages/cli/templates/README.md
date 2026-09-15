@@ -43,9 +43,9 @@ flowchart LR
 ```
 
 The product layer normally lives under `app/(product)/app`, `src/product/`,
-`components/product/`, and `supabase/migrations/product/`. Configure the
-workspace home and navigation in `lib/product-config.ts`; do not fork Core
-navigation or tenancy logic.
+`components/product/`, and new timestamped migrations under
+`supabase/migrations/`. Configure the workspace home and navigation in
+`lib/product-config.ts`; do not fork Core navigation or tenancy logic.
 
 ## Add product value
 
@@ -75,10 +75,13 @@ The recipe is intentionally not executed by this CLI.
 
 ## Database lifecycle
 
-Core migrations use source-only delivery under `supabase/migrations/`. Product
-migrations belong under `supabase/migrations/product/` and are preserved by
-Core updates. The CLI never executes SQL, resets a database, or overwrites a
-product migration.
+Core migrations use source-only delivery under `supabase/migrations/`. Core
+owns only the exact migration paths shipped by its template/manifest. Product
+migrations use the same flat directory at paths not claimed by Core and are
+preserved byte-for-byte by Core updates. Existing files under the legacy
+`supabase/migrations/product/` namespace are also preserved, but new files
+should be flat so the standard Supabase CLI executes them normally. The CLI
+never executes SQL, resets a database, or overwrites a product migration.
 
 Use the consumer's controlled workflow:
 
@@ -119,8 +122,9 @@ overwritten by `update`.
   Workspace, membership, authorization, billing, Platform, domain/PWA/email/
   push infrastructure, direct Core migrations and helper scripts.
 - Product-owned: this README, `AGENTS.md`, `.env.example`, product routes,
-  catalog, styles, product migrations, product usage and generated database
-  types.
+  catalog, styles, flat product migrations (plus legacy nested migrations),
+  product usage and generated database types. Product migration ownership is
+  based on Core source/manifest identity, not filename words or SQL contents.
 - Mixed: `package.json` keeps the product's name, scripts and dependencies;
   the CLI updates only the four Core package coordinates.
 

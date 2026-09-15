@@ -6,7 +6,14 @@ import { access, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { DEFAULT_PRODUCT_OWNED_PATHS, isIgnoredPath, isProductOwnedPath } from "./ownership.mjs"
+import {
+  DEFAULT_PRODUCT_OWNED_PATHS,
+  classifyMigrationPath,
+  isFlatMigrationPath,
+  isIgnoredPath,
+  isMigrationPath,
+  isProductOwnedPath,
+} from "./ownership.mjs"
 
 const CLI_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const CLI_PACKAGE = JSON.parse(readFileSync(path.join(CLI_ROOT, "package.json"), "utf8"))
@@ -179,7 +186,26 @@ async function templateManagedFiles(sourceRoot = DEFAULT_TEMPLATE_ROOT, productO
 async function directCoreMigrations(sourceRoot) {
   const migrationRoot = path.join(sourceRoot, "supabase/migrations")
   if (!existsSync(migrationRoot)) return []
-  return (await walk(sourceRoot)).filter((relative) => relative.startsWith("supabase/migrations/") && relative.endsWith(".sql") && !relative.startsWith("supabase/migrations/product/"))
+  return (await walk(sourceRoot)).filter((relative) => isFlatMigrationPath(relative))
+}
+
+async function migrationFiles(directory) {
+  const migrationRoot = path.join(directory, "supabase/migrations")
+  if (!existsSync(migrationRoot)) return []
+  return (await walk(directory)).filter((relative) => isMigrationPath(relative))
+}
+
+function manifestCoreMigrationPaths(manifest) {
+  return Object.keys(manifest?.managedFiles || {}).filter((relative) => isFlatMigrationPath(relative))
+}
+
+function knownCoreMigrationPaths(sourceMigrations, manifest) {
+  return new Set([...sourceMigrations, ...manifestCoreMigrationPaths(manifest)])
+}
+
+async function productMigrationPaths(directory, sourceMigrations, manifest) {
+  const coreMigrationPaths = knownCoreMigrationPaths(sourceMigrations, manifest)
+  return (await migrationFiles(directory)).filter((relative) => classifyMigrationPath(relative, coreMigrationPaths) === "product")
 }
 
 async function managedFilesForConsumer(directory, sourceFiles) {
@@ -190,6 +216,18 @@ async function managedFilesForConsumer(directory, sourceFiles) {
     if (existsSync(file)) result[relative] = { hash: hash(await readFile(file, "utf8")), ownership: "managed" }
   }
   return result
+}
+
+async function managedFilesForUpdate(directory, sourceFiles, previous) {
+  const managedFiles = await managedFilesForConsumer(directory, sourceFiles)
+  for (const [relative, record] of Object.entries(previous || {})) {
+    if (!isFlatMigrationPath(relative) || managedFiles[relative]) continue
+    // Historical Core migration identity remains explicit even after the
+    // current template stops carrying that source. Never make an old applied
+    // migration look Product-owned merely because it is no longer additive.
+    managedFiles[relative] = record
+  }
+  return managedFiles
 }
 
 function corePackageVersions() { return Object.fromEntries(CORE_PACKAGES.map((name) => [name, `^${VERSION}`])) }
@@ -430,7 +468,10 @@ async function healthChecks(directory, manifest, sourceRoot = DEFAULT_TEMPLATE_R
   if (!existsSync(path.join(directory, "supabase/migrations"))) add("SCHEMA", "ERROR", "Supabase migration directory is missing.")
   else add("SCHEMA", "INFO", "Core migration directory is present.")
   const sourceMigrations = await directCoreMigrations(sourceRoot)
-  const consumerMigrations = await directCoreMigrations(directory)
+  const sourceMigrationSet = new Set(sourceMigrations)
+  const manifestMigrationSet = new Set(manifestCoreMigrationPaths(manifest))
+  const knownCoreMigrations = knownCoreMigrationPaths(sourceMigrations, manifest)
+  const consumerMigrations = await migrationFiles(directory)
   for (const migration of REQUIRED_BILLING_MIGRATIONS) {
     if (!sourceMigrations.includes(migration)) add("SCHEMA", "ERROR", `Required reusable billing migration source is missing from Core template: ${migration}`)
   }
@@ -438,11 +479,23 @@ async function healthChecks(directory, manifest, sourceRoot = DEFAULT_TEMPLATE_R
     const sourceMigration = path.join(sourceRoot, migration)
     const consumerMigration = path.join(directory, migration)
     if (!existsSync(consumerMigration)) add("SCHEMA", "ERROR", `Core migration is missing from the consumer: ${migration}`)
-    else if (hash(await readFile(sourceMigration, "utf8")) !== hash(await readFile(consumerMigration, "utf8"))) add("SCHEMA", "ERROR", `Core migration differs from the source template: ${migration}`)
+    else if (hash(await readFile(sourceMigration, "utf8")) !== hash(await readFile(consumerMigration, "utf8"))) {
+      add("SCHEMA", "ERROR", manifestMigrationSet.has(migration)
+        ? `Core migration differs from the authoritative source (historical Core drift): ${migration}`
+        : `Core/Product migration path collision at ${migration}; the consumer file is not the Core source and was not adopted.`)
+    }
     else if (!manifest?.managedFiles?.[migration]) add("SCHEMA", "ERROR", `Core migration is not recorded as managed: ${migration}`)
     else add("SCHEMA", "INFO", `Core migration source is ready and managed: ${migration}`)
   }
-  for (const migration of consumerMigrations.filter((relative) => !sourceMigrations.includes(relative))) add("SCHEMA", "ERROR", `Unexpected direct consumer migration is outside the canonical Core source: ${migration}; put product migrations under supabase/migrations/product/.`)
+  for (const migration of manifestMigrationSet) {
+    if (sourceMigrationSet.has(migration)) continue
+    const consumerMigration = path.join(directory, migration)
+    if (!existsSync(consumerMigration)) add("SCHEMA", "ERROR", `Previously Core-managed migration is missing from the consumer: ${migration}`)
+    else if (hash(await readFile(consumerMigration, "utf8")) !== managedHash(manifest.managedFiles[migration])) add("SCHEMA", "ERROR", `Previously Core-managed migration has historical drift: ${migration}`)
+    else add("SCHEMA", "INFO", `Historical Core migration is preserved and managed: ${migration}`)
+  }
+  const productMigrations = consumerMigrations.filter((relative) => classifyMigrationPath(relative, knownCoreMigrations) === "product")
+  if (productMigrations.length) add("PRODUCT", "INFO", `${productMigrations.length} Product-owned migration(s) detected in the native Supabase migration namespace; Core will preserve them.`)
   for (const relative of CONSUMER_CONTRACT_FILES) {
     const file = path.join(directory, relative)
     if (!existsSync(file)) add("CONSUMER", "ERROR", `Generated consumer contract file is missing: ${relative}`)
@@ -508,15 +561,23 @@ async function diff(options) {
     if (!existsSync(file)) core.push(`D ${relative}`)
     else if (hash(await readFile(file, "utf8")) !== managedHash(record)) core.push(`M ${relative}`)
   }
-  for (const relative of source.keys()) if (!manifest.managedFiles?.[relative]) core.push(`A ${relative}`)
+  for (const [relative, content] of source) {
+    if (manifest.managedFiles?.[relative]) continue
+    const file = path.join(directory, relative)
+    if (existsSync(file) && hash(await readFile(file, "utf8")) !== hash(content)) core.push(`C ${relative}`)
+    else core.push(`A ${relative}`)
+  }
   const productChanges = (await walk(directory)).filter((relative) => isProductOwned(relative, productOwnedPaths) && !isIgnored(relative) && !manifest.managedFiles?.[relative])
-  const report = { coreDrift: core, versionDrift: version, packageDrift: packages, schemaDrift: manifest.schemaVersion === SCHEMA_VERSION ? [] : ["Core schema version differs"], productChangesIgnored: productChanges }
+  const sourceMigrations = await directCoreMigrations(sourceRoot)
+  const productMigrations = await productMigrationPaths(directory, sourceMigrations, manifest)
+  const report = { coreDrift: core, versionDrift: version, packageDrift: packages, schemaDrift: manifest.schemaVersion === SCHEMA_VERSION ? [] : ["Core schema version differs"], productChangesIgnored: productChanges, productMigrationsIgnored: productMigrations }
   if (options.json) console.log(JSON.stringify(report, null, 2))
   else {
     console.log("Core drift:"); console.log(core.length ? core.map((item) => `  ${item}`).join("\n") : "  none")
     console.log("Version drift:"); console.log(version.length ? version.map((item) => `  ${item}`).join("\n") : "  none")
     console.log("Package drift:"); console.log(packages.length ? packages.map((item) => `  ${item.name}: ${item.actual || "missing"} (expected ${item.expected})`).join("\n") : "  none")
     console.log(`Product changes: ignored (${productChanges.length})`)
+    console.log(`Product migrations: ignored (${productMigrations.length})`)
   }
   if (core.length || version.length || packages.length) process.exitCode = 2
 }
@@ -606,6 +667,7 @@ function updateReportText(report, heading = "Core update") {
   console.log(`Preserved: ${report.preserved.length}`)
   if (report.scaffolded?.length) console.log(`Scaffolded: ${report.scaffolded.length}`)
   if (report.backup) console.log(`Backup: ${report.backup}`)
+  if (report.productMigrationsIgnored?.length) console.log(`Product migrations ignored: ${report.productMigrationsIgnored.length}`)
   for (const item of report.conflicts || []) console.log(`Conflict: ${item}`)
   for (const item of report.errors || []) console.log(`Error: ${item}`)
   if (report.rollback) console.log(`Rollback: ${report.rollback}`)
@@ -628,6 +690,12 @@ async function validateUpdatedConsumer(directory, source, expectedManifest) {
   for (const relative of ["README.md", "AGENTS.md"]) {
     if (/__PRODUCT_(?:NAME|SLUG)__/.test(await readFile(path.join(directory, relative), "utf8"))) throw new Error(`Post-update consumer contract file contains an unresolved placeholder: ${relative}.`)
   }
+  for (const [relative, record] of Object.entries(expectedManifest.managedFiles || {})) {
+    if (!isFlatMigrationPath(relative)) continue
+    const file = path.join(directory, relative)
+    if (!existsSync(file)) throw new Error(`Post-update Core migration validation failed; missing: ${relative}.`)
+    if (hash(await readFile(file, "utf8")) !== managedHash(record)) throw new Error(`Post-update Core migration validation failed; changed: ${relative}.`)
+  }
   if (productConfigValid(directory).status === "ERROR") throw new Error("Post-update product catalog validation failed.")
   const manifest = await readJson(path.join(directory, ".saas-core-manifest.json"))
   if (manifest.coreVersion !== VERSION || manifest.schemaVersion !== SCHEMA_VERSION) throw new Error("Post-update manifest compatibility validation failed.")
@@ -645,6 +713,8 @@ async function update(options) {
   const coreSourceCommit = options.source ? sourceGitCommit(sourceRoot) : null
   const productOwnedPaths = manifestProductOwnedPaths(manifest)
   const source = await templateManagedFiles(sourceRoot, productOwnedPaths)
+  const sourceMigrations = await directCoreMigrations(sourceRoot)
+  const productMigrations = await productMigrationPaths(directory, sourceMigrations, manifest)
   const productName = typeof manifest.product?.name === "string" && manifest.product.name.trim() ? manifest.product.name.trim() : path.basename(directory)
   const productSlug = typeof manifest.product?.slug === "string" && manifest.product.slug.trim() ? manifest.product.slug.trim() : slugify(productName)
   const missingContractFiles = CONSUMER_CONTRACT_FILES.filter((relative) => !existsSync(path.join(directory, relative)))
@@ -657,22 +727,49 @@ async function update(options) {
   const replacements = []
   const removals = []
   const conflicts = []
+  const conflictReasons = {}
+  const addConflict = (relative, reason) => {
+    if (!conflicts.includes(relative)) conflicts.push(relative)
+    conflictReasons[relative] = reason
+  }
   const backupName = new Date().toISOString().replace(/[:.]/g, "-")
   const backup = path.join(directory, ".saas-core-backups", backupName)
   for (const [relative, content] of source) {
     const current = path.join(directory, relative)
     const record = previous[relative]
-    if (!existsSync(current)) { additions.push(relative); continue }
+    if (!existsSync(current)) {
+      if (isFlatMigrationPath(relative) && record) addConflict(relative, "Previously Core-managed migration is missing; update will not recreate applied migration history.")
+      else additions.push(relative)
+      continue
+    }
     const currentHash = hash(await readFile(current, "utf8"))
     if (currentHash === hash(content)) continue
-    if (!record || currentHash !== managedHash(record)) { conflicts.push(relative); continue }
+    if (isFlatMigrationPath(relative)) {
+      addConflict(relative, !record
+        ? "Core/Product migration path collision: the consumer already owns this exact path with different content."
+        : "Core-managed migration drift: historical SQL is immutable and cannot be rewritten by update.")
+      continue
+    }
+    if (!record || currentHash !== managedHash(record)) {
+      addConflict(relative, "Core-managed file drift: the consumer changed a file that update would replace.")
+      continue
+    }
     replacements.push(relative)
   }
   for (const relative of Object.keys(previous)) {
     if (source.has(relative) || isProductOwned(relative, productOwnedPaths)) continue
+    if (isMigrationPath(relative)) {
+      const current = path.join(directory, relative)
+      if (!existsSync(current)) addConflict(relative, "Previously managed migration is missing; update will not rewrite migration history.")
+      else if (hash(await readFile(current, "utf8")) !== managedHash(previous[relative])) addConflict(relative, "Core-managed migration drift: historical SQL is immutable and cannot be rewritten by update.")
+      continue
+    }
     const current = path.join(directory, relative)
     if (!existsSync(current)) continue
-    if (hash(await readFile(current, "utf8")) !== managedHash(previous[relative])) { conflicts.push(relative); continue }
+    if (hash(await readFile(current, "utf8")) !== managedHash(previous[relative])) {
+      addConflict(relative, "Core-managed file drift: the consumer changed a file that update would remove.")
+      continue
+    }
     removals.push(relative)
   }
   const packageFile = path.join(directory, "package.json")
@@ -683,9 +780,10 @@ async function update(options) {
     packageChanged = JSON.stringify(currentPackage) !== JSON.stringify(nextPackage)
   }
   const provenanceChanged = Boolean(coreSourceCommit && manifest.coreSourceCommit !== coreSourceCommit)
+  const managedOwnershipChanged = [...source.keys()].some((relative) => !previous[relative])
   const scaffolded = [...(scaffoldProductUsageExtension ? [PRODUCT_USAGE_EXTENSION] : []), ...missingContractFiles]
-  const changed = additions.length + replacements.length + removals.length + scaffolded.length + (packageChanged ? 1 : 0) + (provenanceChanged ? 1 : 0)
-  const report = { dryRun: options.dryRun, targetVersion, updated: [...replacements, ...(packageChanged ? ["package.json"] : [])], added: additions, removed: removals, scaffolded, preserved: conflicts, conflicts, provenance: coreSourceCommit, manifestChanged: provenanceChanged, backup: null }
+  const changed = additions.length + replacements.length + removals.length + scaffolded.length + (packageChanged ? 1 : 0) + (provenanceChanged ? 1 : 0) + (managedOwnershipChanged ? 1 : 0)
+  const report = { dryRun: options.dryRun, targetVersion, updated: [...replacements, ...(packageChanged ? ["package.json"] : [])], added: additions, removed: removals, scaffolded, preserved: conflicts, conflicts, conflictReasons, productMigrationsIgnored: productMigrations, provenance: coreSourceCommit, manifestChanged: provenanceChanged || managedOwnershipChanged, backup: null }
   if (!options.dryRun && conflicts.length) {
     report.errors = ["Update blocked because locally modified Core-managed files require an explicit merge."]
   } else if (!options.dryRun && changed > 0) {
@@ -720,11 +818,11 @@ async function update(options) {
       }
       if (scaffoldProductUsageExtension) await writeApplied(PRODUCT_USAGE_EXTENSION, productUsageExtension)
       for (const relative of missingContractFiles) await writeApplied(relative, contractContents.get(relative))
-      const managedFiles = await managedFilesForConsumer(directory, source)
+      const managedFiles = await managedFilesForUpdate(directory, source, previous)
       const nextManifest = { ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), templateVersion: VERSION, productOwnedPaths, managedFiles, generatedAt: new Date().toISOString() }
       if (coreSourceCommit) nextManifest.coreSourceCommit = coreSourceCommit
       await writeApplied(".saas-core-manifest.json", json(nextManifest))
-      await validateUpdatedConsumer(directory, source, { ...manifest, packageVersions: corePackageVersions() })
+      await validateUpdatedConsumer(directory, source, nextManifest)
       report.backup = backup
     } catch (error) {
       report.errors = [`Update failed: ${error instanceof Error ? error.message : String(error)}`]

@@ -103,15 +103,19 @@ The product journey is:
 flowchart TD
   Init[saas-core init] --> Contract[Read consumer README and AGENTS]
   Contract --> Config[Product config, catalog and usage resolver]
-  Config --> Data[Product migration with workspace_id and RLS]
+  Config --> Data[Flat Product migration with workspace_id and RLS]
   Data --> Routes[Product routes and navigation]
   Routes --> Verify[pnpm verify and saas-core doctor]
   Verify --> Update[diff, dry-run update, controlled migration apply]
 ```
 
 The product owns the domain model, product routes, catalog copy, product
-styles, product migrations and generated Supabase types. Core owns the
-Workspace boundary, authorization primitives and shared management surfaces.
+styles, product migrations and generated Supabase types. New Product
+migrations live directly under `supabase/migrations/`; Core claims only the
+exact migration paths shipped by its source/template. Existing
+`supabase/migrations/product/` files remain preserved as a legacy compatibility
+namespace. Core owns the Workspace boundary, authorization primitives and
+shared management surfaces.
 See [`PRODUCT-INTEGRATION.md`](./PRODUCT-INTEGRATION.md) for the longer
 integration contract.
 
@@ -124,7 +128,8 @@ The important invariants are:
 - the product adds an index for that foreign key;
 - RLS is enabled and policies target `authenticated` explicitly;
 - server authorization and database RLS both protect the row;
-- product migrations live under `supabase/migrations/product/`.
+- new product migrations live directly under `supabase/migrations/`; existing
+  nested `supabase/migrations/product/` files are preserved for compatibility.
 
 The CLI copies migration source but never runs SQL. Apply and verify database
 changes through the consumer's controlled Supabase workflow.

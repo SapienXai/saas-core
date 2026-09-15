@@ -31,7 +31,12 @@ file and is never overwritten by an update.
 Keep Core-owned files and product-owned files separate. A normal product
 extension is not an update conflict. A Core update should report changes to
 authentication, Workspace authorization, billing, delivery, PWA, platform,
-and shared UI files without overwriting product routes or migrations.
+and shared UI files without overwriting product routes or migrations. Core
+migration ownership is exact-path based: the current template plus the
+consumer's managed manifest identify Core SQL, while an unknown flat
+`supabase/migrations/*.sql` file is a preserved Product migration. Product
+migrations may be chronologically interleaved with Core migrations; they do
+not need to move into a nested directory.
 
 Before accepting an update:
 
@@ -106,6 +111,15 @@ updated in `package.json`; the CLI does not rewrite a consumer lockfile, so
 run the consumer package manager without frozen-lockfile mode after an update
 before committing a lockfile change.
 
+For migrations, a new exact Core path is added only when it is absent or
+already contains the same authoritative Core source. A different file already
+occupying that exact path is a hard Core/Product collision. Unknown flat
+Product migrations are reported separately as preserved and are never deleted,
+renamed, retimestamped, or added to the managed manifest. Previously managed
+Core migrations are immutable; historical drift or absence remains an error,
+and new Core schema work must use an additive migration. Legacy nested Product
+migrations remain preserved but are not the recommended layout for new work.
+
 The updater never partially applies a plan when a conflict is present. Its
 failure path restores replaced and removed managed files, `package.json`, and
 `.saas-core-manifest.json`, and removes newly added Core files. A rollback
@@ -170,12 +184,15 @@ they are additive and present in both the repository root and
 `packages/app/template`. Their delivery preserves the schema compatibility
 coordinate `2.0`. Current `main` additionally carries the platform-owner guard
 and fail-closed replacement migration; the exact branch source set is enforced
-by `pnpm core:source-parity`. Product migrations under `supabase/migrations/product/**`
-follow the Core source, add Workspace-scoped tables with RLS, and remain
-product-owned. CLI `init`/`update` and package packing deliver migration source
-only; the consumer controls ordering, SQL application, verification, and any
-rollback of its database state. Never point a clean Core reset at a live
-ReserveVia database, and never rewrite the source product's migration history.
+by `pnpm core:source-parity`. Product migrations under
+`supabase/migrations/*.sql` that are not in the Core source/manifest set follow
+the Core source, add Workspace-scoped tables with RLS, and remain
+product-owned. Existing `supabase/migrations/product/**` files remain
+compatible and product-owned. CLI `init`/`update` and package packing deliver
+migration source only; the consumer controls ordering, SQL application,
+verification, and any rollback of its database state. Never point a clean Core
+reset at a live ReserveVia database, and never rewrite the source product's
+migration history.
 
 The additive `20260914110000_fix_renew_workspace_invitation.sql` migration is
 delivered by the `2.5.0` coordinated Core update. It replaces the published

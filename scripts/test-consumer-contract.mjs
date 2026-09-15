@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import os from "node:os"
@@ -46,8 +46,8 @@ try {
   const agents = await readFile(path.join(product, "AGENTS.md"), "utf8")
   const gitignore = await readFile(path.join(product, ".gitignore"), "utf8")
   assert(readme.startsWith("# Contract Demo\n"), "generated README is not dynamic")
-  for (const phrase of ["pnpm db:start", "pnpm db:types", "billing:sync-catalog", "workspace_id", "source-only"]) assert(readme.includes(phrase), `generated README is missing ${phrase}`)
-  for (const phrase of ["Product implementation rules", "Verification contract", "workspace_id", "server-only", "BEGIN:nextjs-agent-rules"]) assert(agents.includes(phrase), `generated AGENTS.md is missing ${phrase}`)
+  for (const phrase of ["pnpm db:start", "pnpm db:types", "billing:sync-catalog", "workspace_id", "source-only", "supabase/migrations/", "exact migration paths"]) assert(readme.includes(phrase), `generated README is missing ${phrase}`)
+  for (const phrase of ["Product implementation rules", "Verification contract", "workspace_id", "server-only", "BEGIN:nextjs-agent-rules", "unknown flat migrations remain Product-owned"]) assert(agents.includes(phrase), `generated AGENTS.md is missing ${phrase}`)
   for (const phrase of [".next/", ".playwright-cli/", "supabase/.temp/", "*.tgz", "!.env.example"]) assert(gitignore.includes(phrase), `generated .gitignore is missing ${phrase}`)
 
   const packageJson = JSON.parse(await readFile(path.join(product, "package.json"), "utf8"))
@@ -76,6 +76,9 @@ try {
     assert(existsSync(path.join(product, migration)), `consumer is missing Core migration ${migration}`)
   }
 
+  const productMigrationRelative = "supabase/migrations/20990909000000_product-owned-contract-proof.sql"
+  await writeFile(path.join(product, productMigrationRelative), "create table if not exists public.product_owned_contract_proof (id uuid primary key);\n", "utf8")
+
   const doctor = parseJson(run(["doctor", product, "--json"], {
     SUPABASE_URL: "",
     SUPABASE_SERVICE_ROLE_KEY: "",
@@ -83,9 +86,11 @@ try {
   }), "consumer doctor")
   assert(doctor.errors === 0, "fresh consumer doctor reported a structural error")
   assert(doctor.warnings >= 1 && doctor.checks.some((item) => item.category === "DATABASE" && item.status === "WARNING"), "doctor did not distinguish unavailable database credentials as a warning")
+  assert(doctor.checks.some((item) => item.category === "PRODUCT" && item.detail.includes("Product-owned migration(s)")), "fresh doctor did not report the flat Product migration as Product-owned")
 
   const diff = parseJson(run(["diff", product, "--json"]), "consumer diff")
   assert(diff.coreDrift.length === 0 && diff.versionDrift.length === 0 && diff.packageDrift.length === 0 && diff.schemaDrift.length === 0, "fresh consumer has unexpected Core drift")
+  assert(diff.productMigrationsIgnored.includes(productMigrationRelative), "fresh diff did not preserve the flat Product migration")
 
   const ownershipDoc = await readFile(path.join(root, "docs/OWNERSHIP.md"), "utf8")
   for (const relative of [...PRODUCT_PREFIXES, ...PRODUCT_FILES]) assert(ownershipDoc.includes(`\`${relative}`) || ownershipDoc.includes(`\`${relative}**`), `ownership documentation omitted ${relative}`)
