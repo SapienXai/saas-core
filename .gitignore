@@ -1,11 +1,11 @@
-# Environment files and secrets
-.env*
-!.env.example
-
-# Dependencies and build output
+# Dependencies
 node_modules/
-.saas-core-backups/
 .pnpm-store/
+.pnp.*
+.yarn/cache/
+.yarn/install-state.gz
+
+# Framework and build output
 .next/
 .next-e2e/
 out/
@@ -13,27 +13,58 @@ build/
 dist/
 .vercel/
 .turbo/
-coverage/
-output/playwright/
-artifacts/
 *.tsbuildinfo
 
-# Logs and local databases
-*.log
+# Test and browser output
+coverage/
+playwright-report/
+test-results/
+output/playwright/
+.playwright-cli/
+playwright/.cache/
+
+# Local database and runtime state
+supabase/.branches/
+supabase/.temp/
 *.sqlite
 *.sqlite3
 *.db
+*.dump
+*.sql.gz
 
-# Operating system and editor files
+# Package and release artifacts
+artifacts/
+packages/cli/template/
+packages/cli/app-package.json
+*.tgz
+
+# Logs, backups, and temporary files
+*.log
+*.pid
+.saas-core-backups/
+.reference/
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Operating system and editor state
 .DS_Store
 Thumbs.db
+desktop.ini
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Temporary files
-tmp/
-temp/
-*.tmp
-.reference/
+# Environment files and local credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+.env.keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
