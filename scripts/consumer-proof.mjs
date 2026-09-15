@@ -447,14 +447,22 @@ try {
   const productMigrationTable = "product_owned_proof"
   const productMigration = "-- Flat Product-owned migration fixture\ncreate table if not exists public.product_owned_proof (id uuid primary key);\ngrant all on table public.product_owned_proof to service_role;\n"
   writeFileSync(path.join(product, productMigrationRelative), productMigration, "utf8")
+  const nonCanonicalMigrationRelative = "supabase/migrations/foo/20990909000001_unknown-nested.sql"
+  const nonCanonicalMigration = "-- Unsupported nested migration fixture; Core preserves this file without claiming native execution.\n"
+  mkdirSync(path.dirname(path.join(product, nonCanonicalMigrationRelative)), { recursive: true })
+  writeFileSync(path.join(product, nonCanonicalMigrationRelative), nonCanonicalMigration, "utf8")
   if (freshManifest.managedFiles?.[productMigrationRelative]) throw new Error("Fresh flat Product migration was incorrectly recorded as Core-managed.")
+  if (freshManifest.managedFiles?.[nonCanonicalMigrationRelative]) throw new Error("Fresh noncanonical nested migration was incorrectly recorded as Core-managed.")
   run(process.execPath, [packageCli, "doctor", product], root)
   const freshDoctor = JSON.parse(runOutput(process.execPath, [packageCli, "doctor", product, "--json"], root))
   if (freshDoctor.errors !== 0 || !freshDoctor.checks.some((check) => check.category === "PRODUCT" && check.detail.includes("Product-owned migration(s)"))) throw new Error("Fresh doctor did not accept the flat Product migration ownership.")
+  if (!freshDoctor.checks.some((check) => check.category === "MIGRATION" && check.status === "WARNING" && check.detail.includes(nonCanonicalMigrationRelative))) throw new Error("Fresh doctor did not report the noncanonical nested migration warning.")
   const freshDiff = JSON.parse(runOutput(process.execPath, [packageCli, "diff", product, "--json"], root))
   if (freshDiff.coreDrift.length || !freshDiff.productMigrationsIgnored.includes(productMigrationRelative)) throw new Error("Fresh diff did not preserve the flat Product migration ownership.")
+  if (!freshDiff.nonCanonicalMigrations.includes(nonCanonicalMigrationRelative)) throw new Error("Fresh diff did not preserve the noncanonical nested migration.")
   const freshDryRun = JSON.parse(runOutput(process.execPath, [packageCli, "update", product, "--dry-run", "--json"], root))
   if (freshDryRun.productMigrationsIgnored.includes(productMigrationRelative) === false || freshDryRun.added.includes(productMigrationRelative) || freshDryRun.removed.includes(productMigrationRelative)) throw new Error("Fresh update dry-run did not preserve the flat Product migration.")
+  if (!freshDryRun.nonCanonicalMigrations.includes(nonCanonicalMigrationRelative) || freshDryRun.added.includes(nonCanonicalMigrationRelative) || freshDryRun.updated.includes(nonCanonicalMigrationRelative) || freshDryRun.removed.includes(nonCanonicalMigrationRelative)) throw new Error("Fresh update dry-run did not preserve the noncanonical nested migration.")
   configureDisposableSupabase(product, "fresh", await findDisposablePortBase())
   startDisposableSupabase(product)
   run(supabaseBinary, ["db", "reset", "--local", "--workdir", product], product, { SUPABASE_TELEMETRY_DISABLED: "1" })
@@ -559,7 +567,7 @@ try {
   const packageJson = JSON.parse(readFileSync(path.join(relocated, "package.json"), "utf8"))
   const persistedPackage = JSON.stringify(packageJson)
   if (/file:|link:|workspace:|registry\.url|\/Users\/|\/private\//.test(persistedPackage) || persistedPackage.includes(root)) throw new Error("Generated consumer contains a local dependency path.")
-  console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", packedExports: true, packedBillingContract: true, freshConsumer: `${RELEASE_VERSION} / schema ${SCHEMA_VERSION}`, legacyConsumerUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, billingManagedUpdate: true, legacyProductOwnedPreserved: true, consumerIgnorePreserved: true, legacyTypecheck: true, legacyTests: true, legacyBuild: true, configuredShell: true, browserShell: browserShell && relocatedBrowserShell, relocation: true, frozenInstall: true }))
+  console.log(JSON.stringify({ status: "PASS", product: relocated, install: "packed Core through local registry", packedExports: true, packedBillingContract: true, freshConsumer: `${RELEASE_VERSION} / schema ${SCHEMA_VERSION}`, legacyConsumerUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, billingManagedUpdate: true, legacyProductOwnedPreserved: true, nonCanonicalNestedPreserved: true, consumerIgnorePreserved: true, legacyTypecheck: true, legacyTests: true, legacyBuild: true, configuredShell: true, browserShell: browserShell && relocatedBrowserShell, relocation: true, frozenInstall: true }))
 } finally {
   stopDisposableSupabase(product)
   stopDisposableSupabase(packedProduct)

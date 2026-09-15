@@ -22,6 +22,11 @@ export const PRODUCT_PREFIXES = [
 
 export const MIGRATION_PREFIX = "supabase/migrations/"
 export const LEGACY_PRODUCT_MIGRATION_PREFIX = "supabase/migrations/product/"
+export const MIGRATION_LAYOUTS = Object.freeze({
+  FLAT: "flat",
+  LEGACY_PRODUCT: "legacy-product",
+  NONCANONICAL_NESTED: "noncanonical-nested",
+})
 
 export const PRODUCT_FILES = new Set([
   "lib/product-config.ts",
@@ -46,11 +51,23 @@ export function isMigrationPath(relative) {
 }
 
 export function isFlatMigrationPath(relative) {
-  return isMigrationPath(relative) && !relative.startsWith(LEGACY_PRODUCT_MIGRATION_PREFIX)
+  if (!isMigrationPath(relative)) return false
+  return !relative.slice(MIGRATION_PREFIX.length).includes("/")
 }
 
 export function isLegacyProductMigrationPath(relative) {
   return relative.startsWith(LEGACY_PRODUCT_MIGRATION_PREFIX) && relative.endsWith(".sql")
+}
+
+export function isUnsupportedNestedMigrationPath(relative) {
+  return isMigrationPath(relative) && !isFlatMigrationPath(relative) && !isLegacyProductMigrationPath(relative)
+}
+
+export function classifyMigrationLayout(relative) {
+  if (!isMigrationPath(relative)) return null
+  if (isFlatMigrationPath(relative)) return MIGRATION_LAYOUTS.FLAT
+  if (isLegacyProductMigrationPath(relative)) return MIGRATION_LAYOUTS.LEGACY_PRODUCT
+  return MIGRATION_LAYOUTS.NONCANONICAL_NESTED
 }
 
 export function isCoreMigrationPath(relative, coreMigrationPaths = new Set()) {
@@ -58,8 +75,9 @@ export function isCoreMigrationPath(relative, coreMigrationPaths = new Set()) {
 }
 
 export function classifyMigrationPath(relative, coreMigrationPaths = new Set()) {
-  if (!isMigrationPath(relative)) return null
-  if (isLegacyProductMigrationPath(relative)) return "product"
+  const layout = classifyMigrationLayout(relative)
+  if (!layout || layout === MIGRATION_LAYOUTS.NONCANONICAL_NESTED) return layout
+  if (layout === MIGRATION_LAYOUTS.LEGACY_PRODUCT) return "product"
   return isCoreMigrationPath(relative, coreMigrationPaths) ? "core" : "product"
 }
 

@@ -77,11 +77,14 @@ The recipe is intentionally not executed by this CLI.
 
 Core migrations use source-only delivery under `supabase/migrations/`. Core
 owns only the exact migration paths shipped by its template/manifest. Product
-migrations use the same flat directory at paths not claimed by Core and are
-preserved byte-for-byte by Core updates. Existing files under the legacy
-`supabase/migrations/product/` namespace are also preserved, but new files
-should be flat so the standard Supabase CLI executes them normally. The CLI
-never executes SQL, resets a database, or overwrites a product migration.
+migrations use the same direct-child flat directory at paths not claimed by
+Core and are preserved byte-for-byte by Core updates. Existing files under the
+legacy `supabase/migrations/product/` namespace are also preserved, but new
+files should be flat so the standard Supabase CLI executes them normally.
+Arbitrary nested SQL outside that legacy namespace is noncanonical: Core
+preserves it and warns that it may not execute through the normal Supabase
+flow. Non-SQL files are not migrations. The CLI never executes SQL, resets a
+database, or overwrites a product migration.
 
 Use the consumer's controlled workflow:
 
@@ -123,8 +126,10 @@ overwritten by `update`.
   push infrastructure, direct Core migrations and helper scripts.
 - Product-owned: this README, `AGENTS.md`, `.env.example`, product routes,
   catalog, styles, flat product migrations (plus legacy nested migrations),
-  product usage and generated database types. Product migration ownership is
-  based on Core source/manifest identity, not filename words or SQL contents.
+  product usage and generated database types. Arbitrary nested SQL is
+  preserved as noncanonical rather than treated as a native migration. Product
+  migration ownership is based on Core source/manifest identity, not filename
+  words or SQL contents.
 - Mixed: `package.json` keeps the product's name, scripts and dependencies;
   the CLI updates only the four Core package coordinates.
 

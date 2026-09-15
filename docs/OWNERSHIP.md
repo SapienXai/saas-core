@@ -33,7 +33,7 @@ These prefixes and exact paths are the CLI contract:
 | Prefixes | `src/product/`, `app/(product)/`, `app/product/`, `components/product/`, `supabase/migrations/product/` (legacy migration namespace) |
 | Identity and catalog | `lib/product-config.ts`, `product.catalog.json` |
 | Product entry and styling | `app/page.tsx`, `app/manage/page.tsx`, `styles/product-theme.css`, `styles/product.css`, `public/product-*` |
-| Product database inputs | `supabase/migrations/*.sql` paths not claimed by Core, legacy `supabase/migrations/product/**`, `supabase/seed.sql`, `supabase/config.toml` |
+| Product database inputs | Direct-child `supabase/migrations/*.sql` paths not claimed by Core, legacy `supabase/migrations/product/**`, `supabase/seed.sql`, `supabase/config.toml` |
 | Consumer contract | `README.md`, `AGENTS.md`, `.env.example` |
 | Generated schema view | `types/supabase.ts` |
 
@@ -47,9 +47,11 @@ They are not written to the manifest's managed hash set, and product
 migrations remain safe when Core is updated. Product migration ownership is
 not inferred from filename words, SQL contents, timestamps or product names:
 the exact Core source set plus the consumer manifest identify Core migrations;
-every other migration in the consumer namespace is Product-owned. A new Core
-migration colliding with an existing Product file at the exact same path is a
-hard conflict and is never overwritten or adopted.
+every other canonical flat migration and every legacy compatibility migration
+is Product-owned. Arbitrary nested SQL outside the legacy namespace is instead
+noncanonical and preserved with a warning. A new Core migration colliding with
+an existing Product file at the exact same path is a hard conflict and is
+never overwritten or adopted.
 
 ## Migration layout and ownership
 
@@ -70,6 +72,16 @@ identity. An unknown flat `.sql` file is Product-owned, omitted from the
 managed hash set, reported separately as preserved, and never removed by a
 Core update. This remains true whether its timestamp sorts before, between,
 or after Core migrations.
+
+The native flat layout means exactly one direct-child SQL file:
+`supabase/migrations/<filename>.sql`. A path such as
+`supabase/migrations/foo/bar.sql` is not flat and is not assumed to
+participate in normal Supabase migration execution. Core preserves arbitrary
+nested SQL files outside the legacy `supabase/migrations/product/**`
+compatibility namespace, reports them as noncanonical warnings, and never
+adds, moves, renames, executes, or removes them. Files such as
+`supabase/migrations/README.md` are not migrations at all. Ownership
+classification describes update safety; it does not claim database execution.
 
 The older `supabase/migrations/product/**` namespace remains recognized and
 preserved for backward compatibility. It is not the recommended new layout:

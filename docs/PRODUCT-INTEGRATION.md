@@ -26,6 +26,12 @@ legacy `supabase/migrations/product/` namespace is preserved for existing
 consumers, but new migrations should use the flat native directory so normal
 `supabase db reset`/apply commands execute them.
 
+Flat means a direct-child SQL file only: `supabase/migrations/<filename>.sql`.
+Arbitrary nested paths such as `supabase/migrations/foo/bar.sql` are
+noncanonical; Core preserves them and reports a warning, but does not claim
+that the normal Supabase migration flow will execute them. Non-SQL files in
+the migration directory are not migrations.
+
 `lib/product-config.ts` is the current default boundary. The product may
 replace this module at its application boundary. It must not scatter identity
 constants through Core components or server modules.

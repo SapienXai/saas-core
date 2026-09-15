@@ -71,7 +71,10 @@ under `supabase/migrations/`. Apply it once with a product-specific table and
 policy name; the standard Supabase CLI will execute it and Core will preserve
 it during updates. Existing consumers may retain legacy files under
 `supabase/migrations/product/`; Core preserves that namespace but new work
-should use the flat Supabase-native layout.
+should use the flat Supabase-native layout. Flat means a direct-child SQL file
+only; arbitrary nested SQL outside the legacy namespace is noncanonical,
+preserved with a warning, and not assumed to execute through the normal
+Supabase migration flow.
 
 ```sql
 create table public.projects (
@@ -130,7 +133,9 @@ Core migration sources are the exact direct files under
 `supabase/migrations/*.sql` shipped by the application template and CLI.
 Product migrations use the same flat directory but are the direct `.sql` paths
 not claimed by that Core source/manifest set. Existing nested
-`supabase/migrations/product/**` files remain Product-owned for compatibility.
+`supabase/migrations/product/**` files remain Product-owned for compatibility;
+other nested `.sql` paths are noncanonical and are not treated as native
+Product migrations. Non-SQL files in migration directories are not migrations.
 The CLI copies, hashes and compares source; it does not run SQL, reset a
 database or overwrite a Product migration. Ownership and chronological
 Supabase execution are separate concerns: Core and Product files may be

@@ -119,6 +119,12 @@ shared management surfaces.
 See [`PRODUCT-INTEGRATION.md`](./PRODUCT-INTEGRATION.md) for the longer
 integration contract.
 
+Native flat means a direct-child SQL file only:
+`supabase/migrations/<filename>.sql`. Arbitrary nested SQL such as
+`supabase/migrations/foo/bar.sql` is preserved and warned about as
+noncanonical; it is not assumed to execute through the normal Supabase flow.
+Non-SQL files under the migration directory are not migrations.
+
 ## First database change
 
 Use the table recipe in [`DATABASE.md`](./DATABASE.md#product-table-recipe).
@@ -129,7 +135,8 @@ The important invariants are:
 - RLS is enabled and policies target `authenticated` explicitly;
 - server authorization and database RLS both protect the row;
 - new product migrations live directly under `supabase/migrations/`; existing
-  nested `supabase/migrations/product/` files are preserved for compatibility.
+  nested `supabase/migrations/product/` files are preserved for compatibility;
+  other nested SQL is noncanonical and may not execute normally.
 
 The CLI copies migration source but never runs SQL. Apply and verify database
 changes through the consumer's controlled Supabase workflow.

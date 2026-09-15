@@ -36,7 +36,10 @@ migration ownership is exact-path based: the current template plus the
 consumer's managed manifest identify Core SQL, while an unknown flat
 `supabase/migrations/*.sql` file is a preserved Product migration. Product
 migrations may be chronologically interleaved with Core migrations; they do
-not need to move into a nested directory.
+not need to move into a nested directory. Flat means a direct-child SQL file
+only. Arbitrary nested SQL outside the legacy
+`supabase/migrations/product/**` namespace is preserved with a noncanonical
+warning and is not assumed to execute through the normal Supabase flow.
 
 Before accepting an update:
 

@@ -108,10 +108,13 @@ merge, secret changes, or edits to the other consumer.
 The Core migration source is separate from product-owned migrations: any flat
 `supabase/migrations/*.sql` path not claimed by the Core source/manifest is
 Product-owned, while `supabase/migrations/product/**` remains a legacy
-compatibility namespace. A same-path consumer file at the Core source path is
-a conflict and must block before mutation. A failed update must restore the
-package and manifest metadata and remove the newly added Core source; that
-rollback does not apply or reverse SQL in a consumer database.
+compatibility namespace. Only direct-child SQL files are native flat
+migrations; arbitrary nested SQL outside that legacy namespace is preserved as
+noncanonical with a warning and is not assumed to execute through the normal
+Supabase flow. A same-path consumer file at the Core source path is a conflict
+and must block before mutation. A failed update must restore the package and
+manifest metadata and remove the newly added Core source; that rollback does
+not apply or reverse SQL in a consumer database.
 
 Publishing Core `2.4.0` does not mark either checklist complete. ReserveVia and
 PlaceDJ remain separate product-owned migrations and must establish their own

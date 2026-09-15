@@ -223,15 +223,24 @@ try {
   const interleavedProductMigrationRelative = "supabase/migrations/20260910000000_product-owned-between-core.sql"
   const flatProductMigrationAfterRelative = "supabase/migrations/20990909000000_product-owned-proof.sql"
   const legacyProductMigrationRelative = "supabase/migrations/product/20990909000001_legacy-product-owned-proof.sql"
+  const nonCanonicalMigrationRelative = "supabase/migrations/foo/20990909000002_unknown-nested.sql"
+  const deepNonCanonicalMigrationRelative = "supabase/migrations/foo/bar/20990909000003_unknown-deep-nested.sql"
+  const migrationReadmeRelative = "supabase/migrations/README.md"
   const flatProductMigrationContent = "-- Product-owned migration fixture before a later Core migration\ncreate table if not exists public.product_owned_before_core (id uuid primary key);\n"
   const interleavedProductMigrationContent = "-- Product-owned migration fixture between Core migrations\ncreate table if not exists public.product_owned_between_core (id uuid primary key);\n"
   const flatProductMigrationAfterContent = "-- Product-owned migration fixture after the current Core sources\ncreate table if not exists public.product_owned_proof (id uuid primary key);\n"
   const legacyProductMigrationContent = "-- Legacy nested Product migration fixture\ncreate table if not exists public.legacy_product_owned_proof (id uuid primary key);\n"
+  const nonCanonicalMigrationContent = "-- Unsupported nested migration fixture; Core must preserve this file without claiming native execution.\n"
+  const deepNonCanonicalMigrationContent = "-- Unsupported deep nested migration fixture; Core must preserve this file without claiming native execution.\n"
+  const migrationReadmeContent = "Product migration directory notes; this is not SQL.\n"
   for (const [relative, content] of [
     [flatProductMigrationRelative, flatProductMigrationContent],
     [interleavedProductMigrationRelative, interleavedProductMigrationContent],
     [flatProductMigrationAfterRelative, flatProductMigrationAfterContent],
     [legacyProductMigrationRelative, legacyProductMigrationContent],
+    [nonCanonicalMigrationRelative, nonCanonicalMigrationContent],
+    [deepNonCanonicalMigrationRelative, deepNonCanonicalMigrationContent],
+    [migrationReadmeRelative, migrationReadmeContent],
   ]) {
     const file = path.join(cleanProduct, relative)
     await mkdir(path.dirname(file), { recursive: true })
@@ -245,9 +254,14 @@ try {
   assert(result.status === 0, result.stderr || "dry-run failed")
   const dryRun = JSON.parse(result.stdout)
   assert(dryRun.updated.includes("app/error.tsx") && dryRun.updated.includes("package.json") && dryRun.added.includes("app/core-lifecycle-fixture.ts") && billingMigrations.every((migration) => dryRun.added.includes(migration)) && dryRun.removed.includes("app/robots.ts"), "dry-run did not report changed/added/removed managed files, billing migrations, and package drift")
-  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative, legacyProductMigrationRelative]) {
+  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative]) {
     assert(dryRun.productMigrationsIgnored.includes(relative), `dry-run did not classify ${relative} as Product-owned`)
     assert(!dryRun.added.includes(relative) && !dryRun.updated.includes(relative) && !dryRun.removed.includes(relative), `dry-run proposed a Core mutation for Product migration ${relative}`)
+  }
+  assert(dryRun.legacyProductMigrationsIgnored.includes(legacyProductMigrationRelative), "dry-run did not classify the legacy nested migration separately")
+  for (const relative of [nonCanonicalMigrationRelative, deepNonCanonicalMigrationRelative]) {
+    assert(dryRun.nonCanonicalMigrations.includes(relative), `dry-run did not report ${relative} as noncanonical`)
+    assert(!dryRun.added.includes(relative) && !dryRun.updated.includes(relative) && !dryRun.removed.includes(relative), `dry-run proposed a Core mutation for ${relative}`)
   }
   result = run(coreB, ["update", cleanProduct, "--json"])
   assert(result.status === 0, `${result.stderr || result.stdout || "clean update failed"}`)
@@ -260,15 +274,22 @@ try {
     [interleavedProductMigrationRelative, interleavedProductMigrationContent],
     [flatProductMigrationAfterRelative, flatProductMigrationAfterContent],
     [legacyProductMigrationRelative, legacyProductMigrationContent],
+    [nonCanonicalMigrationRelative, nonCanonicalMigrationContent],
+    [deepNonCanonicalMigrationRelative, deepNonCanonicalMigrationContent],
+    [migrationReadmeRelative, migrationReadmeContent],
   ]) assert((await readFile(path.join(cleanProduct, relative), "utf8")) === content, `update changed a product-owned migration: ${relative}`)
   result = run(coreB, ["doctor", cleanProduct, "--json"])
   assert(result.status === 0, result.stderr || "post-update doctor failed")
+  const cleanDoctor = JSON.parse(result.stdout)
+  assert(cleanDoctor.checks.some((check) => check.category === "MIGRATION" && check.status === "WARNING" && check.detail.includes(nonCanonicalMigrationRelative)), "doctor did not report the noncanonical nested migration warning")
   const cleanManifest = JSON.parse(await readFile(path.join(cleanProduct, ".saas-core-manifest.json"), "utf8"))
-  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative, legacyProductMigrationRelative]) assert(!cleanManifest.managedFiles?.[relative], `Product migration was recorded as Core-managed: ${relative}`)
+  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative, legacyProductMigrationRelative, nonCanonicalMigrationRelative, deepNonCanonicalMigrationRelative, migrationReadmeRelative]) assert(!cleanManifest.managedFiles?.[relative], `Product migration was recorded as Core-managed: ${relative}`)
   const cleanDiff = run(coreB, ["diff", cleanProduct, "--json"])
   assert(cleanDiff.status === 0, cleanDiff.stderr || "Product migrations created false diff drift")
   const cleanDiffReport = JSON.parse(cleanDiff.stdout)
-  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative, legacyProductMigrationRelative]) assert(cleanDiffReport.productMigrationsIgnored.includes(relative), `diff did not preserve Product migration classification: ${relative}`)
+  for (const relative of [flatProductMigrationRelative, interleavedProductMigrationRelative, flatProductMigrationAfterRelative]) assert(cleanDiffReport.productMigrationsIgnored.includes(relative), `diff did not preserve Product migration classification: ${relative}`)
+  assert(cleanDiffReport.legacyProductMigrationsIgnored.includes(legacyProductMigrationRelative), "diff did not preserve the legacy nested migration separately")
+  for (const relative of [nonCanonicalMigrationRelative, deepNonCanonicalMigrationRelative]) assert(cleanDiffReport.nonCanonicalMigrations.includes(relative), `diff did not preserve ${relative} as noncanonical`)
 
   const historicalCoreMigration = billingMigrations[billingMigrations.length - 1]
   const historicalCoreFile = path.join(cleanProduct, historicalCoreMigration)
@@ -336,7 +357,7 @@ try {
   result = run(coreA, ["doctor", rollbackProduct, "--json"])
   assert(result.status !== 0 && result.stdout.includes("Required reusable billing migration source is missing"), "doctor did not expose the missing migration source after rollback")
 
-  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, flatProductMigrations: true, interleavedProductMigration: true, legacyNestedProductMigration: true, productMigrationEditsAllowed: true, historicalCoreMigrationImmutable: true, missingHistoricalCoreMigrationBlocked: true, exactPathMigrationCollision: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, productUsageExtension: true, agentSurfaceUpdate: true, billingManagedUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
+  console.log(JSON.stringify({ status: "PASS", localSource: true, cleanUpdate: true, dryRunMatchesApply: true, flatProductMigrations: true, interleavedProductMigration: true, legacyNestedProductMigration: true, nonCanonicalNestedMigration: true, deepNonCanonicalNestedMigration: true, nonSqlMigrationFile: true, productMigrationEditsAllowed: true, historicalCoreMigrationImmutable: true, missingHistoricalCoreMigrationBlocked: true, exactPathMigrationCollision: true, backup: true, conflictPreserved: true, conflictDidNotMutateOthers: true, productOwnedPreserved: true, productUsageExtension: true, agentSurfaceUpdate: true, billingManagedUpdate: true, agentSurfaceVersionUpgrade: `${LEGACY_VERSION} -> ${RELEASE_VERSION}`, agentSurfacePackageMovement: true, agentSurfaceSchemaUnchanged: SCHEMA_VERSION, agentSurfaceConflict: true, rollback: true, rollbackDoctor: true }))
 } finally {
   await rm(fixture, { recursive: true, force: true })
 }

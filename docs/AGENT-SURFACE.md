@@ -218,7 +218,9 @@ Agent Surface browser files and the Core-managed billing sources
 Core-managed template files. The normal manifest/update lifecycle delivers
 them to existing consumers, preserves product-owned paths including flat
 Product migrations not claimed by Core and legacy `supabase/migrations/product/**`, and retains conflict and rollback
-protections. The CLI delivers source and metadata only; consumers apply and
+protections. Only direct-child SQL files are native flat migrations; arbitrary
+nested SQL outside the legacy namespace is preserved and warned about as
+noncanonical. The CLI delivers source and metadata only; consumers apply and
 verify the migration through their own database process while the schema
 compatibility coordinate remains `2.0`.
 

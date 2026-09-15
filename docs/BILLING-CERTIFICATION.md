@@ -121,7 +121,10 @@ boundaries in `.saas-core-manifest.json`. The billing and plan-catalog sources a
 `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` are
 Core-managed; product catalogs, styles, routes, flat Product migrations not
 claimed by Core, legacy `supabase/migrations/product/**`, and domain files are excluded from managed
-replacement. An untouched managed file is backed up and updated. A locally
+replacement. Only direct-child SQL files are native flat migrations; arbitrary
+nested SQL outside the legacy namespace is preserved with a noncanonical
+warning and is not assumed to execute through the normal Supabase flow. An
+untouched managed file is backed up and updated. A locally
 modified managed file, including a same-path consumer file at the Core billing
 migration path, blocks the entire update before mutation and is reported as a
 conflict. An apply or post-update validation failure restores the independent

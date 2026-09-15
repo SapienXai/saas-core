@@ -29,9 +29,9 @@ Product-owned files are:
 - `app/(product)/`, `app/product/`, `components/product/`, `src/product/`
 - `app/page.tsx`, `app/manage/page.tsx`, product styles and
   `public/product-*`
-- flat `supabase/migrations/*.sql` files not claimed by the Core source or
-  manifest, legacy `supabase/migrations/product/**`, `supabase/seed.sql`,
-  `supabase/config.toml`, `types/supabase.ts`
+- direct-child flat `supabase/migrations/*.sql` files not claimed by the Core
+  source or manifest, legacy `supabase/migrations/product/**`,
+  `supabase/seed.sql`, `supabase/config.toml`, `types/supabase.ts`
 
 The generated `.gitignore` is consumer-local operational policy. It is seeded
 from Core but is not a managed hash and is never overwritten by `update`.
@@ -56,8 +56,11 @@ capability instead.
 - Use a new additive timestamped migration directly under
   `supabase/migrations/`. Core claims only exact paths shipped by its source or
   manifest; unknown flat migrations remain Product-owned and are preserved.
-  The CLI delivers source and does not execute SQL. Do not edit historical
-  Core migrations or move/rename existing Product migrations.
+  Arbitrary nested SQL outside `supabase/migrations/product/**` is
+  noncanonical, preserved with a warning, and may not execute through the
+  normal Supabase flow. Non-SQL files are not migrations. The CLI delivers
+  source and does not execute SQL. Do not edit historical Core migrations or
+  move/rename existing Product migrations.
 
 ## Verification contract
 

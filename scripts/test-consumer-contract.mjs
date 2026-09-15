@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import os from "node:os"
@@ -78,6 +78,14 @@ try {
 
   const productMigrationRelative = "supabase/migrations/20990909000000_product-owned-contract-proof.sql"
   await writeFile(path.join(product, productMigrationRelative), "create table if not exists public.product_owned_contract_proof (id uuid primary key);\n", "utf8")
+  const nonCanonicalMigrationRelative = "supabase/migrations/foo/20990909000001_unknown-nested.sql"
+  const deepNonCanonicalMigrationRelative = "supabase/migrations/foo/bar/20990900000002_unknown-deep-nested.sql"
+  const nonCanonicalMigrationContent = "-- Unsupported nested migration fixture; preserved without native execution claims.\n"
+  const deepNonCanonicalMigrationContent = "-- Unsupported deep nested migration fixture; preserved without native execution claims.\n"
+  for (const [relative, content] of [[nonCanonicalMigrationRelative, nonCanonicalMigrationContent], [deepNonCanonicalMigrationRelative, deepNonCanonicalMigrationContent]]) {
+    await mkdir(path.dirname(path.join(product, relative)), { recursive: true })
+    await writeFile(path.join(product, relative), content, "utf8")
+  }
 
   const doctor = parseJson(run(["doctor", product, "--json"], {
     SUPABASE_URL: "",
@@ -87,13 +95,21 @@ try {
   assert(doctor.errors === 0, "fresh consumer doctor reported a structural error")
   assert(doctor.warnings >= 1 && doctor.checks.some((item) => item.category === "DATABASE" && item.status === "WARNING"), "doctor did not distinguish unavailable database credentials as a warning")
   assert(doctor.checks.some((item) => item.category === "PRODUCT" && item.detail.includes("Product-owned migration(s)")), "fresh doctor did not report the flat Product migration as Product-owned")
+  for (const relative of [nonCanonicalMigrationRelative, deepNonCanonicalMigrationRelative]) assert(doctor.checks.some((item) => item.category === "MIGRATION" && item.status === "WARNING" && item.detail.includes(relative)), `fresh doctor did not report ${relative} as a noncanonical nested migration`)
 
   const diff = parseJson(run(["diff", product, "--json"]), "consumer diff")
   assert(diff.coreDrift.length === 0 && diff.versionDrift.length === 0 && diff.packageDrift.length === 0 && diff.schemaDrift.length === 0, "fresh consumer has unexpected Core drift")
   assert(diff.productMigrationsIgnored.includes(productMigrationRelative), "fresh diff did not preserve the flat Product migration")
+  for (const relative of [nonCanonicalMigrationRelative, deepNonCanonicalMigrationRelative]) assert(diff.nonCanonicalMigrations.includes(relative), `fresh diff did not preserve ${relative} as noncanonical`)
+  const dryRun = parseJson(run(["update", product, "--dry-run", "--json"]), "consumer update dry-run")
+  for (const relative of [nonCanonicalMigrationRelative, deepNonCanonicalMigrationRelative]) {
+    assert(dryRun.nonCanonicalMigrations.includes(relative), `fresh update dry-run did not preserve ${relative} as noncanonical`)
+    assert(!dryRun.added.includes(relative) && !dryRun.updated.includes(relative) && !dryRun.removed.includes(relative), `fresh update dry-run proposed a mutation for ${relative}`)
+  }
 
   const ownershipDoc = await readFile(path.join(root, "docs/OWNERSHIP.md"), "utf8")
   for (const relative of [...PRODUCT_PREFIXES, ...PRODUCT_FILES]) assert(ownershipDoc.includes(`\`${relative}`) || ownershipDoc.includes(`\`${relative}**`), `ownership documentation omitted ${relative}`)
+  for (const phrase of ["direct-child", "noncanonical", "not assumed to"]) assert(ownershipDoc.includes(phrase), `ownership documentation is missing ${phrase}`)
   assert((await readFile(path.join(root, "packages/cli/templates/README.md"), "utf8")) === (await readFile(path.join(template, "README.md"), "utf8")), "CLI fallback README drifted from the canonical template")
   assert((await readFile(path.join(root, "packages/cli/templates/AGENTS.md"), "utf8")) === (await readFile(path.join(template, "AGENTS.md"), "utf8")), "CLI fallback AGENTS drifted from the canonical template")
   assert((await readFile(path.join(root, "packages/cli/templates/consumer.gitignore"), "utf8")) === (await readFile(path.join(template, "consumer.gitignore"), "utf8")), "CLI fallback consumer ignore drifted from the canonical template")
