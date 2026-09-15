@@ -189,15 +189,19 @@ domains, Platform Control, and source-derived interaction surfaces. It has a
 generic Workspace plus Projects model and does not require industry-specific
 concepts to boot.
 
-The current runtime is `2.5.0`; the Core schema compatibility coordinate
-remains `2.0`. The release delivers the additive, Core-managed migration
+The coordinated runtime is `2.5.0`; the Core schema compatibility coordinate
+remains `2.0`. The tagged release delivers the additive, Core-managed migration
 sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
 `supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`,
 `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`,
 plus `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`
-from the repository root and `packages/app/template`. Package packing and CLI
-`init`/`update` carry those sources to consumers and never execute SQL.
+from the repository root and `packages/app/template`. Current `main` also
+contains `supabase/migrations/20260830150000_saas_core_platform_user_guards.sql`
+and `supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql`;
+`pnpm core:source-parity` is the exact current-branch source check. Package
+packing and CLI `init`/`update` carry those sources to consumers and never
+execute SQL.
 Consumers apply and verify them through their own controlled migration process.
 Schema metadata lives in `private.core_schema_metadata` and is readable by the
 CLI only through a service-role-only RPC; product catalog changes do not change

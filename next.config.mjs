@@ -5,7 +5,17 @@ const nextConfig = {
   // Keep LAN testing interactive as well as loopback testing. Next's dev
   // asset guard otherwise serves the HTML but blocks the client chunks, which
   // leaves server-rendered buttons without their React event handlers.
-  allowedDevOrigins: ['127.0.0.1', 'localhost', '10.*.*.*', '172.*.*.*', '192.168.*.*', '**.nip.io'],
+  allowedDevOrigins: [
+    '127.0.0.1',
+    'localhost',
+    '10.*.*.*',
+    '172.*.*.*',
+    '192.168.*.*',
+    '**.nip.io',
+    '*.ngrok-free.dev',
+    '*.ngrok.app',
+    '*.ngrok.io',
+  ],
   // Development-only pages and route handlers use a compound extension. They
   // are intentionally invisible to production route discovery and bundling.
   pageExtensions:

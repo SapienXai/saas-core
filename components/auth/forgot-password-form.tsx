@@ -27,7 +27,7 @@ export function ForgotPasswordForm() {
     setSent(true)
   }
 
-  return <AuthShell title={getTranslation("auth.resetTitle")} description={getTranslation("auth.resetDescription")} footer={<Link className="auth-footer-link" href="/login">{getTranslation("auth.backToSignIn")}</Link>}>
+  return <AuthShell showBrand title={getTranslation("auth.resetTitle")} description={getTranslation("auth.resetDescription")} footer={<Link className="auth-footer-link" href="/login">{getTranslation("auth.backToSignIn")}</Link>}>
     {sent && <Alert className="auth-alert auth-success-alert"><AlertDescription>{getTranslation("auth.resetSent")}</AlertDescription></Alert>}
     <form onSubmit={submit} className="auth-form">
       <AuthField id="forgot-email" label={getTranslation("auth.email")}>

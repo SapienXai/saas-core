@@ -48,11 +48,13 @@ function getRoleLabel(role: string, getTranslation: (key: TranslationKey, replac
 
 export function WorkspaceSwitcher({ compact, isDark, logoAsset, onClose, headerAction, canCreateWorkspace, onCreateWorkspace }: WorkspaceSwitcherProps) {
   const { getTranslation } = useLanguage()
-  const { memberships, currentWorkspace } = useManageContext()
+  const { memberships, currentWorkspace, platformRole } = useManageContext()
   const [switchingWorkspaceId, setSwitchingWorkspaceId] = useState<string | null>(null)
 
   const currentWorkspaceId = currentWorkspace?.id || null
-  const currentWorkspaceName = currentWorkspace?.workspace?.name || getTranslation("manage.common.workspaceFallback")
+  const platformOnly = Boolean(platformRole && !currentWorkspace)
+  const currentWorkspaceName = currentWorkspace?.workspace?.name || (platformOnly ? getTranslation("manage.common.allWorkspaces") : getTranslation("manage.common.workspaceFallback"))
+  const scopeLabel = platformOnly ? getTranslation("manage.common.platformScope") : getTranslation("manage.common.currentWorkspace")
   const workspaceOptions = memberships.length > 0
     ? memberships
     : currentWorkspace
@@ -83,7 +85,7 @@ export function WorkspaceSwitcher({ compact, isDark, logoAsset, onClose, headerA
           <div
             role="button"
             tabIndex={0}
-            aria-label={getTranslation("manage.common.currentWorkspace")}
+            aria-label={scopeLabel}
             className={cn(
               "group flex min-w-0 cursor-pointer items-center text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500",
               compact
@@ -100,8 +102,8 @@ export function WorkspaceSwitcher({ compact, isDark, logoAsset, onClose, headerA
               </span>
               {!compact && (
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-bold tracking-tight text-slate-950 dark:text-white">{currentWorkspaceName}</span>
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{getTranslation("manage.common.management")}</span>
+                  <span className="block truncate text-sm font-bold tracking-tight text-slate-950 dark:text-white">{currentWorkspaceName}</span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">{platformOnly ? getTranslation("manage.common.platformManagement") : getTranslation("manage.common.management")}</span>
                 </span>
               )}
             </span>
@@ -125,7 +127,7 @@ export function WorkspaceSwitcher({ compact, isDark, logoAsset, onClose, headerA
       >
         <div className={isDark ? "dark" : undefined}>
           <DropdownMenuLabel className="px-2.5 pb-1 pt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-            {getTranslation("manage.common.workspace")}
+            {platformOnly ? getTranslation("manage.common.platformScope") : getTranslation("manage.common.workspace")}
           </DropdownMenuLabel>
           <div className="space-y-1">
             {workspaceOptions.map((membership) => {

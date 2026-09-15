@@ -16,6 +16,11 @@ payment rollout. The release overview is [RELEASE-2.5.0.md](./RELEASE-2.5.0.md);
 the prior coordinated boundaries remain in [RELEASE-2.4.0.md](./RELEASE-2.4.0.md)
 and [RELEASE-2.3.0.md](./RELEASE-2.3.0.md).
 
+This is tag-level certification evidence for `saas-core-v2.5.0`, not a claim
+about every later commit on `main`. Post-tag runtime, template or migration
+changes require fresh release-gate and certification evidence before being
+called part of a public release.
+
 The audited reference commits are ReserveVia
 `92ffa98dd22e785d90959b292c341de1e57e6873` (`fix(ui): streamline public brand
 booking header`) and PlaceDJ

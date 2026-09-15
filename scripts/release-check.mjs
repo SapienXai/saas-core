@@ -32,10 +32,11 @@ run("catalog contract", ["run", "core:catalog"])
 run("genericity scan", ["run", "core:scan"])
 run("commercial ownership scan", ["run", "core:commercial-scan"])
 run("UI source fidelity", ["run", "core:ui-fidelity"])
+run("root/template source parity", ["run", "core:source-parity"])
+run("fresh consumer contract", ["run", "core:consumer-contract"])
 run("Core lifecycle proof", ["run", "core:lifecycle"])
 run("application build", ["run", "build"], createBuildEnvironment(process.env))
 if (nextEnvBeforeBuild !== null && readFileSync(nextEnvFile, "utf8") !== nextEnvBeforeBuild) writeFileSync(nextEnvFile, nextEnvBeforeBuild, "utf8")
-run("root/template capability parity", ["run", "core:source-parity"])
 run("auth E2E setup", ["run", "auth:e2e"])
 
 if (existsSync(chromium.executablePath())) {

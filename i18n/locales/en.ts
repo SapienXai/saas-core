@@ -15,8 +15,8 @@ export const en = {
     workspaceAccess: "workspace access", wrongAccount: "This invitation was sent to {invited}, but you are signed in as {current}.",
   },
   auth: {
-    alreadyHaveAccount: "Already have an account?", authNavigation: "Authentication navigation", backToSignIn: "Back to sign in", backToWelcome: "Back to welcome", confirmEmail: "Check your email",
-    confirmEmailDescription: "Open the confirmation link to finish creating your account.", confirmEmailDestination: "Confirmation email destination",
+    alreadyHaveAccount: "Already have an account?", authNavigation: "Authentication navigation", backToSignIn: "Back to sign in", backToWelcome: "Back to welcome", confirmEmail: "Check your email", confirmEmailDestination: "Confirmation email destination",
+    confirmEmailDescription: "Open the confirmation link to finish creating your account.",
     confirmPassword: "Confirm password", continueWithGoogle: "Continue with Google", createAccount: "Create an account", dontHaveAccount: "Don’t have an account?",
     creatingAccount: "Creating account…", description: "Your workspace, managed in one place.", divider: "or continue with email",
     email: "Email", footnote: "SAAS CORE · BUILT FOR TEAMS", forgotPassword: "Forgot password?", growConfidence: "One place to manage it all",

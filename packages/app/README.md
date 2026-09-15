@@ -27,3 +27,10 @@ provide their own catalog, provider mapping, and domain usage writes while the
 managed files retain authorization, webhook, recovery, and rollback behavior.
 Product-owned migrations under `supabase/migrations/product/**` remain outside
 the managed template update set and are preserved.
+
+The template also carries the generated consumer contract: a dynamic
+`README.md`, `AGENTS.md`, `.env.example`, lint/Vitest configuration, local type
+generation and server-only catalog synchronization scripts. The CLI renders
+the product name and slug during `init`. Consumer documentation, product
+configuration, product migrations and generated `types/supabase.ts` are
+product-owned after materialization.

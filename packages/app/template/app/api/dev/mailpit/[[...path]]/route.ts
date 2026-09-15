@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server"
 import { getRequestHostname, isDevelopmentTunnelHostname, isLocalDevelopmentHostname, isLoopbackDevelopmentHostname } from "@/lib/domains/hostname"
 
-const DEFAULT_MAILPIT_ORIGIN = "http://127.0.0.1:55524"
+const DEFAULT_MAILPIT_PORT = "55624"
 const MAILPIT_PREFIX = "/api/dev/mailpit"
 const FORWARDED_REQUEST_HEADERS = ["accept", "content-type", "if-modified-since", "if-none-match", "range"]
 const FORWARDED_RESPONSE_HEADERS = ["cache-control", "content-type", "etag", "last-modified"]
 
 type MailpitRouteContext = { params: Promise<{ path?: string[] }> }
 
+function defaultMailpitOrigin() {
+  const configured = Number(process.env.SAAS_CORE_MAILPIT_PORT)
+  const port = Number.isInteger(configured) && configured >= 1024 && configured <= 65535 ? String(configured) : DEFAULT_MAILPIT_PORT
+  return `http://127.0.0.1:${port}`
+}
+
 function getMailpitOrigin() {
   const configured = process.env.SAAS_CORE_MAIL_URL?.trim() || process.env.NEXT_PUBLIC_DEV_MAILPIT_URL?.trim()
-  if (!configured) return DEFAULT_MAILPIT_ORIGIN
+  if (!configured) return defaultMailpitOrigin()
   try {
     const url = new URL(configured)
     if (!isLoopbackDevelopmentHostname(url.hostname)) return null

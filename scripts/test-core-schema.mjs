@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises"
+import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 
 const root = process.cwd()
@@ -23,6 +23,27 @@ const invalidScheduledDowngradeFixPath = path.join(root, "supabase/migrations/20
 const invalidScheduledDowngradeFix = await readFile(invalidScheduledDowngradeFixPath, "utf8")
 const templateInvalidScheduledDowngradeFix = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql"), "utf8")
 const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
+const directMigrationNames = async (directory) => (await readdir(directory, { withFileTypes: true }))
+  .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
+  .map((entry) => entry.name)
+  .sort()
+const rootDirectMigrations = await directMigrationNames(path.join(root, "supabase/migrations"))
+const templateDirectMigrations = await directMigrationNames(path.join(root, "packages/app/template/supabase/migrations"))
+if (JSON.stringify(rootDirectMigrations) !== JSON.stringify(templateDirectMigrations)) throw new Error(`Root/template direct Core migration filename drift: root=${rootDirectMigrations.join(", ")} template=${templateDirectMigrations.join(", ")}`)
+for (const name of rootDirectMigrations) {
+  const rootSource = await readFile(path.join(root, "supabase/migrations", name), "utf8")
+  const templateSource = await readFile(path.join(root, "packages/app/template/supabase/migrations", name), "utf8")
+  if (rootSource !== templateSource) throw new Error(`Root and template direct Core migrations are not byte-for-byte identical: ${name}`)
+}
+const platformGuardMigration = await readFile(path.join(root, "supabase/migrations/20260830150000_saas_core_platform_user_guards.sql"), "utf8")
+for (const contract of [
+  "create or replace function public.prevent_platform_owner_lockout()",
+  "create or replace function public.prevent_platform_control_lockout()",
+  "platform_members_owner_lockout",
+  "platform_user_controls_owner_lockout",
+  "PLATFORM_OWNER_LOCKOUT",
+  "revoke all on function public.prevent_platform_owner_lockout() from public, anon, authenticated",
+]) if (!platformGuardMigration.includes(contract)) throw new Error(`Platform owner guard migration is missing its security contract: ${contract}`)
 if (persistenceMigration !== templatePersistenceMigration) throw new Error("Root and template reusable billing migrations are not byte-for-byte identical.")
 if (entitlementMigration !== templateEntitlementMigration) throw new Error("Root and template entitlement enforcement migrations are not byte-for-byte identical.")
 if (planCatalogMigration !== templatePlanCatalogMigration) throw new Error("Root and template plan catalog migrations are not byte-for-byte identical.")
@@ -173,4 +194,4 @@ const persistenceProductVocabulary = ["rest" + "aurant", "reserv" + "ation", "se
 if (persistenceProductVocabulary.some((term) => persistenceMigration.toLowerCase().includes(term))) {
   throw new Error("The reusable billing persistence migration contains product/provider-specific vocabulary.")
 }
-console.log(`Core schema verified: ${tables.length} baseline tables plus ${persistenceTables.length} durable billing tables and the entitlement lock boundary, RLS enabled, no product tables.`)
+console.log(`Core schema verified: ${tables.length} baseline tables plus ${persistenceTables.length} durable billing tables, ${rootDirectMigrations.length} mirrored migration sources, the platform-owner guard, RLS enabled, no product tables.`)

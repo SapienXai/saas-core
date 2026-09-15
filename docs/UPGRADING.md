@@ -5,18 +5,17 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
-The current coordinated runtime and package release is `2.5.0` on Core schema
-compatibility coordinate `2.0`. It delivers the additive, Core-managed sources
-`supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
-`supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,
-`supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
-`supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql` in
-the repository root and canonical application template. Package packing and
-CLI `init`/`update` deliver the sources but never execute SQL; each consumer
-owns the controlled apply and verification workstream. The Plan Catalog guide
-is shipped in the Core package as `docs/PLAN-CATALOG.md`. The release evidence
-and certification boundary are recorded in
+The current coordinated runtime and package release is tag `saas-core-v2.5.0`
+on Core schema compatibility coordinate `2.0`. Its packed consumer contract
+delivers the additive billing sources listed in
+[`RELEASE-2.5.0.md`](./RELEASE-2.5.0.md), while the checked-out `main` branch
+may contain post-tag changes. In particular, current `main` also carries the
+platform-owner guard and fail-closed scheduled-downgrade replacement in the
+canonical source set; those files are development-branch state until a new
+coordinated release is tagged. Package packing and CLI `init`/`update` deliver
+sources but never execute SQL; each consumer owns the controlled apply and
+verification workstream. The Plan Catalog guide is shipped in the Core package
+as `docs/PLAN-CATALOG.md`. The release evidence and certification boundary are recorded in
 [`RELEASE-2.5.0.md`](./RELEASE-2.5.0.md), with the prior release retained in
 [`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md), and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
@@ -138,7 +137,9 @@ Core-managed billing and plan-catalog sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, plus
 `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`,
-while the Core schema compatibility coordinate stays `2.0`. The CLI copies
+while the Core schema compatibility coordinate stays `2.0`. Current `main`
+also contains the platform-owner guard and fail-closed replacement migration;
+consult `pnpm core:source-parity` for the exact source set. The CLI copies
 the sources, never executes SQL, and leaves the consumer to apply and verify
 them through its own migration process. Validate the normal lifecycle before
 applying them:
@@ -159,7 +160,7 @@ screenshots, or provider credentials between checkouts.
 
 ## Database changes
 
-The baseline migration is clean and independent. The `2.5.0` release carries
+The baseline migration is clean and independent. The tagged `2.5.0` release carries
 the generic, provider-neutral Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
@@ -167,7 +168,9 @@ the generic, provider-neutral Core-managed sources
 `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`;
 they are additive and present in both the repository root and
 `packages/app/template`. Their delivery preserves the schema compatibility
-coordinate `2.0`. Product migrations under `supabase/migrations/product/**`
+coordinate `2.0`. Current `main` additionally carries the platform-owner guard
+and fail-closed replacement migration; the exact branch source set is enforced
+by `pnpm core:source-parity`. Product migrations under `supabase/migrations/product/**`
 follow the Core source, add Workspace-scoped tables with RLS, and remain
 product-owned. CLI `init`/`update` and package packing deliver migration source
 only; the consumer controls ordering, SQL application, verification, and any
@@ -253,7 +256,7 @@ bootstrap or npm Trusted Publishing with OIDC. It verifies fresh registry
 installation and creates the GitHub Release only afterward. Any failed gate
 stops before publication. Delete `NPM_TOKEN` after the first successful
 bootstrap and configure Trusted Publishers for all five packages. The `2.4.0`
-evidence remains the prior release baseline; the `2.5.0` release candidate adds
+evidence remains the prior release baseline; the coordinated `2.5.0` boundary adds
 target-plan downgrade eligibility and confirmation-time revalidation while
 retaining the controlled legacy-consumer upgrade, packed exports, managed
 billing/plan-catalog delivery, product-owned preservation, relocation, and a

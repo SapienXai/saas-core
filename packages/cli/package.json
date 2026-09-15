@@ -6,10 +6,13 @@
   "repository": { "type": "git", "url": "git+https://github.com/SapienXai/saas-core.git" },
   "homepage": "https://github.com/SapienXai/saas-core#readme",
   "type": "module",
+  "schemaVersion": "2.0",
+  "packageManager": "pnpm@11.21.0",
+  "engines": { "node": ">=24.0.0 <25", "pnpm": ">=11.21.0 <12" },
   "bin": {
     "saas-core": "./bin/saas-core.mjs"
   },
-  "files": ["bin", "template", "scripts", "app-package.json", "README.md"],
+  "files": ["bin", "template", "templates", "scripts", "app-package.json", "README.md"],
   "scripts": {
     "prepack": "node scripts/sync-template.mjs",
     "postpack": "node scripts/clean-template.mjs"

@@ -12,7 +12,7 @@ const packageDirectories = {
   "@sapienx/saas-core-app": "packages/app",
   "@sapienx/saas-core-cli": "packages/cli",
 }
-const forbiddenPath = /(?:^|\/)(?:\.git|\.env(?:\.|$)|node_modules|\.next|\.temp|\.branches)(?:\/|$)|(?:^|\/)(?:Users|private)\//
+const forbiddenPath = /(?:^|\/)(?:\.git|\.env(?!\.example(?:\/|$))(?:\.|$)|node_modules|\.next|\.temp|\.branches)(?:\/|$)|(?:^|\/)(?:Users|private)\//
 const forbiddenContent = /(?:workspace:|file:|link:|registry\.url|localhost:\d+|\/Users\/|\/private\/)/
 
 for (const packageName of PACKAGE_NAMES) {
@@ -56,6 +56,7 @@ const managedPlanFiles = [
   "package/template/supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql",
   "package/template/supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql",
   "package/template/supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql",
+  "package/template/supabase/migrations/20260830150000_saas_core_platform_user_guards.sql",
   "package/template/src/product/usage.ts",
   "package/template/app/platform/billing/actions.ts",
   "package/template/app/platform/billing/page.tsx",
@@ -65,6 +66,7 @@ for (const packageName of ["@sapienx/saas-core-app", "@sapienx/saas-core-cli"]) 
   const filename = `${packageName.replace(/^@/, "").replace("/", "-")}-${RELEASE_VERSION}.tgz`
   const listing = execFileSync("tar", ["-tzf", path.join(artifacts, filename)], { encoding: "utf8" })
   for (const relative of managedPlanFiles) if (!listing.includes(`${relative}\n`)) throw new Error(`${filename} is missing managed plan file ${relative}.`)
+  if (!listing.includes("package/template/.env.example\n") || !listing.includes("package/template/README.md\n") || !listing.includes("package/template/AGENTS.md\n")) throw new Error(`${filename} is missing the generated consumer contract templates.`)
 }
 
 const configTarball = path.join(artifacts, `sapienx-saas-core-config-${RELEASE_VERSION}.tgz`)

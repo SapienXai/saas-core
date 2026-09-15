@@ -259,30 +259,22 @@ function scalarPlanKey(value: unknown): string | null {
   return null
 }
 
-/** Resolve the private Core default when PostgREST exposes the helper. */
+/** Resolve the server-controlled Core fallback; never infer it from sort order. */
 export async function getConfiguredDefaultPlanKey(client?: BillingDb): Promise<string> {
   const db = client || createServiceRoleClient()
-  try {
-    const rpc = await (db as any).rpc("core_default_plan_key")
-    const candidate = scalarPlanKey(rpc.data)
-    if (candidate && !rpc.error) {
-      const { data, error } = await (db as any).from("plans").select("key").eq("key", candidate).eq("active", true).maybeSingle()
-      if (!error && data?.key) return String(data.key)
+  for (const functionName of ["get_core_default_plan_key", "core_default_plan_key"]) {
+    try {
+      const rpc = await (db as any).rpc(functionName)
+      const candidate = scalarPlanKey(rpc.data)
+      if (candidate && !rpc.error) {
+        const { data, error } = await (db as any).from("plans").select("key").eq("key", candidate).eq("active", true).maybeSingle()
+        if (!error && data?.key) return String(data.key)
+      }
+    } catch {
+      // Older deployments may not expose this server-only helper.
     }
-  } catch {
-    // Older deployments may not expose private functions through PostgREST.
   }
-  const { data, error } = await (db as any)
-    .from("plans")
-    .select("key")
-    .eq("active", true)
-    .order("sort_order", { ascending: true })
-    .order("key", { ascending: true })
-    .limit(1)
-    .maybeSingle()
-  if (error) throw new Error(error.message)
-  if (!data?.key) throw new Error("No active fallback plan is configured.")
-  return String(data.key)
+  throw new Error("The configured fallback plan could not be verified.")
 }
 
 export const getConfiguredFallbackPlanKey = getConfiguredDefaultPlanKey

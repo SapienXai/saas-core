@@ -3,10 +3,15 @@ import { isDevelopmentTunnelHostname, isLocalDevelopmentHostname, isLoopbackDeve
 export const DEV_MAILPIT_PROXY_PATH = "/api/dev/mailpit"
 const DEFAULT_MAILPIT_PORT = "55624"
 
+function mailpitPort() {
+  const configured = Number(process.env.SAAS_CORE_MAILPIT_PORT)
+  return Number.isInteger(configured) && configured >= 1024 && configured <= 65535 ? String(configured) : DEFAULT_MAILPIT_PORT
+}
+
 function localMailpitOrigin(hostname: string) {
   const reachableHost = toReachableDevelopmentHostname(hostname)
   const host = reachableHost.includes(":") ? `[${reachableHost}]` : reachableHost
-  return `http://${host}:${DEFAULT_MAILPIT_PORT}`
+  return `http://${host}:${mailpitPort()}`
 }
 
 /**

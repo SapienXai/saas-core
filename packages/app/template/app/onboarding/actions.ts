@@ -15,6 +15,10 @@ export async function createWorkspace(input: { name?: string; slug?: string }, m
     const memberships = await getWorkspaceMemberships(access.userId)
     const service = createServiceRoleClient() as any
     const { data: existingOwned } = await service.from("workspaces").select("id, slug").eq("created_by", access.userId).eq("status", "active").order("created_at", { ascending: true }).limit(1).maybeSingle()
+
+    // The initial Core flow is idempotent. A member or owner who revisits the
+    // URL must continue to the app, while additional workspaces remain an
+    // explicit in-app action.
     if (mode === "initial" && (memberships.memberships[0] || existingOwned)) {
       const current = (memberships.memberships[0] || existingOwned) as any
       const workspaceId = current.workspace_id || current.id
@@ -39,7 +43,7 @@ export async function createWorkspace(input: { name?: string; slug?: string }, m
       if (error?.message?.includes("WORKSPACE_LIMIT_NOT_CONFIGURED")) return { success: false as const, message: "Your product catalog must explicitly configure the workspace limit before another workspace can be created." }
       if (error?.message?.includes("PLAN_NOT_CONFIGURED")) return { success: false, message: "Workspace plans are not configured yet." }
       return { success: false, message: error?.message || "Workspace could not be created." }
-      }
+    }
     const workspace = data[0] as { workspace_id: string; workspace_slug: string }
     const cookieStore = await cookies()
     cookieStore.set("saas_core_workspace_id", workspace.workspace_id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 90, path: "/" })

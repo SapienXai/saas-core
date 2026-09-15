@@ -1,7 +1,11 @@
 # Consumer migration follow-ups
 
-These checklists are the remaining work for the audited consumers after the
-SaaS Core `2.4.0` packaging checkpoint. The release delivers the additive,
+These checklists are the remaining work for the audited consumers from the
+SaaS Core `2.4.0` packaging checkpoint. They are a historical consumer
+workstream, not certification of the current `main` branch. The coordinated
+`2.5.0` release and current source boundary are documented in
+[`RELEASE-2.5.0.md`](./RELEASE-2.5.0.md) and [`START-HERE.md`](./START-HERE.md).
+The release delivers the additive,
 Core-managed source
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,

@@ -31,8 +31,10 @@ const coreSource = await readFile(path.join(root, "packages/core/src/index.ts"),
 if (!coreSource.includes(`CORE_VERSION = "${RELEASE_VERSION}"`) || !coreSource.includes(`CORE_SCHEMA_VERSION = "${SCHEMA_VERSION}"`)) throw new Error("Core runtime/schema constants do not match the release coordinates.")
 const coreManifest = await json("packages/core/manifest.json")
 if (coreManifest.version !== RELEASE_VERSION) throw new Error("Core manifest version does not match the release coordinate.")
+const cliManifest = await json("packages/cli/package.json")
+if (cliManifest.version !== RELEASE_VERSION || cliManifest.schemaVersion !== SCHEMA_VERSION) throw new Error("CLI package version/schema metadata does not match the release coordinates.")
 const cliSource = await readFile(path.join(root, "packages/cli/bin/saas-core.mjs"), "utf8")
-if (!cliSource.includes(`const VERSION = "${RELEASE_VERSION}"`) || !cliSource.includes(`const SCHEMA_VERSION = "${SCHEMA_VERSION}"`)) throw new Error("CLI runtime/schema constants do not match the release coordinates.")
+if (!cliSource.includes("CLI_PACKAGE.version") || !cliSource.includes("CLI_PACKAGE.schemaVersion")) throw new Error("CLI must derive runtime/schema coordinates from its package metadata.")
 const uiSource = await readFile(path.join(root, "packages/ui/src/index.ts"), "utf8")
 if (!uiSource.includes(`UI_SYSTEM_VERSION = "${RELEASE_VERSION}"`)) throw new Error("UI system version does not match the release coordinate.")
 

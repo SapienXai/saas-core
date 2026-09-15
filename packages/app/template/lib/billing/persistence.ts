@@ -202,7 +202,10 @@ function resultRow<T>(data: unknown, error: { message: string } | null, operatio
   return row as T
 }
 
-export async function upsertBillingProviderAccount(input: UpsertBillingProviderAccountInput, client?: BillingDatabaseClient): Promise<BillingProviderAccount> {
+export async function upsertBillingProviderAccount(
+  input: UpsertBillingProviderAccountInput,
+  client?: BillingDatabaseClient,
+): Promise<BillingProviderAccount> {
   const db = database(client) as any
   const workspaceId = textValue(input.workspaceId, "workspaceId")
   const provider = textValue(input.provider, "provider")
@@ -210,12 +213,32 @@ export async function upsertBillingProviderAccount(input: UpsertBillingProviderA
   const providerAccountId = textValue(input.providerAccountId, "providerAccountId")
   const providerCustomerId = input.providerCustomerId == null ? null : textValue(input.providerCustomerId, "providerCustomerId")
   const metadata = objectValue(input.metadata, "metadata")
-  const { data, error } = await db.rpc("upsert_billing_provider_account", { target_workspace_id: workspaceId, target_provider: provider, target_environment: environment, target_provider_account_id: providerAccountId, target_provider_customer_id: providerCustomerId, target_metadata: metadata })
+  const { data, error } = await db.rpc("upsert_billing_provider_account", {
+    target_workspace_id: workspaceId,
+    target_provider: provider,
+    target_environment: environment,
+    target_provider_account_id: providerAccountId,
+    target_provider_customer_id: providerCustomerId,
+    target_metadata: metadata,
+  })
   const row = resultRow<Record<string, unknown>>(data, error, "upsertBillingProviderAccount")
-  return { id: String(row.account_id), workspace_id: String(row.workspace_id), provider: String(row.provider), environment: String(row.environment), provider_account_id: String(row.provider_account_id), provider_customer_id: row.provider_customer_id == null ? null : String(row.provider_customer_id), metadata: row.metadata as Json, created_at: String(row.created_at), updated_at: String(row.updated_at) }
+  return {
+    id: String(row.account_id),
+    workspace_id: String(row.workspace_id),
+    provider: String(row.provider),
+    environment: String(row.environment),
+    provider_account_id: String(row.provider_account_id),
+    provider_customer_id: row.provider_customer_id == null ? null : String(row.provider_customer_id),
+    metadata: row.metadata as Json,
+    created_at: String(row.created_at),
+    updated_at: String(row.updated_at),
+  }
 }
 
-export async function recordBillingWebhookEvent(input: RecordBillingWebhookEventInput, client?: BillingDatabaseClient): Promise<BillingWebhookEvent> {
+export async function recordBillingWebhookEvent(
+  input: RecordBillingWebhookEventInput,
+  client?: BillingDatabaseClient,
+): Promise<BillingWebhookEvent> {
   const db = database(client) as any
   const provider = textValue(input.provider, "provider")
   const environment = environmentValue(input.environment)
@@ -226,46 +249,137 @@ export async function recordBillingWebhookEvent(input: RecordBillingWebhookEvent
   const maxAttempts = input.maxAttempts ?? 8
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) throw new Error("maxAttempts must be between 1 and 20.")
   const payload = objectValue(input.payload, "payload")
-  const { error: insertError } = await db.from("billing_webhook_events").upsert({ provider, environment, provider_event_id: providerEventId, event_type: eventType, occurred_at: occurredAt, provider_object_id: input.providerObjectId ?? null, workspace_id: input.workspaceId ?? null, payload, ...(receivedAt ? { received_at: receivedAt } : {}), max_attempts: maxAttempts }, { onConflict: "provider,environment,provider_event_id", ignoreDuplicates: true })
+  const { error: insertError } = await db
+    .from("billing_webhook_events")
+    .upsert({
+      provider,
+      environment,
+      provider_event_id: providerEventId,
+      event_type: eventType,
+      occurred_at: occurredAt,
+      provider_object_id: input.providerObjectId ?? null,
+      workspace_id: input.workspaceId ?? null,
+      payload,
+      ...(receivedAt ? { received_at: receivedAt } : {}),
+      max_attempts: maxAttempts,
+    }, { onConflict: "provider,environment,provider_event_id", ignoreDuplicates: true })
   if (insertError) throw new Error(`recordBillingWebhookEvent: ${insertError.message}`)
-  const { data, error } = await db.from("billing_webhook_events").select("*").eq("provider", provider).eq("environment", environment).eq("provider_event_id", providerEventId).single()
+  const { data, error } = await db
+    .from("billing_webhook_events")
+    .select("*")
+    .eq("provider", provider)
+    .eq("environment", environment)
+    .eq("provider_event_id", providerEventId)
+    .single()
   if (error) throw new Error(`recordBillingWebhookEvent: ${error.message}`)
   return data as BillingWebhookEvent
 }
 
-export async function claimBillingWebhookEvent(input: ClaimBillingWebhookEventInput, client?: BillingDatabaseClient): Promise<BillingWebhookClaim> {
+export async function claimBillingWebhookEvent(
+  input: ClaimBillingWebhookEventInput,
+  client?: BillingDatabaseClient,
+): Promise<BillingWebhookClaim> {
   const db = database(client) as any
   const eventId = textValue(input.eventId, "eventId")
   const leaseToken = textValue(input.leaseToken || randomUUID(), "leaseToken")
   const leaseSeconds = input.leaseSeconds ?? 300
   if (!Number.isSafeInteger(leaseSeconds) || leaseSeconds < 1 || leaseSeconds > 3600) throw new Error("leaseSeconds must be between 1 and 3600.")
-  const { data, error } = await db.rpc("claim_billing_webhook_event", { target_event_id: eventId, target_lease_token: leaseToken, target_lease_seconds: leaseSeconds, target_allow_reclaim: input.allowReclaim ?? false, target_now: isoValue(input.now || new Date(), "now") })
+  const now = isoValue(input.now || new Date(), "now")
+  const { data, error } = await db.rpc("claim_billing_webhook_event", {
+    target_event_id: eventId,
+    target_lease_token: leaseToken,
+    target_lease_seconds: leaseSeconds,
+    target_allow_reclaim: input.allowReclaim ?? false,
+    target_now: now,
+  })
   return resultRow<BillingWebhookClaim>(data, error, "claimBillingWebhookEvent")
 }
 
-export async function finalizeBillingWebhookEvent(input: FinalizeBillingWebhookEventInput, client?: BillingDatabaseClient): Promise<BillingWebhookFinalization> {
+export async function finalizeBillingWebhookEvent(
+  input: FinalizeBillingWebhookEventInput,
+  client?: BillingDatabaseClient,
+): Promise<BillingWebhookFinalization> {
   const db = database(client) as any
-  const { data, error } = await db.rpc("finalize_billing_webhook_event", { target_event_id: textValue(input.eventId, "eventId"), target_lease_token: textValue(input.leaseToken, "leaseToken"), target_status: input.status, target_error_code: input.errorCode ?? null, target_error_message: input.errorMessage ?? null, target_next_attempt_at: isoValue(input.nextAttemptAt, "nextAttemptAt", true), target_now: isoValue(input.now || new Date(), "now") })
+  const eventId = textValue(input.eventId, "eventId")
+  const leaseToken = textValue(input.leaseToken, "leaseToken")
+  const now = isoValue(input.now || new Date(), "now")
+  const nextAttemptAt = isoValue(input.nextAttemptAt, "nextAttemptAt", true)
+  const { data, error } = await db.rpc("finalize_billing_webhook_event", {
+    target_event_id: eventId,
+    target_lease_token: leaseToken,
+    target_status: input.status,
+    target_error_code: input.errorCode ?? null,
+    target_error_message: input.errorMessage ?? null,
+    target_next_attempt_at: nextAttemptAt,
+    target_now: now,
+  })
   return resultRow<BillingWebhookFinalization>(data, error, "finalizeBillingWebhookEvent")
 }
 
-export async function recordBillingMutationTransition(input: RecordBillingMutationTransitionInput, client?: BillingDatabaseClient): Promise<BillingMutationTransitionResult> {
+export async function recordBillingMutationTransition(
+  input: RecordBillingMutationTransitionInput,
+  client?: BillingDatabaseClient,
+): Promise<BillingMutationTransitionResult> {
   const db = database(client) as any
+  const mutationId = textValue(input.mutationId, "mutationId")
+  const workspaceId = textValue(input.workspaceId, "workspaceId")
+  const provider = textValue(input.provider, "provider")
+  const environment = environmentValue(input.environment)
+  const transitionKey = textValue(input.transitionKey, "transitionKey")
   const maxAttempts = input.maxAttempts ?? 3
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) throw new Error("maxAttempts must be between 1 and 20.")
-  const { data, error } = await db.rpc("record_billing_mutation_transition", { target_mutation_id: textValue(input.mutationId, "mutationId"), target_workspace_id: textValue(input.workspaceId, "workspaceId"), target_provider: textValue(input.provider, "provider"), target_environment: environmentValue(input.environment), target_transition_key: textValue(input.transitionKey, "transitionKey"), target_kind: input.kind, target_state: input.state ?? "pending", target_from_plan_key: input.fromPlanKey ?? null, target_to_plan_key: input.toPlanKey ?? null, target_effective_at: isoValue(input.effectiveAt, "effectiveAt", true), target_provider_reference: input.providerReference ?? null, target_outcome: objectValue(input.outcome, "outcome"), target_max_attempts: maxAttempts })
+  const { data, error } = await db.rpc("record_billing_mutation_transition", {
+    target_mutation_id: mutationId,
+    target_workspace_id: workspaceId,
+    target_provider: provider,
+    target_environment: environment,
+    target_transition_key: transitionKey,
+    target_kind: input.kind,
+    target_state: input.state ?? "pending",
+    target_from_plan_key: input.fromPlanKey ?? null,
+    target_to_plan_key: input.toPlanKey ?? null,
+    target_effective_at: isoValue(input.effectiveAt, "effectiveAt", true),
+    target_provider_reference: input.providerReference ?? null,
+    target_outcome: objectValue(input.outcome, "outcome"),
+    target_max_attempts: maxAttempts,
+  })
   return resultRow<BillingMutationTransitionResult>(data, error, "recordBillingMutationTransition")
 }
 
-export async function updateBillingMutationTransition(input: UpdateBillingMutationTransitionInput, client?: BillingDatabaseClient): Promise<BillingMutationTransitionUpdate> {
+export async function updateBillingMutationTransition(
+  input: UpdateBillingMutationTransitionInput,
+  client?: BillingDatabaseClient,
+): Promise<BillingMutationTransitionUpdate> {
   const db = database(client) as any
-  const { data, error } = await db.rpc("update_billing_mutation_transition", { target_transition_id: textValue(input.transitionId, "transitionId"), target_state: input.state, target_outcome: input.outcome == null ? null : objectValue(input.outcome, "outcome"), target_error_code: input.errorCode ?? null, target_error_message: input.errorMessage ?? null, target_provider_reference: input.providerReference ?? null, target_expected_state: input.expectedState ?? null, target_next_attempt_at: isoValue(input.nextAttemptAt, "nextAttemptAt", true), target_now: isoValue(input.now || new Date(), "now") })
+  const transitionId = textValue(input.transitionId, "transitionId")
+  const { data, error } = await db.rpc("update_billing_mutation_transition", {
+    target_transition_id: transitionId,
+    target_state: input.state,
+    target_outcome: input.outcome == null ? null : objectValue(input.outcome, "outcome"),
+    target_error_code: input.errorCode ?? null,
+    target_error_message: input.errorMessage ?? null,
+    target_provider_reference: input.providerReference ?? null,
+    target_expected_state: input.expectedState ?? null,
+    target_next_attempt_at: isoValue(input.nextAttemptAt, "nextAttemptAt", true),
+    target_now: isoValue(input.now || new Date(), "now"),
+  })
   return resultRow<BillingMutationTransitionUpdate>(data, error, "updateBillingMutationTransition")
 }
 
-export async function consumeBillingTransition(input: ConsumeBillingTransitionInput, client?: BillingDatabaseClient): Promise<BillingTransitionConsumptionResult> {
+export async function consumeBillingTransition(
+  input: ConsumeBillingTransitionInput,
+  client?: BillingDatabaseClient,
+): Promise<BillingTransitionConsumptionResult> {
   const db = database(client) as any
-  const { data, error } = await db.rpc("consume_billing_transition", { target_workspace_id: textValue(input.workspaceId, "workspaceId"), target_user_id: textValue(input.userId, "userId"), target_transition_id: textValue(input.transitionId, "transitionId"), target_now: isoValue(input.now || new Date(), "now") })
+  const workspaceId = textValue(input.workspaceId, "workspaceId")
+  const userId = textValue(input.userId, "userId")
+  const transitionId = textValue(input.transitionId, "transitionId")
+  const { data, error } = await db.rpc("consume_billing_transition", {
+    target_workspace_id: workspaceId,
+    target_user_id: userId,
+    target_transition_id: transitionId,
+    target_now: isoValue(input.now || new Date(), "now"),
+  })
   return resultRow<BillingTransitionConsumptionResult>(data, error, "consumeBillingTransition")
 }
 

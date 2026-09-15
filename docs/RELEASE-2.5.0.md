@@ -1,10 +1,10 @@
-# SaaS Core 2.5.0 release candidate
+# SaaS Core 2.5.0 coordinated release boundary
 
-This release candidate prepares the downgrade-hardening work introduced after
-the `0bc930f` Core baseline for a coordinated SaaS Core `2.5.0` release. The
-runtime, five package manifests, managed application template, and CLI share
-the `2.5.0` coordinate. Core schema compatibility intentionally remains `2.0`;
-no schema-coordinate bump is required for this additive policy layer.
+The tagged coordinated release uses runtime/package coordinate `2.5.0` and
+Core schema compatibility coordinate `2.0`. The tag is the release anchor;
+the checked-out `main` branch may contain post-tag fixes and developer
+experience changes that are not part of the immutable tag. Confirm the exact
+package, source and registry identity before calling a build a public release.
 
 ## Highlights
 
@@ -26,6 +26,10 @@ no schema-coordinate bump is required for this additive policy layer.
   migration sources, including
   `20260914110000_fix_renew_workspace_invitation.sql` and
   `20260914185445_scheduled_downgrade_consumption_ceiling.sql`.
+- The current root/template source set also mirrors the platform-owner lockout
+  guard and the additive fail-closed scheduled-downgrade replacement:
+  `20260830150000_saas_core_platform_user_guards.sql` and
+  `20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql`.
 
 ## Package versions
 
@@ -48,6 +52,12 @@ consumer migration. The managed set includes:
 - `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`
 - `supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`
 - `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`
+- `supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql`
+
+The baseline, deferred-onboarding and platform-owner guard migrations are also
+direct Core sources in the canonical template. The full current list is
+checked by `pnpm core:source-parity`; this release note retains the billing
+focus of the `2.5.0` boundary.
 
 Products define their own commercial limits and product usage resolvers. A
 consumer must apply and verify these sources through its controlled database
@@ -56,6 +66,8 @@ contract before offering an explicit downgrade.
 
 ## Scope
 
-This is a SaaS Core release candidate only. It does not publish, push, tag,
-deploy, or modify PlaceDJ or ReserveVia, and it does not define consumer
-commercial limits or apply consumer migrations.
+This document describes the coordinated `2.5.0` release boundary; it does not
+publish, push, tag, deploy, or modify PlaceDJ or ReserveVia. The checked-out
+`main` branch contains post-tag source-parity and fail-closed fixes that remain
+unreleased until a new coordinated tag is created. This document does not
+define consumer commercial limits or apply consumer migrations.

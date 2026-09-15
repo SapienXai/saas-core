@@ -47,3 +47,12 @@ routes, product-owned migrations under `supabase/migrations/product/**`, and
 domain files remain product-owned. A same-path local file at the Core migration
 path blocks the update before mutation, and a failed update restores package
 and manifest metadata while removing newly added Core files.
+
+`init` also creates runnable consumer scripts for local Supabase start/stop/
+reset, generated database types, catalog sync (with `.env.local` support),
+lint, typecheck, tests, build and `verify`. It writes a product-specific
+`README.md` and `AGENTS.md`; those files plus `.env.example` and generated
+`types/supabase.ts` are explicitly product-owned and are never overwritten by
+`update`. The executable ownership list is
+`packages/cli/bin/ownership.mjs`, which is also used by the root/template
+parity check.

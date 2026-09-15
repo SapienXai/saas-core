@@ -99,7 +99,7 @@ export function SignupForm() {
   }
 
   return (
-    <AuthShell title={getTranslation("auth.signUpTitle")} description={getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })} footer={!confirmationMessage && <span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
+    <AuthShell showBrand title={getTranslation("auth.signUpTitle")} description={getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })} footer={!confirmationMessage && <span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
       {error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>}
       {confirmationMessage ? (
         <section className="auth-confirmation" aria-live="polite">
@@ -137,8 +137,8 @@ export function SignupForm() {
             <AuthField id="signup-confirmation" label={getTranslation("auth.confirmPassword")}>
               <PasswordField id="signup-confirmation" name="password_confirmation" label={getTranslation("auth.confirmPassword")} placeholder={getTranslation("auth.passwordPlaceholder")} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} autoComplete="new-password" minLength={8} required />
             </AuthField>
-            <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
             <Button type="submit" loading={submitting} disabled={!hydrated} className="auth-primary-button">{submitting ? getTranslation("auth.creatingAccount") : getTranslation("auth.createAccountAction")}</Button>
+            <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
           </form>
         </div>
       )}

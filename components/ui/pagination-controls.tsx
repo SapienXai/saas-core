@@ -45,7 +45,7 @@ export function PaginationControls({
   const getPageNumbers = () => {
     const pages: (number | 'ellipsis')[] = []
     const maxVisiblePages = 5
-    
+
     if (totalPages <= maxVisiblePages) {
       // Show all pages if total is small
       for (let i = 1; i <= totalPages; i++) {
@@ -54,31 +54,31 @@ export function PaginationControls({
     } else {
       // Always show first page
       pages.push(1)
-      
+
       if (currentPage > 3) {
         pages.push('ellipsis')
       }
-      
+
       // Show pages around current page
       const start = Math.max(2, currentPage - 1)
       const end = Math.min(totalPages - 1, currentPage + 1)
-      
+
       for (let i = start; i <= end; i++) {
         if (!pages.includes(i)) {
           pages.push(i)
         }
       }
-      
+
       if (currentPage < totalPages - 2) {
         pages.push('ellipsis')
       }
-      
+
       // Always show last page
       if (!pages.includes(totalPages)) {
         pages.push(totalPages)
       }
     }
-    
+
     return pages
   }
 
@@ -125,7 +125,7 @@ export function PaginationControls({
           {startIndex + 1}-{endIndex} of {totalItems}
         </span>
       </div>
-      
+
       <div className="flex flex-col space-y-3 md:flex-row md:items-center md:space-x-6 md:space-y-0">
         {showItemsPerPage && onItemsPerPageChange && (
           <div className="flex items-center justify-center space-x-2 md:justify-start">
@@ -144,16 +144,16 @@ export function PaginationControls({
             </Select>
           </div>
         )}
-        
+
         <Pagination>
           <PaginationContent className="gap-1 md:gap-1">
             <PaginationItem>
-              <PaginationPrevious 
+              <PaginationPrevious
                 onClick={() => canGoPrevious && onPageChange(currentPage - 1)}
                 className={!canGoPrevious ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
               />
             </PaginationItem>
-            
+
             {/* Show fewer page numbers on mobile */}
             {getPageNumbers().map((page, index) => (
               <PaginationItem key={index} className="hidden sm:block">
@@ -170,16 +170,16 @@ export function PaginationControls({
                 )}
               </PaginationItem>
             ))}
-            
+
             {/* Mobile: Show current page info */}
             <PaginationItem className="sm:hidden">
               <span className="flex h-9 w-auto min-w-[3rem] items-center justify-center px-2 text-sm">
                 {currentPage}/{totalPages}
               </span>
             </PaginationItem>
-            
+
             <PaginationItem>
-              <PaginationNext 
+              <PaginationNext
                 onClick={() => canGoNext && onPageChange(currentPage + 1)}
                 className={!canGoNext ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
               />
