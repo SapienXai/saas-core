@@ -12,8 +12,19 @@ const packageDirectories = {
   "@sapienx/saas-core-app": "packages/app",
   "@sapienx/saas-core-cli": "packages/cli",
 }
-const forbiddenPath = /(?:^|\/)(?:\.git|\.env(?!\.example(?:\/|$))(?:\.|$)|node_modules|\.next|\.temp|\.branches)(?:\/|$)|(?:^|\/)(?:Users|private)\//
+const forbiddenPathRules = [
+  { pattern: /(?:^|\/)(?:\.git|\.github|\.env(?!\.example(?:\/|$))(?:\.|$)|\.npmrc|node_modules|\.next|\.temp|\.branches|\.turbo|\.cache)(?:\/|$)/, reason: "repository, local environment, or build state" },
+  { pattern: /(?:^|\/)(?:coverage|playwright-report|test-results|output|artifacts|\.playwright-cli|local-registry|package-inspection|consumer-proof)(?:\/|$)/, reason: "test, browser, package, or registry runtime output" },
+  { pattern: /(?:^|\/)(?:Users|private)\//, reason: "machine-local absolute path" },
+  { pattern: /(?:^|\/)[^/]+\.(?:tgz|log|pid|sqlite|sqlite3|db|dump|sql\.gz)$/i, reason: "local artifact, log, or database file" },
+  { pattern: /(?:^|\/)(?:screenshots?|traces?|videos?)(?:\/|$)/i, reason: "browser evidence output" },
+]
 const forbiddenContent = /(?:workspace:|file:|link:|registry\.url|localhost:\d+|\/Users\/|\/private\/)/
+const intentionalTestFiles = new Set([
+  "package/template/i18n/config.test.ts",
+  "package/template/test/server-only-shim.ts",
+])
+const sourceMapPackages = new Set(["@sapienx/saas-core", "@sapienx/saas-core-config", "@sapienx/saas-core-ui"])
 
 for (const packageName of PACKAGE_NAMES) {
   const directory = packageDirectories[packageName]
@@ -29,9 +40,17 @@ for (const packageName of PACKAGE_NAMES) {
   const dependencyValues = Object.values({ ...packageJson.dependencies, ...packageJson.devDependencies, ...packageJson.optionalDependencies, ...packageJson.peerDependencies })
   if (dependencyValues.some((value) => typeof value === "string" && forbiddenContent.test(value))) throw new Error(`${filename} contains a local/workspace dependency reference.`)
   const listing = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8" }).split("\n").filter(Boolean)
-  if (listing.some((entry) => forbiddenPath.test(entry))) throw new Error(`${filename} contains a forbidden path.`)
+  for (const { pattern, reason } of forbiddenPathRules) {
+    const offending = listing.find((entry) => pattern.test(entry))
+    if (offending) throw new Error(`${filename} contains ${reason}: ${offending}`)
+  }
   const files = listing.filter((entry) => entry.startsWith("package/")).map((entry) => entry.slice("package/".length))
   if (!files.includes("package.json") || !files.includes("README.md")) throw new Error(`${filename} is missing package metadata.`)
+  const packagedTests = files.filter((relative) => /(?:^|\/)(?:test|tests|e2e)(?:\/|$)|\.test\.(?:c|m)?[jt]sx?$/.test(relative))
+  const unexpectedTests = packagedTests.filter((relative) => !intentionalTestFiles.has(`package/${relative}`))
+  if (unexpectedTests.length) throw new Error(`${filename} contains unapproved test files: ${unexpectedTests.join(", ")}`)
+  const sourceMaps = files.filter((relative) => relative.endsWith(".map"))
+  if (sourceMaps.length && !sourceMapPackages.has(packageName)) throw new Error(`${filename} contains source maps outside the explicit package source-map allowlist: ${sourceMaps.join(", ")}`)
   if (forbiddenContent.test(JSON.stringify(packageJson))) throw new Error(`${filename} contains a local path, registry URL, or workspace protocol.`)
 }
 
@@ -66,7 +85,7 @@ for (const packageName of ["@sapienx/saas-core-app", "@sapienx/saas-core-cli"]) 
   const filename = `${packageName.replace(/^@/, "").replace("/", "-")}-${RELEASE_VERSION}.tgz`
   const listing = execFileSync("tar", ["-tzf", path.join(artifacts, filename)], { encoding: "utf8" })
   for (const relative of managedPlanFiles) if (!listing.includes(`${relative}\n`)) throw new Error(`${filename} is missing managed plan file ${relative}.`)
-  if (!listing.includes("package/template/.env.example\n") || !listing.includes("package/template/README.md\n") || !listing.includes("package/template/AGENTS.md\n")) throw new Error(`${filename} is missing the generated consumer contract templates.`)
+  if (!listing.includes("package/template/.env.example\n") || !listing.includes("package/template/README.md\n") || !listing.includes("package/template/AGENTS.md\n") || !listing.includes("package/template/consumer.gitignore\n")) throw new Error(`${filename} is missing the generated consumer contract templates.`)
 }
 
 const configTarball = path.join(artifacts, `sapienx-saas-core-config-${RELEASE_VERSION}.tgz`)

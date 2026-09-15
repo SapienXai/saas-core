@@ -15,6 +15,8 @@ const nextEnvFile = "next-env.d.ts"
 const nextEnvBeforeBuild = existsSync(nextEnvFile) ? readFileSync(nextEnvFile, "utf8") : null
 
 run("frozen install", ["install", "--frozen-lockfile"])
+run("repository hygiene", ["run", "repo:hygiene"])
+run("repository hygiene failure-path test", ["run", "repo:hygiene:test"])
 run("release metadata", ["run", "release:metadata"])
 run("release workflow contract", ["run", "release:workflow-contract"])
 run("release environment isolation", ["run", "release:environment"])
