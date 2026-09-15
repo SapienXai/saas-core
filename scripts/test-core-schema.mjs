@@ -22,6 +22,9 @@ const templateScheduledDowngradeCeiling = await readFile(path.join(root, "packag
 const invalidScheduledDowngradeFixPath = path.join(root, "supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql")
 const invalidScheduledDowngradeFix = await readFile(invalidScheduledDowngradeFixPath, "utf8")
 const templateInvalidScheduledDowngradeFix = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql"), "utf8")
+const scheduledProviderPriceTrustPath = path.join(root, "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql")
+const scheduledProviderPriceTrust = await readFile(scheduledProviderPriceTrustPath, "utf8")
+const templateScheduledProviderPriceTrust = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260915120000_scheduled_provider_price_trust.sql"), "utf8")
 const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
 const directMigrationNames = async (directory) => (await readdir(directory, { withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
@@ -50,6 +53,7 @@ if (planCatalogMigration !== templatePlanCatalogMigration) throw new Error("Root
 if (invitationRenewalFix !== templateInvitationRenewalFix) throw new Error("Root and template invitation renewal fix migrations are not byte-for-byte identical.")
 if (scheduledDowngradeCeiling !== templateScheduledDowngradeCeiling) throw new Error("Root and template scheduled downgrade ceiling migrations are not byte-for-byte identical.")
 if (invalidScheduledDowngradeFix !== templateInvalidScheduledDowngradeFix) throw new Error("Root and template invalid scheduled downgrade fix migrations are not byte-for-byte identical.")
+if (scheduledProviderPriceTrust !== templateScheduledProviderPriceTrust) throw new Error("Root and template scheduled provider price trust migrations are not byte-for-byte identical.")
 const tables = [
   "plans", "workspaces", "workspace_members", "workspace_invitations", "workspace_subscriptions",
   "workspace_usage_periods", "billing_provider_prices", "billing_webhook_events", "billing_checkout_sessions",
@@ -168,6 +172,9 @@ if (!invalidScheduledDowngradeFix.includes("create or replace function public.lo
 }
 if (invalidScheduledDowngradeFix.includes("20260914185445_scheduled_downgrade_consumption_ceiling.sql")) {
   throw new Error("The invalid scheduled downgrade fix must remain an additive SQL replacement, not an in-place migration edit.")
+}
+if (!scheduledProviderPriceTrust.includes("pg_advisory_xact_lock") || !scheduledProviderPriceTrust.includes("scheduled_target_provider_valid") || !scheduledProviderPriceTrust.includes("candidate_provider_price_id = subscription_row.scheduled_provider_price_id") || !scheduledProviderPriceTrust.includes("interval_change")) {
+  throw new Error("Scheduled provider price trust migration is missing the dual-price fail-closed policy or interval transition schema.")
 }
 if (scheduledDowngradeCeiling.toLowerCase().includes("rest" + "aurant") || scheduledDowngradeCeiling.toLowerCase().includes("reserv" + "ation")) {
   throw new Error("The scheduled downgrade entitlement migration contains product-domain vocabulary.")

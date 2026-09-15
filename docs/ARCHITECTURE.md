@@ -197,8 +197,9 @@ sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
 `supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`,
 plus `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql`
 from the repository root and `packages/app/template`. Current `main` also
-contains `supabase/migrations/20260830150000_saas_core_platform_user_guards.sql`
-and `supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql`;
+contains `supabase/migrations/20260830150000_saas_core_platform_user_guards.sql`,
+`supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql`,
+and `supabase/migrations/20260915120000_scheduled_provider_price_trust.sql`;
 `pnpm core:source-parity` is the exact current-branch source check. Package
 packing and CLI `init`/`update` carry those sources to consumers and never
 execute SQL.

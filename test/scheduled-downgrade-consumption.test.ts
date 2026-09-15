@@ -29,9 +29,10 @@ type FixtureOptions = {
   members?: number
   pendingInvitations?: number
   targetLimits?: Record<string, number | null>
+  providerMappings?: Array<{ plan_key: string; provider_price_id: string; active?: boolean }>
 }
 
-function createService({ workspaceId, subscription, usage = 0, members = 0, pendingInvitations = 0, targetLimits }: FixtureOptions) {
+function createService({ workspaceId, subscription, usage = 0, members = 0, pendingInvitations = 0, targetLimits, providerMappings = [] }: FixtureOptions) {
   const plans = [
     { key: "free", name: "Free", sort_order: 0, active: true, features: {}, limits: { venues: 1, "core.members": 2 }, metadata: {} },
     { key: "starter", name: "Starter", sort_order: 5, active: true, features: {}, limits: targetLimits || { venues: 1, "core.members": 2 }, metadata: {} },
@@ -49,6 +50,10 @@ function createService({ workspaceId, subscription, usage = 0, members = 0, pend
         if (table === "workspace_members") return { data: null, count: members, error: null }
         if (table === "workspace_invitations") return { data: null, count: pendingInvitations, error: null }
         if (table === "workspace_usage_periods") return { data: { usage: { venues: usage } }, error: null }
+        if (table === "billing_provider_prices") {
+          const match = providerMappings.find((mapping) => mapping.plan_key === filters.get("plan_key") && mapping.provider_price_id === filters.get("provider_price_id") && mapping.active !== false)
+          return { data: match ? { provider_price_id: match.provider_price_id } : null, error: null }
+        }
         if (table === "plans" && filters.has("in:key")) return { data: plans.filter((plan) => (filters.get("in:key") as string[]).includes(plan.key)), error: null }
         if (table === "plans") return { data: plans.find((plan) => plan.key === filters.get("key")) || null, error: null }
         return { data: null, error: null }
@@ -146,6 +151,63 @@ describe("scheduled downgrade consumption ceiling", () => {
       constrainedByScheduledPlan: true,
       scheduledPlanKey: "starter",
     })
+  })
+
+  it("accepts a mapped future target price while keeping the current paid plan authoritative", async () => {
+    const workspaceId = "scheduled-downgrade-target-price-workspace"
+    installFixture({
+      workspaceId,
+      subscription: subscription({
+        source: "paddle",
+        provider: "paddle",
+        provider_environment: "sandbox",
+        provider_customer_id: "cus_fixture",
+        provider_subscription_id: "sub_fixture",
+        provider_price_id: "pri_starter",
+        current_period_end_at: "2099-02-01T00:00:00.000Z",
+        scheduled_plan_key: "starter",
+        scheduled_plan_at: "2099-01-01T00:00:00.000Z",
+        scheduled_effective_at: "2099-01-01T00:00:00.000Z",
+        scheduled_provider_price_id: "pri_starter",
+      }),
+      providerMappings: [
+        { plan_key: "pro", provider_price_id: "pri_pro" },
+        { plan_key: "starter", provider_price_id: "pri_starter" },
+      ],
+    })
+
+    const entitlements = await getWorkspaceEntitlements(workspaceId)
+    expect(entitlements.planKey).toBe("pro")
+    expect(entitlements.features.venues).toBe(true)
+    expect(entitlements.scheduledPlan?.key).toBe("starter")
+    expect(entitlements.subscription.billingIssueCode).toBeNull()
+  })
+
+  it("resolves the mapped target plan after the scheduled boundary", async () => {
+    const workspaceId = "scheduled-downgrade-boundary-workspace"
+    installFixture({
+      workspaceId,
+      subscription: subscription({
+        source: "paddle",
+        provider: "paddle",
+        provider_environment: "sandbox",
+        provider_customer_id: "cus_fixture_boundary",
+        provider_subscription_id: "sub_fixture_boundary",
+        provider_price_id: "pri_starter",
+        scheduled_plan_key: "starter",
+        scheduled_plan_at: "2020-01-01T00:00:00.000Z",
+        scheduled_effective_at: "2020-01-01T00:00:00.000Z",
+        scheduled_provider_price_id: "pri_starter",
+      }),
+      providerMappings: [
+        { plan_key: "starter", provider_price_id: "pri_starter" },
+      ],
+    })
+
+    const entitlements = await getWorkspaceEntitlements(workspaceId)
+    expect(entitlements.planKey).toBe("starter")
+    expect(entitlements.subscription.billingIssueCode).toBeNull()
+    expect(entitlements.scheduledPlan).toBeNull()
   })
 
   it("fails closed when a pending scheduled target cannot be resolved", async () => {

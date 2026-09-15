@@ -379,6 +379,54 @@ export function resolveEffectiveEntitlementPlan(input: EffectiveEntitlementPlanI
 
 export const resolveEffectiveEntitlements = resolveEffectiveEntitlementPlan
 
+export type ProviderPriceTrust = "current" | "scheduled-target"
+
+export type ProviderPriceTrustInput = EffectiveEntitlementPlanInput & {
+  activeProviderPriceMapped: boolean
+  scheduledTargetActive?: boolean
+  scheduledTargetProviderPriceMapped?: boolean
+  scheduledProviderPriceId?: string | null
+}
+
+/**
+ * A provider can expose the future target price before the local entitlement
+ * boundary. Accept that observation only when the target mapping is complete;
+ * otherwise keep the paid projection fail-closed. The caller still decides
+ * which local plan remains effective and which consumption ceiling applies.
+ */
+export function resolveProviderPriceTrust(input: ProviderPriceTrustInput): ProviderPriceTrust | null {
+  if (!hasTrustedProviderProjection(input)) return null
+
+  const action = textValue(input.scheduledChangeAction)
+  if (action === "cancel" || action === "pause" || action === "resume") {
+    return input.activeProviderPriceMapped ? "current" : null
+  }
+  if (action) return null
+
+  const hasScheduledPriceProjection = [input.scheduledPlanKey, input.scheduledPlanAt, input.scheduledProviderPriceId]
+    .some((value) => value !== undefined && value !== null)
+  if (!hasScheduledPriceProjection) return input.activeProviderPriceMapped ? "current" : null
+
+  // A plan-price transition is the only schedule that may accept the target
+  // provider price early. Unknown actions and incomplete future boundaries are
+  // not provider evidence and must never grant paid access.
+  const scheduledPlanKey = validPlanKey(input.scheduledPlanKey)
+  const scheduledAt = textValue(input.scheduledPlanAt)
+  const scheduledProviderPriceId = textValue(input.scheduledProviderPriceId)
+  const pendingTargetIsValid = Boolean(
+    scheduledPlanKey &&
+    scheduledAt &&
+    scheduledProviderPriceId &&
+    isScheduledPlanPending(scheduledAt, effectiveNow(input.now)) &&
+    input.scheduledTargetActive === true &&
+    input.scheduledTargetProviderPriceMapped === true,
+  )
+  if (!pendingTargetIsValid) return null
+
+  if (input.activeProviderPriceMapped) return "current"
+  return textValue(input.providerPriceId) === scheduledProviderPriceId ? "scheduled-target" : null
+}
+
 type SubscriptionRecord = {
   workspace_id: string
   plan_key: string
@@ -557,28 +605,68 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
   })
   let providerMappingUnavailable = false
   if (resolvedKey && resolvedKey !== fallback && !subscription.override_id && subscription.source !== "manual") {
+    const provider = textValue(subscription.provider)
+    const providerEnvironment = textValue(subscription.provider_environment)
+    const providerPriceId = textValue(subscription.provider_price_id)
     const scheduledAt = textValue(subscription.scheduled_plan_at)
-    const providerPriceId = subscription.scheduled_plan_key === resolvedKey && isScheduledPlanEffective(scheduledAt, now)
-      ? textValue(subscription.scheduled_provider_price_id)
-      : textValue(subscription.provider_price_id)
-    if (!textValue(subscription.provider) || !textValue(subscription.provider_environment) || !providerPriceId) {
-      resolvedKey = fallback
-      providerMappingUnavailable = true
-    } else {
-      const { data: providerMapping, error: providerMappingError } = await service
+    const scheduledPlanKey = validPlanKey(subscription.scheduled_plan_key)
+    const scheduledProviderPriceId = textValue(subscription.scheduled_provider_price_id)
+    const scheduledAction = textValue(subscription.scheduled_change_action)
+    const pendingPriceTransition = Boolean(
+      scheduledPlanKey &&
+      scheduledAt &&
+      isScheduledPlanPending(scheduledAt, now) &&
+      !["cancel", "pause", "resume"].includes(scheduledAction || ""),
+    )
+    const effectiveProviderPriceId = scheduledPlanKey === resolvedKey && isScheduledPlanEffective(scheduledAt, now)
+      ? scheduledProviderPriceId
+      : providerPriceId
+    const findActiveMapping = async (planKey: string | null, priceId: string | null) => {
+      if (!provider || !providerEnvironment || !planKey || !priceId) return null
+      const { data, error: mappingError } = await service
         .from("billing_provider_prices")
         .select("provider_price_id")
-        .eq("provider", subscription.provider)
-        .eq("environment", subscription.provider_environment)
-        .eq("plan_key", resolvedKey)
-        .eq("provider_price_id", providerPriceId)
+        .eq("provider", provider)
+        .eq("environment", providerEnvironment)
+        .eq("plan_key", planKey)
+        .eq("provider_price_id", priceId)
         .eq("active", true)
         .maybeSingle()
-      if (providerMappingError) throw new Error(providerMappingError.message)
-      if (!providerMapping) {
-        resolvedKey = fallback
-        providerMappingUnavailable = true
-      }
+      if (mappingError) throw new Error(mappingError.message)
+      return data
+    }
+
+    const activeProviderMapping = await findActiveMapping(resolvedKey, effectiveProviderPriceId)
+    const scheduledTargetMapping = pendingPriceTransition
+      ? await findActiveMapping(scheduledPlanKey, scheduledProviderPriceId)
+      : null
+    const providerPriceTrust = pendingPriceTransition
+      ? resolveProviderPriceTrust({
+          source: textValue(subscription.source),
+          provider,
+          providerEnvironment,
+          providerCustomerId: textValue(subscription.provider_customer_id),
+          providerSubscriptionId: textValue(subscription.provider_subscription_id),
+          providerPriceId,
+          scheduledPlanKey,
+          scheduledPlanAt: scheduledAt,
+          scheduledChangeAction: scheduledAction,
+          scheduledProviderPriceId,
+          scheduledTargetActive: Boolean(scheduledPlanKey && activePlans.some((item: any) => item.key === scheduledPlanKey)),
+          activeProviderPriceMapped: Boolean(activeProviderMapping),
+          scheduledTargetProviderPriceMapped: Boolean(scheduledTargetMapping),
+          currentPeriodEndAt: textValue(subscription.current_period_end_at) || textValue(subscription.current_period_end),
+          status: textValue(subscription.status),
+          subscriptionPlanKey: textValue(subscription.plan_key),
+          fallbackPlanKey: fallback,
+          now,
+        })
+      : activeProviderMapping
+        ? "current"
+        : null
+    if (!providerPriceTrust) {
+      resolvedKey = fallback
+      providerMappingUnavailable = true
     }
   }
   // An inactive/removed subscription target or override must never make the
@@ -589,7 +677,7 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
   const scheduledPlanKey = validPlanKey(subscription.scheduled_plan_key)
   const scheduledPlanAt = textValue(subscription.scheduled_plan_at)
   const scheduledChangeAt = textValue(subscription.scheduled_change_at) || textValue(subscription.scheduled_effective_at)
-  const scheduledIsVisible = !subscription.grace_expired && status !== "paused" && status !== "canceled" && isScheduledPlanPending(scheduledPlanAt, now)
+  const scheduledIsVisible = !providerMappingUnavailable && !subscription.grace_expired && status !== "paused" && status !== "canceled" && isScheduledPlanPending(scheduledPlanAt, now)
   const scheduled = scheduledIsVisible && scheduledPlanKey && scheduledPlanAt
     ? activePlans.find((item: any) => item.key === scheduledPlanKey)
     : null
@@ -643,6 +731,9 @@ function getScheduledConsumptionState(entitlements: WorkspaceEntitlements, now: 
   const scheduledPlanKey = validPlanKey(subscription.scheduledPlanKey)
   const scheduledPlanAt = subscription.scheduledPlanAt || entitlements.scheduledPlan?.effectiveAt || null
   const scheduledPlan = entitlements.scheduledPlan
+  if (subscription.billingIssueCode === "invalid_provider_mapping") {
+    return { mode: "none", scheduledPlanKey: null, scheduledPlan: null }
+  }
   if (!scheduledPlanKey || !isScheduledPlanPending(scheduledPlanAt, now)) {
     return { mode: "none", scheduledPlanKey: null, scheduledPlan: null }
   }

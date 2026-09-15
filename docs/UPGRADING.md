@@ -191,6 +191,13 @@ downgrade. Scheduled cancellation, pause, and resume retain current-plan
 limits until their lifecycle boundary. It is source delivery only; consumers
 apply and verify it through their normal migration workflow.
 
+The additive `20260915120000_scheduled_provider_price_trust.sql` migration
+hardens future provider-price transitions. It accepts only the current mapped
+price or an exact active target mapping, keeps the current plan effective until
+the boundary, preserves the transactional entitlement lock, and adds the
+`interval_change` transition kind. It is source delivery only and remains
+compatible with schema coordinate `2.0`.
+
 For every schema update:
 
 1. reset local Supabase from zero;

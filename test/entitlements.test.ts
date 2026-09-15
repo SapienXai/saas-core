@@ -11,6 +11,7 @@ import {
   normalizeFeatures,
   normalizeLimits,
   normalizeUsage,
+  resolveProviderPriceTrust,
   resolveEffectiveEntitlementPlan,
   resolveEffectivePlanKey,
 } from "../lib/entitlements"
@@ -71,6 +72,43 @@ describe("workspace entitlement policy", () => {
       status: "active",
       source: "manual",
     })).toBe("paid")
+  })
+
+  it("accepts only the current or an exact future target provider price", () => {
+    const base = {
+      source: "paddle",
+      provider: "paddle",
+      providerEnvironment: "sandbox",
+      providerCustomerId: "cus_fixture",
+      providerSubscriptionId: "sub_fixture",
+      subscriptionPlanKey: "pro",
+      fallbackPlanKey: "free",
+      status: "active",
+      providerPriceId: "pri_current",
+      scheduledPlanKey: "starter",
+      scheduledPlanAt: "2099-01-01T00:00:00.000Z",
+      scheduledProviderPriceId: "pri_target",
+      scheduledTargetActive: true,
+      scheduledTargetProviderPriceMapped: true,
+      activeProviderPriceMapped: true,
+      now: new Date("2026-09-15T12:00:00.000Z"),
+    } as const
+    const fixtures = [
+      ["current price + future valid downgrade", "current", base],
+      ["target price + future valid downgrade", "scheduled-target", { ...base, providerPriceId: "pri_target", activeProviderPriceMapped: false }],
+      ["third provider price", null, { ...base, providerPriceId: "pri_third", activeProviderPriceMapped: false }],
+      ["missing target mapping", null, { ...base, scheduledTargetProviderPriceMapped: false }],
+      ["inactive target", null, { ...base, scheduledTargetActive: false }],
+      ["malformed future date", null, { ...base, scheduledPlanAt: "not-a-date" }],
+      ["scheduled upgrade", "current", { ...base, scheduledPlanKey: "business" }],
+      ["cancellation", "current", { ...base, scheduledPlanKey: null, scheduledPlanAt: null, scheduledProviderPriceId: null, scheduledChangeAction: "cancel" }],
+      ["undo", "current", { ...base, scheduledPlanKey: null, scheduledPlanAt: null, scheduledProviderPriceId: null }],
+    ] as const
+
+    for (const [label, expected, input] of fixtures) {
+      expect(resolveProviderPriceTrust(input), label).toBe(expected)
+    }
+    expect(resolveEffectiveEntitlementPlan({ ...base, scheduledPlanAt: "2026-09-15T12:00:00.000Z" })).toBe("starter")
   })
 
   it("falls back when a paid projection has crossed its local billing period", () => {

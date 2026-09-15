@@ -13,7 +13,7 @@ const turkishTranslations: Record<string, string> = {
   "Notifications": "Bildirimler", "Enable notifications": "Bildirimleri etkinleştir", "Disable notifications": "Bildirimleri devre dışı bırak",
   "Management App": "Yönetim uygulaması", "Install App": "Uygulamayı yükle", "Save branding": "Marka ayarlarını kaydet",
   "Accept invitation": "Daveti kabul et", "Join {workspace}": "{workspace} alanına katıl", "Joining…": "Katılınıyor…", "workspace access": "çalışma alanı erişimi",
-  "Billing details": "Fatura bilgileri", "Billing cycle": "Faturalandırma dönemi", "Monthly": "Aylık", "Annual": "Yıllık", "Change plan": "Planı değiştir",
+  "Billing details": "Fatura bilgileri", "Billing cycle": "Faturalandırma dönemi", "Monthly": "Aylık", "Annual": "Yıllık", "Change plan": "Planı değiştir", "Change billing cycle to {interval}?": "Faturalandırma dönemini {interval} olarak değiştir?", "Review the billing impact before confirming. Your plan and access stay in place.": "Onaylamadan önce faturalandırma etkisini inceleyin. Planınız ve erişiminiz korunur.", "Change the current billing cycle without changing your plan.": "Planınızı değiştirmeden mevcut faturalandırma dönemini değiştirin.", "Switch to {interval}": "{interval} faturalandırmaya geç",
   "Upgrade your plan": "Planınızı yükseltin", "Manage billing": "Faturalandırmayı yönet", "Payment method": "Ödeme yöntemi", "Invoices": "Faturalar",
 }
 

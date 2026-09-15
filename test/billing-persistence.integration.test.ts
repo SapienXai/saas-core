@@ -123,8 +123,8 @@ integration("durable billing persistence against Supabase", () => {
     const mutation = await service!.from("billing_mutations").insert({ workspace_id: workspaceId, request_key: `fixture-request-${Date.now()}-key`, operation: "plan_change", status: "pending" }).select("id").single()
     if (mutation.error || !mutation.data) throw mutation.error || new Error("Could not create mutation fixture.")
     const key = `transition-${Date.now()}`
-    const created = await recordBillingMutationTransition({ mutationId: mutation.data.id, workspaceId, provider: "fixture", environment: "sandbox", transitionKey: key, kind: "upgrade", toPlanKey: "fixture-plan", outcome: { status: "pending" } }, service! as any)
-    const duplicate = await recordBillingMutationTransition({ mutationId: mutation.data.id, workspaceId, provider: "fixture", environment: "sandbox", transitionKey: key, kind: "upgrade", state: "failed", outcome: { status: "failed" } }, service! as any)
+    const created = await recordBillingMutationTransition({ mutationId: mutation.data.id, workspaceId, provider: "fixture", environment: "sandbox", transitionKey: key, kind: "interval_change", toPlanKey: "fixture-plan", outcome: { status: "pending" } }, service! as any)
+    const duplicate = await recordBillingMutationTransition({ mutationId: mutation.data.id, workspaceId, provider: "fixture", environment: "sandbox", transitionKey: key, kind: "interval_change", state: "failed", outcome: { status: "failed" } }, service! as any)
     expect(created.inserted).toBe(true)
     expect(duplicate.inserted).toBe(false)
     expect(duplicate.state).toBe("pending")

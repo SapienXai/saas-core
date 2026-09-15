@@ -88,4 +88,43 @@ describe("canonical billing lifecycle", () => {
     expect(() => validatePaddleSubscriptionShape({ ...subscription, items: [] })).toThrow(/exactly one recurring item/)
     expect(() => validatePaddleSubscriptionShape({ ...subscription, items: [{ ...subscription.items[0], productId: "other" }] })).not.toThrow()
   })
+
+  it("keeps the current plan when reconciliation observes a mapped future target price", () => {
+    const targetMapping = { ...mapping, plan_key: "target", provider_price_id: "pri-target", billing_interval: "year" as const }
+    const current = {
+      plan_key: "paid",
+      billing_interval: "month",
+      billing_currency: "USD",
+      scheduled_plan_key: "target",
+      scheduled_plan_at: "2026-10-01T00:00:00Z",
+      scheduled_effective_at: "2026-10-01T00:00:00Z",
+      scheduled_plan_interval: "year",
+      scheduled_provider_price_id: "pri-target",
+    }
+    const pending = projectCanonicalSubscription({
+      eventId: "evt-target-price",
+      occurredAt: "2026-09-15T00:00:00Z",
+      subscription: { ...subscription, items: [{ priceId: "pri-target", productId: "pro-1", quantity: 1 }] },
+      mapping: targetMapping,
+      fallbackPlanKey: "workspace",
+      current,
+      now: new Date("2026-09-20T00:00:00Z"),
+    })
+    expect(pending.planKey).toBe("paid")
+    expect(pending.billingInterval).toBe("month")
+    expect(pending.scheduledPlanKey).toBe("target")
+
+    const boundary = projectCanonicalSubscription({
+      eventId: "evt-target-boundary",
+      occurredAt: "2026-10-01T00:00:00Z",
+      subscription: { ...subscription, items: [{ priceId: "pri-target", productId: "pro-1", quantity: 1 }] },
+      mapping: targetMapping,
+      fallbackPlanKey: "workspace",
+      current,
+      now: new Date("2026-10-01T00:00:00Z"),
+    })
+    expect(boundary.planKey).toBe("target")
+    expect(boundary.billingInterval).toBe("year")
+    expect(boundary.scheduledPlanKey).toBeNull()
+  })
 })

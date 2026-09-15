@@ -3,7 +3,8 @@ import { getPlanUsage } from "./actions"
 import { PaddleBillingActions, type BillingPresentationConfig, type BillingUsageMetricConfig } from "@/components/manage/paddle-billing-actions"
 import { ScheduledPlanChangeBanner } from "@/components/manage/scheduled-plan-change-banner"
 import { getServerLanguage, translateServer, translateServerMessage } from "@/lib/server-i18n"
-import { formatCurrency, formatDate } from "@/i18n/format"
+import { formatDate } from "@/i18n/format"
+import { formatCurrentSubscriptionPrice, resolveCurrentSubscriptionPrice } from "@/lib/billing/presentation"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
 import { ManageMetricCard, ManageMetricGrid, ManagePage, ManagePageHeader, ManageSurface, ManageUsageMetric } from "@/components/manage/manage-responsive"
 import { EntitlementLimitNotice } from "@/components/manage/entitlement-limit-notice"
@@ -62,7 +63,13 @@ export default async function PlanUsagePage() {
   const supportedIntervals = policy.supportedIntervals || ["month", "year"]
   const defaultInterval = policy.defaultInterval || supportedIntervals[0] || "month"
   const copyText = (key: string, fallback: string) => presentation?.copy?.[key]?.trim() || fallback
-  const monthlyPrice = entitlements.pricing.month?.amount
+  const currentSubscriptionPrice = resolveCurrentSubscriptionPrice({
+    billingInterval: billing.billingInterval,
+    billingCurrency: billing.billingCurrency,
+    currentProviderPriceAmount: billing.currentProviderPriceAmount,
+    pricing: entitlements.pricing,
+  })
+  const currentSubscriptionPriceText = formatCurrentSubscriptionPrice(currentSubscriptionPrice, language)
   const hasLimit = (key: string) => Object.prototype.hasOwnProperty.call(entitlements.limits, key)
   const usageMetricLabel = (key: string) => key === "core.workspaces"
     ? copyText("workspacesLabel", translateServer(language, "manage.planUsage.billing.workspaces"))
@@ -101,7 +108,7 @@ export default async function PlanUsagePage() {
     <ManagePageHeader eyebrow={copyText("eyebrow", "Workspace billing")} title={copyText("title", "Plan and usage")} description={`${workspace.name} · ${workspace.slug}`} />
     {entitlements.scheduledPlan && <ScheduledPlanChangeBanner currentPlanName={entitlements.planName} targetPlanName={entitlements.scheduledPlan.name} effectiveAt={entitlements.scheduledPlan.effectiveAt} canManage={Boolean(billing.canManage)} />}
     <ManageMetricGrid>
-      <ManageMetricCard label={copyText("currentPlanLabel", "Current plan")} value={entitlements.planName} detail={monthlyPrice == null ? copyText("pricingLabel", "Product pricing") : `${formatCurrency(monthlyPrice, language)} / ${translateServer(language, "manage.planUsage.billing.monthly")}`} icon={Sparkles} />
+      <ManageMetricCard label={copyText("currentPlanLabel", "Current plan")} value={entitlements.planName} detail={currentSubscriptionPriceText == null ? copyText("pricingLabel", "Product pricing") : `${currentSubscriptionPriceText} / ${translateServer(language, currentSubscriptionPrice?.interval === "year" ? "manage.planUsage.billing.annual" : "manage.planUsage.billing.monthly")}`} icon={Sparkles} />
       <ManageMetricCard label={copyText("billingLabel", translateServer(language, "manage.planUsage.billing.billingDetails"))} value={activeStatus} detail={throughLabel} icon={CreditCard} />
       <ManageMetricCard label={copyText("membersLabel", translateServer(language, "manage.planUsage.billing.teamMembers"))} value={usage.users} detail={memberLimit === undefined ? "—" : memberLimit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${memberLimit}`} />
       {productMetric && <ManageMetricCard label={productMetric.label} value={productMetric.value ?? "—"} detail={productMetric.limit === undefined ? "—" : productMetric.limit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${productMetric.limit}`} />}

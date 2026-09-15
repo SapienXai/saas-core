@@ -14,8 +14,8 @@ product-domain import. Its vocabulary is:
 
 - status: `active`, `trialing`, `past_due`, `paused`, and `canceled`;
 - interval: `month` and `year`;
-- transition kinds: checkout, upgrade, downgrade, cancel, resume, renewal,
-  and recovery;
+- transition kinds: checkout, upgrade, downgrade, interval_change, cancel,
+  resume, renewal, and recovery;
 - transition states: `pending`, `succeeded`, `failed`, and `unknown`;
 - proration semantics: immediate, next-period, or none;
 - retry decisions: retry, reconcile, or stop.
@@ -143,6 +143,10 @@ recovery retains paid access for the configured grace period; expiry moves
 only effective entitlements to the fallback and preserves data, usage, and
 provider history. Resume clears a scheduled cancellation after provider
 confirmation.
+
+A same-plan billing-cycle change is an immediate provider mutation recorded as
+`interval_change`. It uses the normal preview, confirmation, reconciliation,
+and durable transition path without downgrade eligibility or downgrade copy.
 
 For an explicit plan change, the managed action adds one provider-neutral
 policy step before the provider mutation:

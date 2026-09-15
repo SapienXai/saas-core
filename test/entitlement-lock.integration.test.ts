@@ -12,6 +12,9 @@ integration("transactional entitlement lock", () => {
   let ownerClient: SupabaseClient
   let workspaceId = ""
   let fixturePriceId = ""
+  let currentPlanPriceId = ""
+  let targetPlanPriceId = ""
+  let thirdPriceId = ""
 
   const plans = [
     { key: "fixture_free", name: "Fixture Free", sort_order: 100, active: true, features: { projects: true }, limits: { "core.workspaces": 1, "core.members": 1, projects: 2 }, metadata: { fixture: true } },
@@ -57,16 +60,14 @@ integration("transactional entitlement lock", () => {
     const configured = await sync("fixture_free")
     if (configured.error) throw configured.error
     fixturePriceId = `pri_entitlement_lock_${stamp}`
-    const mapping = await service!.from("billing_provider_prices").upsert({
-      provider: "paddle",
-      environment: "sandbox",
-      plan_key: "fixture_unlimited",
-      provider_product_id: `prod_entitlement_lock_${stamp}`,
-      provider_price_id: fixturePriceId,
-      billing_interval: "month",
-      currency: "USD",
-      active: true,
-    }, { onConflict: "provider,environment,provider_price_id" })
+    currentPlanPriceId = `pri_entitlement_lock_pro_${stamp}`
+    targetPlanPriceId = `pri_entitlement_lock_starter_${stamp}`
+    thirdPriceId = `pri_entitlement_lock_third_${stamp}`
+    const mapping = await service!.from("billing_provider_prices").upsert([
+      { provider: "paddle", environment: "sandbox", plan_key: "fixture_unlimited", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: fixturePriceId, billing_interval: "month", currency: "USD", active: true },
+      { provider: "paddle", environment: "sandbox", plan_key: "fixture_pro", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: currentPlanPriceId, billing_interval: "month", currency: "USD", active: true },
+      { provider: "paddle", environment: "sandbox", plan_key: "fixture_starter", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: targetPlanPriceId, billing_interval: "month", currency: "USD", active: true },
+    ], { onConflict: "provider,environment,provider_price_id" })
     if (mapping.error) throw mapping.error
     const bootstrap = await ownerClient.rpc("bootstrap_initial_workspace", { target_workspace_name: `Entitlement Lock ${stamp}`, target_workspace_slug: `entitlement-lock-${stamp}` })
     if (bootstrap.error || !bootstrap.data?.[0]) throw bootstrap.error || new Error("Entitlement-lock workspace bootstrap failed.")
@@ -75,7 +76,8 @@ integration("transactional entitlement lock", () => {
 
   afterAll(async () => {
     if (workspaceId) await service!.from("workspaces").delete().eq("id", workspaceId)
-    if (fixturePriceId) await service!.from("billing_provider_prices").delete().eq("provider_price_id", fixturePriceId)
+    const fixturePrices = [fixturePriceId, currentPlanPriceId, targetPlanPriceId, thirdPriceId].filter(Boolean)
+    if (fixturePrices.length) await service!.from("billing_provider_prices").delete().in("provider_price_id", fixturePrices)
     await restoreCatalog()
     if (owner?.id) await service!.auth.admin.deleteUser(owner.id)
   })
@@ -127,6 +129,47 @@ integration("transactional entitlement lock", () => {
     expect(renewed.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_unlimited", unlimited: true })
 
+    const futureSchedule = { scheduled_plan_key: "fixture_starter", scheduled_plan_at: future.toISOString().slice(0, 10), scheduled_effective_at: future.toISOString(), scheduled_provider_price_id: targetPlanPriceId, scheduled_change_action: null, cancel_at_period_end: false, current_period_end: future.toISOString().slice(0, 10), current_period_end_at: future.toISOString() }
+    const currentPriceFuture = await service!.from("workspace_subscriptions").update({ plan_key: "fixture_pro", source: "paddle", provider: "paddle", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: currentPlanPriceId, ...futureSchedule }).eq("workspace_id", workspaceId)
+    expect(currentPriceFuture.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 1, unlimited: false })
+
+    const targetPriceFuture = await service!.from("workspace_subscriptions").update({ provider_price_id: targetPlanPriceId, ...futureSchedule }).eq("workspace_id", workspaceId)
+    expect(targetPriceFuture.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 1, unlimited: false })
+
+    const thirdPriceFuture = await service!.from("workspace_subscriptions").update({ provider_price_id: thirdPriceId, ...futureSchedule }).eq("workspace_id", workspaceId)
+    expect(thirdPriceFuture.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2, unlimited: false })
+
+    const missingTargetMapping = await service!.from("workspace_subscriptions").update({ ...futureSchedule, provider_price_id: currentPlanPriceId, scheduled_provider_price_id: `pri_missing_target_${Date.now()}` }).eq("workspace_id", workspaceId)
+    expect(missingTargetMapping.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2, unlimited: false })
+
+    const inactiveTarget = await service!.from("plans").update({ active: false }).eq("key", "fixture_unlimited")
+    expect(inactiveTarget.error).toBeNull()
+    const inactiveTargetSchedule = await service!.from("workspace_subscriptions").update({ ...futureSchedule, scheduled_plan_key: "fixture_unlimited", provider_price_id: currentPlanPriceId, scheduled_provider_price_id: fixturePriceId }).eq("workspace_id", workspaceId)
+    expect(inactiveTargetSchedule.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2, unlimited: false })
+    const activeTarget = await service!.from("plans").update({ active: true }).eq("key", "fixture_unlimited")
+    expect(activeTarget.error).toBeNull()
+
+    const scheduledPriceUpgrade = await service!.from("workspace_subscriptions").update({ plan_key: "fixture_starter", provider_price_id: targetPlanPriceId, scheduled_plan_key: "fixture_pro", scheduled_provider_price_id: currentPlanPriceId, scheduled_plan_at: future.toISOString().slice(0, 10), scheduled_effective_at: future.toISOString(), scheduled_change_action: null }).eq("workspace_id", workspaceId)
+    expect(scheduledPriceUpgrade.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_starter", limit_value: 1, unlimited: false })
+
+    const providerScheduledCancel = await service!.from("workspace_subscriptions").update({ plan_key: "fixture_pro", provider_price_id: currentPlanPriceId, scheduled_plan_key: null, scheduled_provider_price_id: null, scheduled_plan_at: null, scheduled_effective_at: null, cancel_at_period_end: true, scheduled_change_action: "cancel", scheduled_change_at: future.toISOString(), current_period_end: future.toISOString().slice(0, 10), current_period_end_at: future.toISOString() }).eq("workspace_id", workspaceId)
+    expect(providerScheduledCancel.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 3, unlimited: false })
+
+    const undo = await service!.from("workspace_subscriptions").update({ cancel_at_period_end: false, scheduled_change_action: null, scheduled_change_at: null }).eq("workspace_id", workspaceId)
+    expect(undo.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 3, unlimited: false })
+
+    const boundary = await service!.from("workspace_subscriptions").update({ plan_key: "fixture_pro", provider_price_id: currentPlanPriceId, scheduled_plan_key: "fixture_starter", scheduled_provider_price_id: targetPlanPriceId, scheduled_plan_at: new Date(Date.now() - 1000).toISOString().slice(0, 10), scheduled_effective_at: new Date(Date.now() - 1000).toISOString(), scheduled_change_action: null, cancel_at_period_end: false }).eq("workspace_id", workspaceId)
+    expect(boundary.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_starter", limit_value: 1, unlimited: false })
+
     const scheduledDowngrade = await service!.from("workspace_subscriptions").update({
       plan_key: "fixture_free",
       status: "active",
@@ -142,6 +185,7 @@ integration("transactional entitlement lock", () => {
       scheduled_plan_key: "fixture_starter",
       scheduled_plan_at: future.toISOString().slice(0, 10),
       scheduled_effective_at: future.toISOString(),
+      scheduled_provider_price_id: null,
     }).eq("workspace_id", workspaceId)
     expect(scheduledDowngrade.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({

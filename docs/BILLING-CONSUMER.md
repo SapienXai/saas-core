@@ -198,6 +198,16 @@ even when the eventual fallback plan has a smaller quota. Missing or malformed
 scheduled downgrade capability data fails closed rather than becoming
 unlimited.
 
+The provider may expose the scheduled target price before the boundary. Core
+accepts either the current active price or the exact active target mapping for
+the same provider and environment; an unknown price, inactive target, missing
+mapping, invalid boundary, or incomplete provider identity falls back
+restrictively. The current plan and features remain effective until the
+boundary, while the finite consumption ceiling still uses the stricter target
+limit. Billing overview presentation follows the current local interval and
+provider amount, so a pending target is shown only in the scheduled-change
+banner.
+
 ## 6. Protect check-then-insert quota mutations
 
 For a finite quota, a separate JavaScript count followed by an insert is not

@@ -186,7 +186,8 @@ be serialized with `serializeEntitlementError()`.
 
 ## Subscription lifecycle
 
-Checkout, upgrade, downgrade, cancellation, and reactivation continue through
+Checkout, upgrade, downgrade, same-plan interval change, cancellation, and
+reactivation continue through
 the existing server-authorized provider adapter and normalized local
 `workspace_subscriptions` row. Provider webhooks, not a browser callback,
 activate paid entitlements. A scheduled downgrade or cancellation remains on

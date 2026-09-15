@@ -27,6 +27,7 @@ export const BILLING_TRANSITION_KINDS = [
   "checkout",
   "upgrade",
   "downgrade",
+  "interval_change",
   "cancel",
   "resume",
   "renewal",
