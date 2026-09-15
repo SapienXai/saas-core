@@ -32,6 +32,9 @@ commercial policy in the consumer boundary.
   `types/supabase.ts`.
 - `package.json` is mixed: consumer scripts and dependencies are preserved;
   the CLI owns only the four Core package coordinates.
+- The root `.gitignore` is the Core checkout policy. A generated consumer gets
+  its own product-repository policy from `packages/app/template/consumer.gitignore`;
+  it is created only when missing and remains outside the Core managed hash set.
 
 Use the practical rule: if a capability still makes sense without knowing the
 product's domain, it is probably Core. If it names a product resource or
@@ -63,6 +66,8 @@ template change, prefer this source contract:
 
 ```bash
 pnpm install --frozen-lockfile
+pnpm repo:hygiene
+pnpm repo:hygiene:test
 pnpm lint
 pnpm typecheck
 pnpm test:run
@@ -83,8 +88,8 @@ source copy a database migration or a local build a public release.
 ## Consumer lifecycle
 
 `saas-core init` materializes the template and writes a dynamic consumer
-`README.md`, `AGENTS.md`, `.env.example`, manifest, product config/catalog,
-usage extension and package scripts. `doctor` checks source, package,
+`README.md`, `AGENTS.md`, `.env.example`, `.gitignore`, manifest, product
+config/catalog, usage extension and package scripts. `doctor` checks source,
 consumer-contract and database readiness. `diff` shows Core drift, package and
 version movement while preserving product changes. `update` plans additions,
 replacements, removals, backup, conflict blocking and rollback; it never

@@ -53,10 +53,26 @@ pnpm db:test:schema
 pnpm db:test:clean
 ```
 
-`pnpm verify` is the no-credentials source contract: lint, typecheck, unit
-tests, root/template parity and a fresh CLI consumer contract. The broader
-`pnpm release:check` additionally exercises local database, packaging and
-release proofs.
+`pnpm verify` is the no-credentials source contract: repository hygiene and
+its failure-path test, lint, typecheck, unit tests, root/template parity and a
+fresh CLI consumer contract. The broader `pnpm release:check` additionally
+exercises local database, packaging and release proofs.
+
+## What belongs in Git
+
+Keep canonical source, deterministic product fixtures, migrations, public
+assets, package manifests, docs and CI workflows. Generated but intentionally
+versioned contract files are `next-env.d.ts` and the reviewed
+`types/supabase.ts` snapshots. Local dependency installs, build output,
+coverage, Playwright reports/runtime state, Supabase `.temp`/`.branches`,
+package tarballs, logs, credentials and temporary consumer proof directories
+must stay ignored.
+
+The fresh consumer receives a product-specific `.gitignore` from the canonical
+`packages/app/template/consumer.gitignore` source. It is created when missing
+and is not overwritten during Core updates, so product repositories can extend
+their local policy safely. Run `pnpm repo:hygiene` from Core to inspect the
+tracked set and `pnpm verify` before handing off changes.
 
 ## I am building a product on SaaS Core
 

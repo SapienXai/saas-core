@@ -66,7 +66,7 @@ pnpm dev
 ```
 
 `init` creates the product-specific `README.md`, `AGENTS.md`, `.env.example`,
-`package.json`, manifest, neutral starter catalog and server-only usage
+`.gitignore`, `package.json`, manifest, neutral starter catalog and server-only usage
 extension. It also includes runnable `lint`, `typecheck`, test, local DB,
 catalog sync, verification and Core lifecycle scripts.
 
@@ -142,6 +142,31 @@ local Supabase, add `pnpm db:start`, `pnpm db:reset`, `pnpm db:types`,
 `pnpm db:test:schema` and `pnpm db:test:clean`. The full release gate also
 covers package tarballs, lifecycle updates, local integration and consumer
 proof; it does not publish or deploy by itself.
+
+## Repository hygiene
+
+Git contains canonical source, deterministic fixtures, package metadata,
+release workflows, documentation and the intentionally versioned generated
+contracts `next-env.d.ts` and `types/supabase.ts`. It does not contain
+dependency installs, Next/Turbo/build output, browser state, local Supabase
+state, package tarballs, logs, credentials, editor state or temporary proof
+directories. The root `.gitignore` and generated consumer `.gitignore` are
+deliberate contracts, not a substitute for ownership review.
+
+Run the focused guard and its failure-path test with:
+
+```bash
+pnpm repo:hygiene
+pnpm repo:hygiene:test
+```
+
+`repo:hygiene` reads tracked paths from Git, rejects forbidden artifact names,
+conservative high-confidence secrets, local package references and tracked
+files above the 1 MiB guard. `pnpm verify` runs both checks before lint,
+typecheck, tests, root/template parity and the fresh consumer contract. Package
+packing writes five disposable tarballs under ignored `artifacts/`; the
+artifact audit confirms the intended runtime/template files and the explicit
+source-map policy before a release can proceed.
 
 ## Guides
 

@@ -56,7 +56,41 @@ package; `update` changes only the four Core package coordinates:
 Product scripts, dependencies, package name and consumer metadata remain
 theirs. `next-env.d.ts`, lockfiles, `.gitignore`, `.saas-core-manifest.json`,
 Next build output, local package registries and Supabase temporary state are
-ignored operational files.
+ignored operational files. A fresh consumer gets `.gitignore` from the
+canonical `packages/app/template/consumer.gitignore` source; Core creates it
+only when missing and does not overwrite a consumer's local policy.
+
+## Why root and template are duplicated
+
+The root app is the runnable Core reference and `packages/app/template` is the
+inspectable, publishable application source. Their Core-managed application,
+authorization, billing, configuration, UI, tooling and direct migration
+surfaces are intentionally duplicated so each can be run and packed in its own
+context. `scripts/check-app-template-parity.mjs` compares them byte-for-byte,
+uses this module's ownership exclusions and reports the direct migration count.
+
+The repository does not generate the application through a broad codegen step:
+that would hide reviewable source and complicate package portability. Product
+routes, catalog, styles, product migrations, consumer docs/env and generated
+product-aware types remain intentionally different and protected by the same
+ownership contract.
+
+## Git and package hygiene
+
+The root `.gitignore` protects Core development and release output. The
+consumer ignore contract covers dependency installs, Next/Turbo/build output,
+browser evidence, local Supabase state, package tarballs, logs, credentials,
+editor state and temporary files. `repo:hygiene` checks the Git tracked set,
+not merely the filesystem, and applies a 1 MiB tracked-file guard. Its
+high-confidence secret checks skip example environment files to avoid treating
+template placeholders as credentials.
+
+Core/config/UI `dist` source maps are intentionally produced at pack time and
+shipped because their package exports point to those runtime/declaration files.
+Application and CLI tarballs ship the template contract, migration source and
+the two deterministic template tests only; browser output, local config and
+temporary package state are not package contents. `release:packages` inspects
+all five publishable tarballs.
 
 ## Practical rule
 
