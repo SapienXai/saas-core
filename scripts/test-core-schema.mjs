@@ -25,6 +25,9 @@ const templateInvalidScheduledDowngradeFix = await readFile(path.join(root, "pac
 const scheduledProviderPriceTrustPath = path.join(root, "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql")
 const scheduledProviderPriceTrust = await readFile(scheduledProviderPriceTrustPath, "utf8")
 const templateScheduledProviderPriceTrust = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260915120000_scheduled_provider_price_trust.sql"), "utf8")
+const domainFoundationPath = path.join(root, "supabase/migrations/20260916100000_saas_core_domain_foundation_v1.sql")
+const domainFoundation = await readFile(domainFoundationPath, "utf8")
+const templateDomainFoundation = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260916100000_saas_core_domain_foundation_v1.sql"), "utf8")
 const runtimePersistence = await readFile(path.join(root, "lib/billing/persistence.ts"), "utf8")
 const directMigrationNames = async (directory) => (await readdir(directory, { withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.endsWith(".sql"))
@@ -54,6 +57,23 @@ if (invitationRenewalFix !== templateInvitationRenewalFix) throw new Error("Root
 if (scheduledDowngradeCeiling !== templateScheduledDowngradeCeiling) throw new Error("Root and template scheduled downgrade ceiling migrations are not byte-for-byte identical.")
 if (invalidScheduledDowngradeFix !== templateInvalidScheduledDowngradeFix) throw new Error("Root and template invalid scheduled downgrade fix migrations are not byte-for-byte identical.")
 if (scheduledProviderPriceTrust !== templateScheduledProviderPriceTrust) throw new Error("Root and template scheduled provider price trust migrations are not byte-for-byte identical.")
+if (domainFoundation !== templateDomainFoundation) throw new Error("Root and template domain foundation migrations are not byte-for-byte identical.")
+for (const contract of [
+  "create table if not exists public.public_sites",
+  "alter table public.workspace_domains add column if not exists site_id uuid",
+  "workspace_domains_site_workspace_id_fkey",
+  "workspace_domains_normalized_hostname_key",
+  "workspace_domains_one_primary_per_site_key",
+  "alter table public.public_sites enable row level security",
+  "revoke insert, update, delete on public.public_sites from authenticated",
+  "revoke insert, update, delete on public.workspace_domains from authenticated",
+  "drop policy if exists domains_manage on public.workspace_domains",
+  "create or replace function public.claim_platform_subdomain(",
+  "create or replace function public.resolve_domain_host(",
+  "revoke all on function public.claim_platform_subdomain(uuid, uuid, text, boolean) from public, anon, authenticated",
+  "grant execute on function public.resolve_domain_host(text) to service_role",
+]) if (!domainFoundation.includes(contract)) throw new Error(`Domain foundation is missing its contract: ${contract}`)
+if (domainFoundation.toLowerCase().includes("reserv" + "ation") || domainFoundation.toLowerCase().includes("rest" + "aurant")) throw new Error("The reusable domain foundation migration contains product-domain vocabulary.")
 const tables = [
   "plans", "workspaces", "workspace_members", "workspace_invitations", "workspace_subscriptions",
   "workspace_usage_periods", "billing_provider_prices", "billing_webhook_events", "billing_checkout_sessions",
@@ -201,4 +221,4 @@ const persistenceProductVocabulary = ["rest" + "aurant", "reserv" + "ation", "se
 if (persistenceProductVocabulary.some((term) => persistenceMigration.toLowerCase().includes(term))) {
   throw new Error("The reusable billing persistence migration contains product/provider-specific vocabulary.")
 }
-console.log(`Core schema verified: ${tables.length} baseline tables plus ${persistenceTables.length} durable billing tables, ${rootDirectMigrations.length} mirrored migration sources, the platform-owner guard, RLS enabled, no product tables.`)
+console.log(`Core schema verified: ${tables.length} baseline tables plus ${persistenceTables.length} durable billing tables and the workspace-owned public-domain surface, ${rootDirectMigrations.length} mirrored migration sources, the platform-owner guard, RLS enabled, no product tables.`)

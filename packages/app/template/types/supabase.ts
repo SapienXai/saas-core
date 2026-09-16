@@ -803,6 +803,38 @@ export type Database = {
         }
         Relationships: []
       }
+      public_sites: {
+        Row: {
+          created_at: string
+          id: string
+          product_key: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          product_key: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          product_key?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_sites_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       subscription_overrides: {
         Row: {
           created_at: string
@@ -866,15 +898,21 @@ export type Database = {
           dns_configured: boolean
           hostname: string
           id: string
+          is_primary: boolean
           last_checked_at: string | null
           last_error_code: string | null
           last_error_message: string | null
+          normalized_hostname: string
           provider: string
           provider_environment: string
           provider_verified: boolean
+          site_id: string
           status: string
+          type: string
           updated_at: string
+          verification_metadata: Json
           verification_state: string
+          verification_token: string | null
           verified_at: string | null
           workspace_id: string
         }
@@ -883,15 +921,21 @@ export type Database = {
           dns_configured?: boolean
           hostname: string
           id?: string
+          is_primary?: boolean
           last_checked_at?: string | null
           last_error_code?: string | null
           last_error_message?: string | null
+          normalized_hostname: string
           provider?: string
           provider_environment?: string
           provider_verified?: boolean
+          site_id: string
           status?: string
+          type?: string
           updated_at?: string
+          verification_metadata?: Json
           verification_state?: string
+          verification_token?: string | null
           verified_at?: string | null
           workspace_id: string
         }
@@ -900,23 +944,36 @@ export type Database = {
           dns_configured?: boolean
           hostname?: string
           id?: string
+          is_primary?: boolean
           last_checked_at?: string | null
           last_error_code?: string | null
           last_error_message?: string | null
+          normalized_hostname?: string
           provider?: string
           provider_environment?: string
           provider_verified?: boolean
+          site_id?: string
           status?: string
+          type?: string
           updated_at?: string
+          verification_metadata?: Json
           verification_state?: string
+          verification_token?: string | null
           verified_at?: string | null
           workspace_id?: string
         }
         Relationships: [
           {
+            foreignKeyName: "workspace_domains_site_workspace_id_fkey"
+            columns: ["site_id", "workspace_id"]
+            isOneToOne: false
+            referencedRelation: "public_sites"
+            referencedColumns: ["id", "workspace_id"]
+          },
+          {
             foreignKeyName: "workspace_domains_workspace_id_fkey"
             columns: ["workspace_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
@@ -1385,6 +1442,29 @@ export type Database = {
           payload: Json
         }[]
       }
+      claim_platform_subdomain: {
+        Args: {
+          target_hostname: string
+          target_replace_existing?: boolean
+          target_site_id: string
+          target_workspace_id: string
+        }
+        Returns: {
+          created_at: string
+          domain_id: string
+          domain_type: string
+          hostname: string
+          is_primary: boolean
+          normalized_hostname: string
+          site_id: string
+          status: string
+          updated_at: string
+          verification_metadata: Json
+          verification_token: string
+          verified_at: string
+          workspace_id: string
+        }[]
+      }
       consume_billing_transition: {
         Args: {
           target_now?: string
@@ -1518,6 +1598,21 @@ export type Database = {
           transition_id: string
           transition_key: string
           workspace_id: string
+        }[]
+      }
+      resolve_domain_host: {
+        Args: { target_normalized_hostname: string }
+        Returns: {
+          domain_id: string
+          domain_type: string
+          hostname: string
+          is_primary: boolean
+          normalized_hostname: string
+          product_key: string
+          site_id: string
+          workspace_id: string
+          workspace_name: string
+          workspace_slug: string
         }[]
       }
       sync_core_catalog: {
@@ -1727,6 +1822,7 @@ export type WorkspaceInvitation = Database["public"]["Tables"]["workspace_invita
 export type Plan = Database["public"]["Tables"]["plans"]["Row"]
 export type WorkspaceSubscription = Database["public"]["Tables"]["workspace_subscriptions"]["Row"]
 export type WorkspaceUsagePeriod = Database["public"]["Tables"]["workspace_usage_periods"]["Row"]
+export type PublicSite = Database["public"]["Tables"]["public_sites"]["Row"]
 export type WorkspaceDomain = Database["public"]["Tables"]["workspace_domains"]["Row"]
 export type WorkspacePwaSettings = Database["public"]["Tables"]["workspace_pwa_settings"]["Row"]
 export type WorkspacePushSubscription = Database["public"]["Tables"]["workspace_push_subscriptions"]["Row"]

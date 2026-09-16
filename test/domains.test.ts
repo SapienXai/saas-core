@@ -4,6 +4,8 @@ import {
   getCustomerHostnameParts,
   getTrustedHostFromHeaders,
   HostnameValidationError,
+  buildPlatformHostname,
+  normalizePlatformSubdomainSlug,
   isPlatformOwnedHostname,
   normalizeDnsTarget,
   normalizeHostname,
@@ -18,6 +20,17 @@ afterEach(() => {
 })
 
 describe("Core hostname classification", () => {
+  it("normalizes comparison hosts and validates platform slugs", () => {
+    expect(normalizeHostname("Example.COM")).toBe("example.com")
+    expect(normalizeHostname("example.com:443")).toBe("example.com")
+    expect(normalizeHostname("example.com.")).toBe("example.com")
+    expect(normalizePlatformSubdomainSlug("  Felix ")).toBe("felix")
+    expect(buildPlatformHostname("Felix", "PUBLIC.Example.COM.")).toBe("felix.public.example.com")
+    for (const slug of ["www", "api", "dashboard", "bad slug", "-bad", "bad-", "a_b"]) {
+      expect(() => normalizePlatformSubdomainSlug(slug), slug).toThrow(HostnameValidationError)
+    }
+  })
+
   it("recognizes platform and hosted hosts", () => {
     expect(classifyHostname("saas.example.com").kind).toBe("PLATFORM_ROOT")
     expect(classifyHostname("www.saas.example.com").kind).toBe("PLATFORM_WWW")

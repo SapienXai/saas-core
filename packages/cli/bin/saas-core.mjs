@@ -36,6 +36,9 @@ const REQUIRED_BILLING_MIGRATIONS = [
   "supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql",
   "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql",
 ]
+const REQUIRED_DOMAIN_MIGRATIONS = [
+  "supabase/migrations/20260916100000_saas_core_domain_foundation_v1.sql",
+]
 const PRODUCT_USAGE_EXTENSION = "src/product/usage.ts"
 const PRODUCT_PLATFORM_ADMIN_EXTENSION = "src/product/platform-admin.ts"
 const DEFAULT_PRODUCT_USAGE_EXTENSION = `import "server-only"
@@ -520,6 +523,9 @@ async function healthChecks(directory, manifest, sourceRoot = DEFAULT_TEMPLATE_R
   const manifestMigrationSet = new Set(manifestCoreMigrationPaths(manifest))
   for (const migration of REQUIRED_BILLING_MIGRATIONS) {
     if (!sourceMigrations.includes(migration)) add("SCHEMA", "ERROR", `Required reusable billing migration source is missing from Core template: ${migration}`)
+  }
+  for (const migration of REQUIRED_DOMAIN_MIGRATIONS) {
+    if (!sourceMigrations.includes(migration)) add("SCHEMA", "ERROR", `Required reusable domain migration source is missing from Core template: ${migration}`)
   }
   for (const migration of sourceMigrations) {
     const sourceMigration = path.join(sourceRoot, migration)

@@ -1,8 +1,9 @@
 import "server-only"
 
-import { getRequestHostname, classifyHostname, type HostnameKind } from "@/lib/domains/hostname"
+import type { CoreHostResolution } from "@sapienx/saas-core"
+import { classifyHostname, getRequestHostname, type HostnameKind } from "@/lib/domains/hostname"
+import { resolveHost } from "@/lib/domains/domain-service"
 import { isCanonicalAppPath, isCoreReservedPublicPath, normalizeRequestPathname } from "@/lib/route-ownership"
-import { createServiceRoleClient } from "@/lib/supabase"
 
 export type PublicWorkspaceHostnameKind = Extract<HostnameKind, "HOSTED_WORKSPACE" | "CUSTOM_WORKSPACE">
 
@@ -10,7 +11,13 @@ export type PublicWorkspaceContext = {
   workspaceId: string
   workspaceSlug: string
   workspaceName: string
+  siteId: string
+  productKey: string
+  domainId: string
   hostname: string
+  normalizedHostname: string
+  domainType: CoreHostResolution["domainType"]
+  isPrimary: boolean
   hostnameKind: PublicWorkspaceHostnameKind
   pathname: string
 }
@@ -21,82 +28,32 @@ export type PublicWorkspaceResolution =
   | { status: "not_public_workspace" }
   | { status: "unavailable" }
 
-type PublicWorkspaceRecord = {
-  id: string
-  name: string
-  slug: string
-  status: string
-  platform_status: string
+function notFound(): PublicWorkspaceResolution {
+  return { status: "not_found" }
 }
 
-function notFound(): PublicWorkspaceResolution { return { status: "not_found" } }
-
-function unavailable(): PublicWorkspaceResolution { return { status: "unavailable" } }
-
-function isPublicWorkspace(workspace: Pick<PublicWorkspaceRecord, "status" | "platform_status">) {
-  return workspace.status === "active" && workspace.platform_status === "active"
+function unavailable(): PublicWorkspaceResolution {
+  return { status: "unavailable" }
 }
 
-function context(workspace: PublicWorkspaceRecord, hostname: string, hostnameKind: PublicWorkspaceHostnameKind, pathname: string): PublicWorkspaceResolution {
-  if (!isPublicWorkspace(workspace)) return notFound()
+function context(resolution: CoreHostResolution, hostnameKind: PublicWorkspaceHostnameKind, pathname: string): PublicWorkspaceResolution {
+  if (!resolution.workspaceSlug || !resolution.workspaceName) return unavailable()
   return {
     status: "resolved",
     context: {
-      workspaceId: workspace.id,
-      workspaceSlug: workspace.slug,
-      workspaceName: workspace.name,
-      hostname,
+      workspaceId: resolution.workspaceId,
+      workspaceSlug: resolution.workspaceSlug,
+      workspaceName: resolution.workspaceName,
+      siteId: resolution.siteId,
+      productKey: resolution.productKey,
+      domainId: resolution.domainId,
+      hostname: resolution.hostname,
+      normalizedHostname: resolution.normalizedHostname,
+      domainType: resolution.domainType,
+      isPrimary: resolution.isPrimary,
       hostnameKind,
       pathname,
     },
-  }
-}
-
-async function resolveHostedWorkspace(hostname: string, workspaceSlug: string, pathname: string) {
-  try {
-    const { data, error } = await createServiceRoleClient()
-      .from("workspaces")
-      .select("id, name, slug, status, platform_status")
-      .eq("slug", workspaceSlug)
-      .eq("status", "active")
-      .eq("platform_status", "active")
-      .maybeSingle()
-    if (error) return unavailable()
-    if (!data) return notFound()
-    return context(data as PublicWorkspaceRecord, hostname, "HOSTED_WORKSPACE", pathname)
-  } catch {
-    return unavailable()
-  }
-}
-
-async function resolveCustomWorkspace(hostname: string, pathname: string) {
-  try {
-    const { data: domain, error: domainError } = await createServiceRoleClient()
-      .from("workspace_domains")
-      .select("workspace_id, status, provider_environment, verification_state, provider_verified, dns_configured, verified_at")
-      .eq("hostname", hostname)
-      .eq("status", "active")
-      .eq("provider_environment", "production")
-      .eq("verification_state", "verified")
-      .eq("provider_verified", true)
-      .eq("dns_configured", true)
-      .not("verified_at", "is", null)
-      .maybeSingle()
-    if (domainError) return unavailable()
-    if (!domain) return notFound()
-
-    const { data: workspace, error: workspaceError } = await createServiceRoleClient()
-      .from("workspaces")
-      .select("id, name, slug, status, platform_status")
-      .eq("id", domain.workspace_id)
-      .eq("status", "active")
-      .eq("platform_status", "active")
-      .maybeSingle()
-    if (workspaceError) return unavailable()
-    if (!workspace) return notFound()
-    return context(workspace as PublicWorkspaceRecord, hostname, "CUSTOM_WORKSPACE", pathname)
-  } catch {
-    return unavailable()
   }
 }
 
@@ -105,13 +62,16 @@ export async function resolvePublicWorkspace(input: { hostname: string; pathname
   if (!pathname || isCanonicalAppPath(pathname) || isCoreReservedPublicPath(pathname)) return { status: "not_public_workspace" }
 
   const classification = classifyHostname(input.hostname)
-  if (classification.kind === "HOSTED_WORKSPACE" && classification.workspaceSlug) {
-    return resolveHostedWorkspace(classification.hostname || input.hostname, classification.workspaceSlug, pathname)
+  if ((classification.kind !== "HOSTED_WORKSPACE" && classification.kind !== "CUSTOM_WORKSPACE") || !classification.hostname) {
+    return { status: "not_public_workspace" }
   }
-  if (classification.kind === "CUSTOM_WORKSPACE" && classification.hostname) {
-    return resolveCustomWorkspace(classification.hostname, pathname)
+
+  try {
+    const resolution = await resolveHost(classification.hostname)
+    return resolution ? context(resolution, classification.kind, pathname) : notFound()
+  } catch {
+    return unavailable()
   }
-  return { status: "not_public_workspace" }
 }
 
 export async function resolvePublicWorkspaceRequest(request: Request): Promise<PublicWorkspaceResolution> {

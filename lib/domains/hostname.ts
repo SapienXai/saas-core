@@ -1,7 +1,9 @@
-export const PLATFORM_HOST_LABELS = new Set([
-  "www", "app", "api", "mcp", "docs", "admin", "manage", "login", "signup",
-  "pricing", "help", "support", "status", "mail", "assets", "static",
+export const PLATFORM_RESERVED_SLUGS = new Set([
+  "www", "api", "app", "admin", "manage", "dashboard", "support", "help", "status",
+  "auth", "login", "signup", "cdn", "assets", "static", "mail", "smtp", "ftp",
+  "docs", "dev", "staging", "test", "mcp", "pricing",
 ])
+export const PLATFORM_HOST_LABELS = new Set(PLATFORM_RESERVED_SLUGS)
 
 export const DEVELOPMENT_NIP_IO_SUFFIX = ".nip.io"
 
@@ -18,6 +20,7 @@ export type HostnameKind =
 export type HostnameClassification = { kind: HostnameKind; hostname: string | null; workspaceSlug: string | null; reason?: string }
 export type CustomerHostnameParts = { hostname: string; isApex: boolean; dnsHost: string }
 export type TrustedRequestHost = { hostname: string; host: string }
+export type HostnameNormalizationOptions = { allowPlatform?: boolean; allowDevelopment?: boolean }
 export type DevelopmentHostnameParts = {
   hostname: string
   rootHostname: string
@@ -61,6 +64,18 @@ export function isNipIoHostname(value: string) {
   return value.trim().toLowerCase().replace(/\.$/, "").endsWith(DEVELOPMENT_NIP_IO_SUFFIX)
 }
 const WORKSPACE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+export const PLATFORM_SUBDOMAIN_SLUG_PATTERN = WORKSPACE_SLUG_PATTERN
+
+export function isReservedPlatformSlug(value: string) {
+  return PLATFORM_RESERVED_SLUGS.has(value.trim().toLowerCase())
+}
+
+export function normalizePlatformSubdomainSlug(value: string) {
+  const slug = typeof value === "string" ? value.trim().toLowerCase() : ""
+  if (!PLATFORM_SUBDOMAIN_SLUG_PATTERN.test(slug)) throw new HostnameValidationError("Use 1–63 lowercase letters, numbers, or hyphens for a subdomain.")
+  if (isReservedPlatformSlug(slug)) throw new HostnameValidationError("That subdomain is reserved by the platform.")
+  return slug
+}
 
 /**
  * Parse only the supported private/loopback dotted IPv4 nip.io forms. The
@@ -164,15 +179,26 @@ export function getRequestHostname(request: Request) {
   return getTrustedRequestHost(request)?.hostname || null
 }
 
-export function normalizeHostname(value: string) {
-  const hostname = parseHostname(value, false)
+export function normalizeHostname(value: string, options: HostnameNormalizationOptions = {}) {
+  const allowDevelopment = options.allowDevelopment === true && process.env.NODE_ENV !== "production"
+  const hostname = parseHostname(value, allowDevelopment, allowDevelopment)
   if (!hostname) throw new HostnameValidationError("Enter a valid hostname such as app.example.com.")
-  if (isNipIoHostname(hostname)) throw new HostnameValidationError("nip.io development hosts cannot be connected as customer domains.")
-  const root = configuredRootDomain()
-  if (hostname === root || hostname === `www.${root}` || hostname === configuredAppDomain() || hostname.endsWith(`.${root}`)) throw new HostnameValidationError("Platform hostnames cannot be connected as customer domains.")
+  if (isNipIoHostname(hostname) && (!allowDevelopment || process.env.NODE_ENV === "production" || !isDevelopmentNipIoHostname(hostname))) throw new HostnameValidationError("nip.io development hosts cannot be connected as customer domains.")
+  if (!options.allowPlatform) {
+    const root = configuredRootDomain()
+    if (hostname === root || hostname === `www.${root}` || hostname === configuredAppDomain() || hostname.endsWith(`.${root}`)) throw new HostnameValidationError("Platform hostnames cannot be connected as customer domains.")
+  }
   return hostname
 }
 export function tryNormalizeHostname(value: string) { try { return normalizeHostname(value) } catch { return null } }
+export function buildPlatformHostname(slug: string, rootDomain = configuredRootDomain()) {
+  const normalizedSlug = normalizePlatformSubdomainSlug(slug)
+  const normalizedRoot = parseHostname(rootDomain, false)
+  if (!normalizedRoot || isIpAddress(normalizedRoot) || normalizedRoot.split(".").length < 2) {
+    throw new HostnameValidationError("The platform root domain is not configured correctly.")
+  }
+  return `${normalizedSlug}.${normalizedRoot}`
+}
 export function normalizeDnsTarget(value: string) { const hostname = parseHostname(value, false); return hostname && !isIpAddress(hostname) ? hostname : null }
 export function getCustomerHostnameParts(value: string): CustomerHostnameParts | null {
   const hostname = parseHostname(value, false)

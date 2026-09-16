@@ -15,6 +15,7 @@ integration("public Workspace routing against Core persistence", () => {
   const customA = `${workspaceA}.customer.example`
   const customB = `${workspaceB}.customer.example`
   const ids: string[] = []
+  const siteIds: string[] = []
 
   beforeAll(async () => {
     service = createClient(url!, serviceRoleKey!, { auth: { persistSession: false, autoRefreshToken: false } })
@@ -27,14 +28,28 @@ integration("public Workspace routing against Core persistence", () => {
       if (error || !data) throw new Error(error?.message || "Could not create routing fixture Workspace.")
       ids.push(data.id)
     }
+    const { data: sites, error: siteError } = await service.from("public_sites").insert([
+      { workspace_id: ids[0], product_key: "routing-test" },
+      { workspace_id: ids[1], product_key: "routing-test" },
+    ]).select("id, workspace_id")
+    if (siteError || !sites || sites.length !== 2) throw new Error(siteError?.message || "Could not create routing fixture public sites.")
+    siteIds.push(sites.find((site) => site.workspace_id === ids[0])!.id, sites.find((site) => site.workspace_id === ids[1])!.id)
+    const { error: platformError } = await service.rpc("claim_platform_subdomain", {
+      target_workspace_id: ids[0], target_site_id: siteIds[0], target_hostname: `${workspaceA}.${rootDomain}`,
+    })
+    if (platformError) throw new Error(platformError.message)
+    const { error: secondPlatformError } = await service.rpc("claim_platform_subdomain", {
+      target_workspace_id: ids[1], target_site_id: siteIds[1], target_hostname: `${workspaceB}.${rootDomain}`,
+    })
+    if (secondPlatformError) throw new Error(secondPlatformError.message)
     const { error } = await service.from("workspace_domains").insert([
       {
-        workspace_id: ids[0], hostname: customA, status: "active", provider: "fixture",
+        workspace_id: ids[0], site_id: siteIds[0], hostname: customA, normalized_hostname: customA, type: "custom", is_primary: false, status: "active", provider: "fixture",
         provider_environment: "production", verification_state: "verified", provider_verified: true,
         dns_configured: true, verified_at: new Date().toISOString(),
       },
       {
-        workspace_id: ids[1], hostname: customB, status: "active", provider: "fixture",
+        workspace_id: ids[1], site_id: siteIds[1], hostname: customB, normalized_hostname: customB, type: "custom", is_primary: false, status: "active", provider: "fixture",
         provider_environment: "production", verification_state: "verified", provider_verified: true,
         dns_configured: true, verified_at: new Date().toISOString(),
       },

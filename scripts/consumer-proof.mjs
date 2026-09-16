@@ -20,6 +20,7 @@ const billingMigrations = [
   "supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql",
   "supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql",
   "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql",
+  "supabase/migrations/20260916100000_saas_core_domain_foundation_v1.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
@@ -206,12 +207,13 @@ import { readFileSync } from "node:fs"
 import * as core from "@sapienx/saas-core"
 import * as coreUi from "@sapienx/saas-core-ui"
 import { defineProductConfig } from "@sapienx/saas-core-config"
-for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions", "evaluateEntitlementConsumption", "getUsageSnapshot", "getEntitlementGateState", "isProductPlanKey", "validatePlanDefinition", "normalizeProductPlan", "classifyProductPlanChange", "duplicateProductPlan"]) {
+for (const name of ["defineAgentTool", "validateAgentToolDefinition", "validateAgentToolDefinitions", "evaluateEntitlementConsumption", "getUsageSnapshot", "getEntitlementGateState", "isProductPlanKey", "isCoreProductKey", "validatePlanDefinition", "normalizeProductPlan", "classifyProductPlanChange", "duplicateProductPlan"]) {
   if (typeof core[name] !== "function") throw new Error("Missing packed runtime export: " + name)
 }
 if (core.CORE_VERSION !== "${RELEASE_VERSION}" || core.CORE_SCHEMA_VERSION !== "${SCHEMA_VERSION}") throw new Error("Packed Core version metadata is incorrect.")
 if (coreUi.UI_SYSTEM_VERSION !== "${RELEASE_VERSION}" || typeof coreUi.BillingUsageMeter !== "function" || typeof coreUi.EntitlementLimitNotice !== "function") throw new Error("Packed Core UI exports are not importable.")
 core.validateAgentToolDefinitions([])
+if (!core.isCoreProductKey("venue-renderer") || core.isCoreProductKey("bad key")) throw new Error("Packed public-domain product-key contract is incorrect.")
 if (core.BILLING_INTERVALS.join(",") !== "month,year" || core.getBillingProrationMode("upgrade") !== "immediate" || core.getBillingProrationMode("downgrade") !== "next_period") throw new Error("Packed billing interval or proration contract is incorrect.")
 if (core.resolveBillingRetry({ outcome: "unknown" }) !== "reconcile") throw new Error("Packed billing unknown-outcome contract is incorrect.")
 if (core.resolveEffectiveBillingPlan({ status: "canceled", purchasedPlanKey: "paid", fallbackPlanKey: "free" }) !== "free") throw new Error("Packed billing fallback contract is incorrect.")
@@ -230,6 +232,7 @@ if (packedProductConfig.billing?.defaultPlanKey !== "starter") throw new Error("
 const declarations = readFileSync(new URL("./index.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
 const billingDeclarations = readFileSync(new URL("./billing.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
 const entitlementDeclarations = readFileSync(new URL("./entitlements.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
+const domainDeclarations = readFileSync(new URL("./domains.d.ts", await import.meta.resolve("@sapienx/saas-core")), "utf8")
 for (const name of ["JsonSchema", "AgentToolDefinition", "AgentSurfaceEvent", "AgentSurfaceObserver"]) {
   if (!declarations.includes("export type " + name)) throw new Error("Missing packed type export: " + name)
 }
@@ -238,6 +241,9 @@ for (const name of ["ProductBillingPolicy", "BillingOperationOutcome", "BillingT
 }
 for (const name of ["EntitlementLimit", "EntitlementDecision", "UsageSnapshot"]) {
   if (!entitlementDeclarations.includes("export type " + name)) throw new Error("Missing packed entitlement type export: " + name)
+}
+for (const name of ["CoreDomain", "CorePublicSite", "CoreHostResolution", "CoreDomainService"]) {
+  if (!domainDeclarations.includes("export type " + name)) throw new Error("Missing packed domain type export: " + name)
 }
 `
 

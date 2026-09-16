@@ -37,6 +37,9 @@ const { data: localDomain, error: domainError } = await supabase
   .from("workspace_domains")
   .select("id, hostname, status")
   .eq("workspace_id", workspace.id)
+  .eq("type", "custom")
+  .order("created_at", { ascending: false })
+  .limit(1)
   .maybeSingle()
 if (domainError || !localDomain || localDomain.status === "removed") {
   console.error("Workspace does not have a connected domain mapping.")

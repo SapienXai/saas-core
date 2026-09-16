@@ -4,6 +4,7 @@ import { requireUser, requireWorkspaceCreationAccess } from "@/lib/authorization
 import { getPreferredWorkspaceId, getWorkspaceMemberships } from "@/lib/auth-utils"
 import { getWorkspaceEntitlements } from "@/lib/entitlements"
 import { getProductOnboardingPath } from "@/lib/product-config"
+import { ensurePlatformSubdomain } from "@/lib/domains/domain-service"
 import { createServiceRoleClient } from "@/lib/supabase"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
@@ -23,6 +24,7 @@ export async function createWorkspace(input: { name?: string; slug?: string }, m
       const current = (memberships.memberships[0] || existingOwned) as any
       const workspaceId = current.workspace_id || current.id
       const workspaceSlug = current.workspace_slug || (Array.isArray(current.workspaces) ? current.workspaces[0]?.slug : current.workspaces?.slug) || current.slug
+      await ensurePlatformSubdomain(workspaceId, workspaceSlug)
       return { success: true as const, data: [{ workspace_id: workspaceId, workspace_slug: workspaceSlug }], nextPath: getProductOnboardingPath() }
     }
     if (mode === "additional") await requireWorkspaceCreationAccess()
@@ -45,6 +47,7 @@ export async function createWorkspace(input: { name?: string; slug?: string }, m
       return { success: false, message: error?.message || "Workspace could not be created." }
     }
     const workspace = data[0] as { workspace_id: string; workspace_slug: string }
+    await ensurePlatformSubdomain(workspace.workspace_id, workspace.workspace_slug)
     const cookieStore = await cookies()
     cookieStore.set("saas_core_workspace_id", workspace.workspace_id, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 60 * 60 * 24 * 90, path: "/" })
     revalidatePath("/app")

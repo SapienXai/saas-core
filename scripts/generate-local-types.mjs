@@ -24,6 +24,7 @@ export type WorkspaceInvitation = Database["public"]["Tables"]["workspace_invita
 export type Plan = Database["public"]["Tables"]["plans"]["Row"]
 export type WorkspaceSubscription = Database["public"]["Tables"]["workspace_subscriptions"]["Row"]
 export type WorkspaceUsagePeriod = Database["public"]["Tables"]["workspace_usage_periods"]["Row"]
+export type PublicSite = Database["public"]["Tables"]["public_sites"]["Row"]
 export type WorkspaceDomain = Database["public"]["Tables"]["workspace_domains"]["Row"]
 export type WorkspacePwaSettings = Database["public"]["Tables"]["workspace_pwa_settings"]["Row"]
 export type WorkspacePushSubscription = Database["public"]["Tables"]["workspace_push_subscriptions"]["Row"]

@@ -2,6 +2,7 @@ import "server-only"
 
 import { getPreferredWorkspaceId } from "@/lib/auth-utils"
 import { requireUser } from "@/lib/authorization"
+import { ensurePlatformSubdomain } from "@/lib/domains/domain-service"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { cookies } from "next/headers"
 import { revalidatePath } from "next/cache"
@@ -79,6 +80,7 @@ export async function ensureInitialWorkspace(input: { nameHint?: string | null }
     }
 
     const workspace = { workspaceId: data[0].workspace_id as string, workspaceSlug: data[0].workspace_slug as string }
+    await ensurePlatformSubdomain(workspace.workspaceId, workspace.workspaceSlug)
     const cookieStore = await cookies()
     cookieStore.set("saas_core_workspace_id", workspace.workspaceId, {
       httpOnly: true,

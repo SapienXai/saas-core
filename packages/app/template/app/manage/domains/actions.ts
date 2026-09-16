@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { connectWorkspaceDomain, domainErrorMessage, DomainServiceError, refreshWorkspaceDomain, removeWorkspaceDomain } from "@/lib/domains/domain-service"
+import { changePlatformSubdomain, claimPlatformSubdomain, connectWorkspaceDomain, domainErrorMessage, DomainServiceError, refreshWorkspaceDomain, removeWorkspaceDomain } from "@/lib/domains/domain-service"
 
 function actionError(error: unknown, action: string) {
   const code = error instanceof DomainServiceError ? error.code : "UNKNOWN"
@@ -11,6 +11,26 @@ function actionError(error: unknown, action: string) {
     error: error instanceof Error ? error.message : String(error),
   })
   return { success: false as const, code, message: domainErrorMessage(error) }
+}
+
+export async function claimPlatformSubdomainAction(slug: string) {
+  try {
+    const result = await claimPlatformSubdomain({ slug })
+    revalidatePath("/manage/domains")
+    return { success: true as const, ...result }
+  } catch (error) {
+    return actionError(error, "claim-platform-subdomain")
+  }
+}
+
+export async function changePlatformSubdomainAction(slug: string) {
+  try {
+    const result = await changePlatformSubdomain({ slug })
+    revalidatePath("/manage/domains")
+    return { success: true as const, ...result }
+  } catch (error) {
+    return actionError(error, "change-platform-subdomain")
+  }
 }
 
 export async function connectWorkspaceDomainAction(hostname: string) {
