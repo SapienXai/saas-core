@@ -47,6 +47,13 @@ The product layer normally lives under `app/(product)/app`, `src/product/`,
 `supabase/migrations/`. Configure the workspace home and navigation in
 `lib/product-config.ts`; do not fork Core navigation or tenancy logic.
 
+Core also owns the canonical public-domain boundary. Public host resolution is
+`hostname → Domain → PublicSite → Workspace → productKey`; use the typed Core
+domain service and `resolveHost()`/`resolvePublicWorkspaceRequest()` from
+server code. Do not create a product hostname table or query
+`workspace_domains` directly. `productKey` selects the renderer; Workspace
+remains the ownership boundary.
+
 ## Add product value
 
 1. Define product tables in a product migration. Every tenant-owned row needs a
@@ -69,7 +76,7 @@ Catalog sync uses server-only Supabase credentials. It writes Core plan
 configuration while leaving provider price IDs and provider mapping ownership
 to the product's billing integration.
 
-For the first domain table, adapt the safe recipe in
+For the first product table, adapt the safe recipe in
 [docs/DATABASE.md](https://github.com/SapienXai/saas-core/blob/main/docs/DATABASE.md#product-table-recipe).
 The recipe is intentionally not executed by this CLI.
 

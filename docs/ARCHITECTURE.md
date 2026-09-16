@@ -55,39 +55,47 @@ ordinary production users. Product setup is an internal handoff configured by
 
 ## Public Workspace Routing
 
-Public routing stops at the Core tenancy boundary:
+Public routing now stops at the canonical Core domain boundary:
 
 ```text
 HTTP request
   → trusted x-forwarded-host/Host boundary
-  → classifyHostname()
-  → Workspace lookup by hosted slug or verified custom-domain mapping
-  → PublicWorkspaceContext { Workspace, normalized pathname }
-  → product-owned pathname interpretation
+  → canonical normalizeHostname()
+  → resolveHost()
+  → Domain → PublicSite → Workspace → productKey
+  → product public renderer interprets the pathname
 ```
 
-SaaS Core owns `hostname → Workspace`. The product owns
-`Workspace + pathname → product entity`. For example, `/beach` is only a
-normalized product pathname; Core does not define whether it is a page or any
-other product entity. Query parameters are not part of pathname identity and
-cannot override the hostname-selected Workspace.
+`Workspace` is the tenant and ownership boundary. `PublicSite` is a
+workspace-owned public surface for one rendering/application context, and its
+`product_key` selects the product that renders it. `Domain` is only a
+hostname mapping; it is never owned directly by a product and the hostname is
+never itself a tenant identifier. A Workspace can therefore own public
+surfaces for more than one product without introducing a second domain table.
 
-Hosted Workspace requests use an exact slug under the configured root domain
-and require `workspaces.status = 'active'` plus
-`workspaces.platform_status = 'active'`. Custom requests use an exact
-`workspace_domains.hostname` mapping and require `status = 'active'`,
-`provider_environment = 'production'`, `verification_state = 'verified'`,
-`provider_verified = true`, `dns_configured = true`, and a non-null
-`verified_at`, followed by the same active Workspace check. An ordinary miss
-returns `not_found`; a database or service failure returns `unavailable`
-without exposing internal error details. Platform, local, preview,
-canonical-app, and reserved system surfaces return `not_public_workspace`.
+SaaS Core owns `hostname → Domain → PublicSite → Workspace → productKey`.
+The product owns `Workspace + pathname → product entity`. For example,
+`/beach` is only a normalized product pathname; Core does not define whether
+it is a page or any other product entity. Query parameters are not part of
+pathname identity and cannot override the hostname-selected Workspace.
 
-`resolvePublicWorkspaceRequest()` is server-only and shares the trusted host
-extraction boundary with `proxy.ts`. It performs no Vercel API, DNS, provider
-refresh, or reconciliation call during page resolution. Domain management
-continues to own provider reconciliation and only its persisted result is
-consumed by the public resolver.
+Platform requests use an exact active `workspace_domains` row of type
+`platform_subdomain`; the row is created through the Core platform-domain
+service and points at the selected `public_sites` row. Custom requests use an
+exact normalized domain mapping and additionally require the existing
+production/provider verification flags. Both paths require
+`workspaces.status = 'active'` plus `workspaces.platform_status = 'active'`.
+An ordinary miss returns `not_found`; a database or service failure returns
+`unavailable` without exposing internal error details. Platform, local,
+preview, canonical-app, and reserved system surfaces return
+`not_public_workspace`.
+
+`resolveHost()` and `resolvePublicWorkspaceRequest()` are server-only. They
+share the trusted host extraction boundary with `proxy.ts`, and the public
+path performs no Vercel API, DNS, provider refresh, or reconciliation call.
+Domain management continues to own provider reconciliation and only its
+persisted result is consumed by the public resolver. Products must consume
+this Core contract rather than query `workspace_domains` directly.
 
 Development domains have one canonical parser in `lib/domains/hostname.ts`.
 Simple `localhost`, raw loopback/LAN, and `*.localhost` hosts remain
@@ -199,7 +207,8 @@ plus `supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling
 from the repository root and `packages/app/template`. Current `main` also
 contains `supabase/migrations/20260830150000_saas_core_platform_user_guards.sql`,
 `supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql`,
-and `supabase/migrations/20260915120000_scheduled_provider_price_trust.sql`;
+and `supabase/migrations/20260915120000_scheduled_provider_price_trust.sql`,
+plus `supabase/migrations/20260916100000_saas_core_domain_foundation_v1.sql`;
 `pnpm core:source-parity` is the exact current-branch source check. Package
 packing and CLI `init`/`update` carry those sources to consumers and never
 execute SQL.

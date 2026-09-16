@@ -5,10 +5,11 @@ SaaS needs.
 
 SaaS Core is a source-derived Next.js and Supabase foundation for products
 that need authenticated accounts, multi-workspace tenancy, membership and
-roles, server-backed entitlements, billing persistence, custom domains, PWA,
-email, push, Platform administration and an agent surface. A product receives
-the real application shell and owns the domain layer that begins at
-`workspace_id`.
+roles, server-backed entitlements, billing persistence, workspace-owned
+domains, PWA, email, push, Platform administration and an agent surface. A
+product receives the real application shell and consumes Core's canonical
+`hostname → Domain → PublicSite → Workspace → productKey` contract; it does
+not own hostname mappings.
 
 > Current coordinates: coordinated runtime/package release `2.5.0`; Core
 > schema compatibility `2.0`. The `saas-core-v2.5.0` tag is the release anchor.
@@ -25,13 +26,13 @@ flowchart LR
   Shell --> Auth[Supabase Auth]
   Shell --> Tenant[Workspace tenancy and roles]
   Tenant --> RLS[(Postgres + RLS)]
-  RLS --> Domain[Product domain tables]
+  RLS --> Domain[Core public domains and product tables]
   Shell --> Services[Billing, domains, PWA, email, push]
 ```
 
-Core stops at the reusable Workspace boundary. Products add routes, domain
-tables, catalog meaning and product UX without forking tenancy or security
-infrastructure.
+Core owns the reusable Workspace and public-domain boundaries. Products add
+routes, product tables, catalog meaning and product UX without forking
+hostname ownership, tenancy or security infrastructure.
 
 ## What you get
 
@@ -105,7 +106,7 @@ principles and a safe first-table recipe.
 
 | Core owns | Product owns | Mixed |
 | --- | --- | --- |
-| Auth, Workspace, membership, authorization, billing, entitlements, Platform, PWA, domains, email, push, agent surface, shared UI and direct Core migrations | Product routes, domain tables, catalog, product styles, product migrations, consumer docs/env and generated Supabase types | `package.json`: product metadata/scripts remain; CLI updates only the four Core package coordinates |
+| Auth, Workspace, membership, authorization, billing, entitlements, Platform, PWA, public-domain mappings, email, push, agent surface, shared UI and direct Core migrations | Product routes, product tables, catalog, product styles, product migrations, consumer docs/env and generated Supabase types | `package.json`: product metadata/scripts remain; CLI updates only the four Core package coordinates |
 
 Inspect before changing a consumer:
 

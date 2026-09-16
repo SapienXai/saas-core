@@ -243,9 +243,11 @@ or usage metric does not alter the Core schema or migration source.
 ## Public Workspace routing
 
 Public Workspace routing is a Core runtime boundary, not a product entity
-router. Products may use `resolvePublicWorkspaceRequest()` from server code to
-receive a resolved Workspace plus normalized pathname, then resolve their own
-domain entity. Keep product route meaning and data in product-owned files.
+router. Products may use `resolveHost()` or
+`resolvePublicWorkspaceRequest()` from server code to receive the canonical
+Domain → PublicSite → Workspace → productKey result plus normalized pathname,
+then resolve their own product entity. Keep product route meaning and data in
+product-owned files.
 
 The canonical request-host extractor and `classifyHostname()` are shared by
 proxy and public resolution. Do not add a second tenant-host parser, query
@@ -259,10 +261,12 @@ simple local work and `<private-ip>.nip.io` forms when testing root, app, or
 Workspace host semantics. Keep nip.io separate from ngrok tunnels and do not
 persist nip.io aliases as customer domains.
 
-The schema compatibility coordinate remains Core `2.0`; this capability uses
-the existing `workspaces` and `workspace_domains` tables and does not add a
-product-entity table or change migration ownership. Domain provider
-reconciliation remains in the existing management workflow.
+The schema compatibility coordinate remains Core `2.0`; this capability adds
+the workspace-owned `public_sites` surface and extends `workspace_domains`
+with the canonical site, hostname, type, and primary-domain coordinates. It
+does not add a product-entity table or change migration ownership. Domain
+provider reconciliation remains in the existing management workflow, while
+products consume Core's typed domain service and `resolveHost()` contract.
 
 ## UI changes
 

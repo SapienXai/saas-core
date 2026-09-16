@@ -109,8 +109,10 @@ flowchart TD
   Verify --> Update[diff, dry-run update, controlled migration apply]
 ```
 
-The product owns the domain model, product routes, catalog copy, product
-styles, product migrations and generated Supabase types. New Product
+The product owns its domain data model, product routes, catalog copy, product
+styles, product migrations and generated Supabase types. Core owns canonical
+public hostname mappings and products consume its Domain/PublicSite resolver
+contract. New Product
 migrations live directly under `supabase/migrations/`; Core claims only the
 exact migration paths shipped by its source/template. Existing
 `supabase/migrations/product/` files remain preserved as a legacy compatibility

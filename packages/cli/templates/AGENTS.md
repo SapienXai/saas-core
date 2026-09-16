@@ -44,6 +44,10 @@ capability instead.
 ## Product implementation rules
 
 - Tenant-owned data has a `workspace_id` foreign key and explicit RLS.
+- Core owns public hostname mappings through `Domain → PublicSite → Workspace`.
+  Consume the typed Core resolver/service and never add a product hostname
+  table or query `workspace_domains` directly; `productKey` is rendering
+  context, not domain ownership.
 - Use Core membership/role helpers and server actions for authorization. A
   hidden button or route check is not a tenancy boundary.
 - Keep service-role clients in server-only modules and never expose their key

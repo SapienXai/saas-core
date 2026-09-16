@@ -1,7 +1,8 @@
 # Product integration
 
-SaaS Core supplies the identity, tenancy, security, billing, and application
-surface. A product supplies the domain that lives inside a Workspace.
+SaaS Core supplies the identity, tenancy, security, billing, public-domain,
+and application surface. A product supplies the product domain that lives
+inside a Workspace and consumes Core's public-domain mapping.
 
 ## Minimum product contract
 
@@ -49,9 +50,9 @@ Classify a requested change before editing a consumer:
 
 Use this test: would the request still make sense if this product did not
 exist? If yes, it belongs in Core. If the product needs a capability Core does
-not expose, add the generic capability to Core first, then configure and
-consume it in the product. Keep the direction `SaaS Core → Products → domain`
-and never duplicate generic implementations in both repositories.
+ not expose, add the generic capability to Core first, then configure and
+ consume it in the product. Keep the direction `SaaS Core → Products → product
+ domain` and never duplicate generic implementations in both repositories.
 
 The optional `onboarding.productSetupPath` is the product handoff after Core
 has created the first Workspace. It must be an internal path; omitted or
@@ -170,7 +171,7 @@ with no pointer or keyboard interaction capture. Products own the URL and any
 palette overrides in `styles/product-theme.css`; reduced-motion mode hides
 the external media surface while keeping the auth flow available.
 
-## Adding a domain
+## Adding a product table
 
 ```sql
 create table public.projects (
@@ -189,15 +190,16 @@ create policy projects_member_read on public.projects
 
 The example is intentionally unrelated to any specific industry. Product
 tables must not rely on UI filtering as tenancy protection. Add insert,
-update, delete, role, and service-role policies deliberately for each domain.
+update, delete, role, and service-role policies deliberately for each product
+resource. Public hostname ownership remains in Core.
 
 ## Public Workspace Routing
 
 The public product boundary is intentionally small:
 
 ```text
-SaaS Core: hostname → Workspace
-Product:   Workspace + pathname → product entity
+SaaS Core: hostname → Domain → PublicSite → Workspace → productKey
+Product:   resolved (workspaceId, siteId, productKey) + pathname → product renderer
 ```
 
 A product can resolve a server request with the Core helper and then interpret
@@ -212,8 +214,10 @@ if (result.status === "unavailable") {
   throw new Error("Public Workspace routing is temporarily unavailable")
 }
 
-const { workspaceId, workspaceSlug, pathname } = result.context
+const { workspaceId, siteId, productKey, workspaceSlug, pathname } = result.context
 // Product-owned: resolve (workspaceId, pathname) in the product domain.
+// Product-owned: use productKey to select the public renderer; do not query
+// workspace_domains directly.
 ```
 
 The same context contract supports a hosted Workspace URL such as
@@ -223,17 +227,19 @@ know what it represents. The hostname is the only public tenant authority.
 Neither a query parameter (`?workspace=...`) nor a path segment can switch the
 Workspace, and the query string is not included in `pathname`.
 
-Hosted resolution requires the exact Workspace slug and an active public
-Workspace. Custom resolution requires the exact persisted `workspace_domains`
-record to be active, production-configured, verified, provider-verified,
-DNS-configured, and stamped with `verified_at`, plus the same active Workspace
-check. A successful lookup with no eligible Workspace or domain returns
-`not_found`, which the product can render as a normal public 404. A persistence
-or service failure returns `unavailable`; it must flow through application
-error handling rather than being presented as a missing Workspace. The public
-result is still generic and fail-closed, with no database details exposed.
-Public rendering does not call Vercel, DNS, or any domain provider; the
-domain-management workflow is responsible for reconciliation.
+Hosted resolution requires an exact active Core `Domain` row of type
+`platform_subdomain`; it does not fall back to the Workspace slug. Custom
+resolution requires the exact persisted `workspace_domains` record to be
+active, production-configured, verified, provider-verified, DNS-configured,
+and stamped with `verified_at`, plus the same active Workspace check. Both
+records resolve through their `public_sites` row and return `siteId` and
+`productKey`. A successful lookup with no eligible Workspace, site, or domain
+returns `not_found`, which the product can render as a normal public 404. A
+persistence or service failure returns `unavailable`; it must flow through
+application error handling rather than being presented as a missing Workspace.
+The public result is still generic and fail-closed, with no database details
+exposed. Public rendering does not call Vercel, DNS, or any domain provider;
+the domain-management workflow is responsible for reconciliation.
 
 Core canonical app paths (`/app/*`, `/manage`, `/platform`, `/login`,
 `/signup`, `/onboarding`, `/auth`, `/invite`, `/setup`, and related descendants)

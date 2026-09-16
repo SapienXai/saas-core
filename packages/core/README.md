@@ -8,7 +8,8 @@ Consumers apply and verify the delivered sources through their own controlled
 migration process.
 
 Generic SaaS Core contracts include product configuration, compatibility
-metadata, and the Agent Surface contract. Use `defineAgentTool()` for a
+metadata, the workspace-owned Domain/PublicSite contract, and the Agent
+Surface contract. Use `defineAgentTool()` for a
 validated, transport-neutral capability definition; the managed application
 template supplies the page-scoped WebMCP adapter.
 
@@ -31,8 +32,10 @@ Plan catalog consumers can also use `validatePlanDefinition()`,
 `classifyProductPlanChange()`. A duplicate is intentionally inactive and has
 no provider price reference; provider mappings must be registered separately.
 
-Portable workspace, entitlement, catalog, schema, manifest, and compatibility
-contracts for SaaS Core products. This package contains no Next.js, Supabase
+Portable workspace, entitlement, catalog, public-domain, schema, manifest, and
+compatibility contracts for SaaS Core products. `CoreDomainService` describes
+the product-neutral `listDomains`, platform-subdomain mutation, and
+`resolveHost` boundary. This package contains no Next.js, Supabase
 service-role, Paddle, migration execution, or product-domain code. Its package
 boundary does not own the template's migration files.
 

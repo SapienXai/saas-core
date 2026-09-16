@@ -34,17 +34,17 @@ and the server-only public resolver consume that same boundary. Query
 parameters, cookies, form fields, and client-supplied Workspace IDs/slugs have
 no authority over public tenant selection.
 
-Hosted hosts resolve an exact slug under the configured root domain. Custom
-hosts resolve an exact persisted `workspace_domains` mapping only when the
-domain is active, production-configured, verified, provider-verified,
-DNS-configured, and has `verified_at`, and the mapped Workspace is active. Any
-unknown or non-public mapping returns `not_found` and fails closed. A
+All public hosts resolve through the exact persisted chain
+`workspace_domains → public_sites → workspaces`. Platform rows must be active
+`platform_subdomain` mappings; custom rows additionally require the existing
+production/provider verification flags and `verified_at`. The result includes
+the Workspace, public-site ID, and `product_key`; it never treats a product as
+the domain owner or a hostname slug as a tenant identifier. Any unknown,
+pending, failed, or non-public mapping returns `not_found` and fails closed. A
 persistence or service failure returns the generic `unavailable` result
 instead of being misreported as tenant absence; raw database/provider details
-are never sent to the public client. Fail closed means no tenant context is
-exposed on either path. The resolver returns only a small Workspace context
-and normalized pathname; it never interprets product paths. It performs no
-provider or DNS calls during public page resolution.
+are never sent to the public client. The resolver performs no provider or DNS
+calls during public page resolution.
 
 Canonical app ownership is separate from reserved public/system ownership.
 Tenant/custom hosts redirect `/app/*`, `/manage`, `/platform`, and Core auth or
@@ -57,12 +57,13 @@ surfaces.
 Development nip.io trust is narrow and environment-gated. Only a dotted
 loopback/private IPv4 with at most one leading app, reserved, or Workspace
 label is accepted; unsupported `*.nip.io` hosts are rejected from the trusted
-request-host boundary. In development, a supported Workspace alias resolves
-through the normal hosted Workspace lookup, while the root and app aliases use
-the same canonical platform route model. In production, all nip.io aliases are
-untrusted and cannot masquerade as platform hosts or become persisted customer
-domains. Raw private LAN addresses are converted to nip.io only for reachable
-development Auth/origin targets; the active port is retained.
+request-host boundary. In development, a supported Workspace alias is
+normalized and must still match a canonical platform-domain row; the root and
+app aliases use the same platform route model. In production, all nip.io
+aliases are untrusted and cannot masquerade as platform hosts or become
+persisted customer domains. Raw private LAN addresses are converted to nip.io
+only for reachable development Auth/origin targets; the active port is
+retained.
 
 ## Platform and service roles
 

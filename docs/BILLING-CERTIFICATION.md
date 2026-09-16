@@ -49,8 +49,9 @@ never called by the browser or by the provider-neutral package.
 
 Each product owns its identity, plan keys, prices, provider price mappings,
 feature and limit keys, usage metrics, presentation copy, routes, styles,
-migrations, and domain writes. Core does not interpret a product's domain
-entities or catalog names.
+migrations, and product-domain writes. Core owns the public hostname mapping
+through `Domain → PublicSite → Workspace`; it does not interpret a product's
+domain entities or catalog names.
 
 ### 2. What must ReserveVia migrate?
 

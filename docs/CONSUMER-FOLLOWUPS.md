@@ -81,7 +81,9 @@ and an explicit rollback plan.
 - [ ] Define paid plans, prices, intervals, presentation copy, and provider
   mappings in product-owned catalog/configuration. Keep venue, device, music,
   catalog, and usage limits and counters in product-owned code.
-- [ ] Move authorized domain writes to generic Core entitlement and usage
+- [ ] Consume SaaS Core's `listDomains`, platform-subdomain mutation, and
+  `resolveHost` contracts for public hostname ownership; keep product-specific
+  rendering, entities, and usage writes in the consumer
   assertions while retaining product tables, routes, styles, and migrations.
 - [ ] Run the sandbox lifecycle matrix for checkout, upgrade, deferred
   downgrade/undo, cancel/resume, renewal, past-due recovery, terminal state,
