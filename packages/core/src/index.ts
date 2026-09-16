@@ -2,8 +2,21 @@ export const CORE_VERSION = "2.5.0"
 export const CORE_SCHEMA_VERSION = "2.0"
 
 export * from "./billing.js"
-export * from "./domains.js"
 export * from "./entitlements.js"
+export type {
+  CoreDomainType,
+  CoreDomainStatus,
+  CorePublicSite,
+  CoreDomain,
+  CoreHostResolution,
+  CoreListDomainsInput,
+  CorePlatformSubdomainInput,
+  CoreDomainMutationResult,
+  CoreDomainService,
+} from "./domains.js"
+// Keep the runtime validator explicit for bundlers that do not preserve
+// value re-exports from a type-heavy contract module.
+export { isCoreProductKey } from "./domains.js"
 
 import {
   isBillingInterval,
