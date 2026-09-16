@@ -159,7 +159,7 @@ key to browser code.
 
 Core migration sources are the exact direct files under
 `supabase/migrations/*.sql` shipped by the application template and CLI,
-including `20260916100000_saas_core_domain_foundation_v1.sql`.
+including `20260916120000_saas_core_domain_foundation_v1.sql`.
 Product migrations use the same flat directory but are the direct `.sql` paths
 not claimed by that Core source/manifest set. Existing nested
 `supabase/migrations/product/**` files remain Product-owned for compatibility;

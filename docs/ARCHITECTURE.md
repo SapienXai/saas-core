@@ -208,7 +208,7 @@ from the repository root and `packages/app/template`. Current `main` also
 contains `supabase/migrations/20260830150000_saas_core_platform_user_guards.sql`,
 `supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql`,
 and `supabase/migrations/20260915120000_scheduled_provider_price_trust.sql`,
-plus `supabase/migrations/20260916100000_saas_core_domain_foundation_v1.sql`;
+plus `supabase/migrations/20260916120000_saas_core_domain_foundation_v1.sql`;
 `pnpm core:source-parity` is the exact current-branch source check. Package
 packing and CLI `init`/`update` carry those sources to consumers and never
 execute SQL.

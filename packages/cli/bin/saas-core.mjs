@@ -37,7 +37,7 @@ const REQUIRED_BILLING_MIGRATIONS = [
   "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql",
 ]
 const REQUIRED_DOMAIN_MIGRATIONS = [
-  "supabase/migrations/20260916100000_saas_core_domain_foundation_v1.sql",
+  "supabase/migrations/20260916120000_saas_core_domain_foundation_v1.sql",
 ]
 const PRODUCT_USAGE_EXTENSION = "src/product/usage.ts"
 const PRODUCT_PLATFORM_ADMIN_EXTENSION = "src/product/platform-admin.ts"

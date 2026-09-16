@@ -20,7 +20,7 @@ const billingMigrations = [
   "supabase/migrations/20260914185445_scheduled_downgrade_consumption_ceiling.sql",
   "supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql",
   "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql",
-  "supabase/migrations/20260916100000_saas_core_domain_foundation_v1.sql",
+  "supabase/migrations/20260916120000_saas_core_domain_foundation_v1.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
