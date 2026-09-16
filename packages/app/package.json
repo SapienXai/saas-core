@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core-app",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "Portable source-derived SaaS Core application template",
   "license": "UNLICENSED",
   "repository": { "type": "git", "url": "git+https://github.com/SapienXai/saas-core.git" },

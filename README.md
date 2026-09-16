@@ -11,8 +11,8 @@ product receives the real application shell and consumes Core's canonical
 `hostname → Domain → PublicSite → Workspace → productKey` contract; it does
 not own hostname mappings.
 
-> Current coordinates: coordinated runtime/package release `2.5.0`; Core
-> schema compatibility `2.0`. The `saas-core-v2.5.0` tag is the release anchor.
+> Current coordinates: coordinated runtime/package release `2.6.0`; Core
+> schema compatibility `2.0`. The `saas-core-v2.6.0` tag is the release anchor.
 > This checkout's `main` branch is ahead of that tag and may contain unreleased
 > changes. Treat package metadata, release constants, tags and registry checks
 > as authority—not a historical paragraph in a release note.
@@ -53,8 +53,8 @@ it into the product repository and records a manifest of Core-managed hashes.
 The short path uses the coordinated registry release:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.5.0 @sapienx/saas-core-config@^2.5.0 @sapienx/saas-core-ui@^2.5.0
-pnpm add -D @sapienx/saas-core-cli@^2.5.0
+pnpm add @sapienx/saas-core@^2.6.0 @sapienx/saas-core-config@^2.6.0 @sapienx/saas-core-ui@^2.6.0
+pnpm add -D @sapienx/saas-core-cli@^2.6.0
 pnpm exec saas-core init "My Product" ./my-product
 cd my-product
 pnpm install
@@ -184,7 +184,7 @@ source-map policy before a release can proceed.
 - [Security](docs/SECURITY.md)
 - [UI system](docs/UI-SYSTEM.md)
 - [Consumer upgrades](docs/UPGRADING.md)
-- [Current coordinated release](docs/RELEASE-2.5.0.md)
+- [Current coordinated release](docs/RELEASE-2.6.0.md)
 
 ## Principles
 

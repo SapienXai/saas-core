@@ -4,7 +4,7 @@ Agent Surface is the generic infrastructure that makes a SaaS Core consumer
 ready to expose page capabilities to browser agents. It does not expose any
 product capability by itself.
 
-Agent Surface is included in the current `2.5.0` Core runtime/package release.
+Agent Surface is included in the current `2.6.0` Core runtime/package release.
 Core schema compatibility coordinate remains `2.0`. The release carries the
 additive, Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and

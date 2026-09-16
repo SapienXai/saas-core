@@ -5,10 +5,10 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
-The current coordinated runtime and package release is tag `saas-core-v2.5.0`
+The current coordinated runtime and package release is tag `saas-core-v2.6.0`
 on Core schema compatibility coordinate `2.0`. Its packed consumer contract
 delivers the additive billing sources listed in
-[`RELEASE-2.5.0.md`](./RELEASE-2.5.0.md), while the checked-out `main` branch
+[`RELEASE-2.6.0.md`](./RELEASE-2.6.0.md), while the checked-out `main` branch
 may contain post-tag changes. In particular, current `main` also carries the
 platform-owner guard and fail-closed scheduled-downgrade replacement in the
 canonical source set; those files are development-branch state until a new
@@ -16,7 +16,7 @@ coordinated release is tagged. Package packing and CLI `init`/`update` deliver
 sources but never execute SQL; each consumer owns the controlled apply and
 verification workstream. The Plan Catalog guide is shipped in the Core package
 as `docs/PLAN-CATALOG.md`. The release evidence and certification boundary are recorded in
-[`RELEASE-2.5.0.md`](./RELEASE-2.5.0.md), with the prior release retained in
+[`RELEASE-2.6.0.md`](./RELEASE-2.6.0.md), with the prior release retained in
 [`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md), and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
@@ -55,8 +55,8 @@ The normal consumer path installs the coordinated packages from npm. A fresh
 consumer uses the registry-published CLI to materialize the packed template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.5.0 @sapienx/saas-core-config@^2.5.0 @sapienx/saas-core-ui@^2.5.0
-pnpm add -D @sapienx/saas-core-cli@^2.5.0
+pnpm add @sapienx/saas-core@^2.6.0 @sapienx/saas-core-config@^2.6.0 @sapienx/saas-core-ui@^2.6.0
+pnpm add -D @sapienx/saas-core-cli@^2.6.0
 pnpm exec saas-core init "My Product" ./my-product
 pnpm install --dir ./my-product
 ```
@@ -177,12 +177,14 @@ screenshots, or provider credentials between checkouts.
 
 ## Database changes
 
-The baseline migration is clean and independent. The tagged `2.5.0` release carries
+The baseline migration is clean and independent. The tagged `2.6.0` release carries
 the generic, provider-neutral Core-managed sources
 `supabase/migrations/20260909094344_reusable_billing_persistence.sql` and
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`, and
 `supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql`, and
-`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`;
+`supabase/migrations/20260914100000_reusable_plan_catalog_management.sql`, and
+the additive domain foundation migration
+`supabase/migrations/20260916120000_saas_core_domain_foundation_v1.sql`;
 they are additive and present in both the repository root and
 `packages/app/template`. Their delivery preserves the schema compatibility
 coordinate `2.0`. Current `main` additionally carries the platform-owner guard
@@ -198,7 +200,7 @@ reset at a live ReserveVia database, and never rewrite the source product's
 migration history.
 
 The additive `20260914110000_fix_renew_workspace_invitation.sql` migration is
-delivered by the `2.5.0` coordinated Core update. It replaces the published
+delivered by the `2.6.0` coordinated Core update. It replaces the published
 invitation-renewal function in place with qualified `RETURNING` columns, keeps
 the existing RPC grants and behavior, and remains compatible with schema
 coordinate `2.0`. It is source delivery only; the consumer applies it in its
@@ -218,6 +220,13 @@ the boundary, preserves the transactional entitlement lock, and adds the
 `interval_change` transition kind. It is source delivery only and remains
 compatible with schema coordinate `2.0`.
 
+The additive `20260916120000_saas_core_domain_foundation_v1.sql` migration
+delivers the workspace-owned `public_sites` and `workspace_domains` contract.
+It establishes globally unique normalized hostnames, one platform domain and
+one primary domain per public site, while keeping domain resolution fail closed
+for inactive workspaces or domains. The migration is source-only delivery and
+keeps schema compatibility coordinate `2.0`.
+
 For every schema update:
 
 1. reset local Supabase from zero;
@@ -229,7 +238,7 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and schema compatibility coordinate are separate. The
-current runtime is `2.5.0` and the compatibility coordinate remains `2.0` even
+current runtime is `2.6.0` and the compatibility coordinate remains `2.0` even
 though the release delivers additive billing, entitlement, and plan-catalog
 sources. `doctor`
 reports Core source readiness, consumer presence/hash readiness, and manifest
@@ -287,7 +296,7 @@ bootstrap or npm Trusted Publishing with OIDC. It verifies fresh registry
 installation and creates the GitHub Release only afterward. Any failed gate
 stops before publication. Delete `NPM_TOKEN` after the first successful
 bootstrap and configure Trusted Publishers for all five packages. The `2.4.0`
-evidence remains the prior release baseline; the coordinated `2.5.0` boundary adds
+evidence remains the prior release baseline; the coordinated `2.6.0` boundary adds
 target-plan downgrade eligibility and confirmation-time revalidation while
 retaining the controlled legacy-consumer upgrade, packed exports, managed
 billing/plan-catalog delivery, product-owned preservation, relocation, and a
