@@ -90,6 +90,7 @@ describe("reusable billing UI", () => {
     expect(read("app/manage/plan/actions.ts")).toContain("getProductUsageResolvers")
     expect(read("components/manage/manage-responsive.tsx")).toContain("value: number | undefined")
     expect(read("src/product/usage.ts")).toContain('import "server-only"')
+    expect(read("src/product/platform-admin.ts")).toContain("getProductPlatformWorkspaceDetails")
   })
 
   it("keeps source and template billing surfaces in parity", () => {
@@ -105,6 +106,7 @@ describe("reusable billing UI", () => {
       ["app/platform/billing/page.tsx", "packages/app/template/app/platform/billing/page.tsx"],
       ["app/manage/plan/actions.ts", "packages/app/template/app/manage/plan/actions.ts"],
       ["src/product/usage.ts", "packages/app/template/src/product/usage.ts"],
+      ["src/product/platform-admin.ts", "packages/app/template/src/product/platform-admin.ts"],
       ["lib/billing/interval-policy.ts", "packages/app/template/lib/billing/interval-policy.ts"],
       ["lib/billing/presentation.ts", "packages/app/template/lib/billing/presentation.ts"],
       ["i18n/locales/en.ts", "packages/app/template/i18n/locales/en.ts"],

@@ -122,6 +122,17 @@ resolver and feed the expanded sidebar, collapsed rail, and mobile Sheet.
 Unknown icons safely use the generic layers icon. Optional role and feature
 filters only hide navigation affordances; they are never authorization.
 
+## Platform workspace details extension
+
+The Core-managed `/platform/workspaces` collection exposes an optional
+server-only `src/product/platform-admin.ts` extension. Core owns platform
+authorization and the list shell; a product may return safe summaries and
+child records keyed by Workspace ID for its own domain resources. The
+extension is called only after the Core page has authorized the platform
+operator, and the CLI scaffolds the neutral extension for new and updated
+consumers. Products must keep service-role access and any product-specific
+queries inside that extension.
+
 Core reserves `/app`, `/app/team`, `/app/plan`, `/app/domains`, `/app/pwa`,
 `/app/settings`, and `/app/setup` (including descendants). Product home and
 navigation paths must be safe internal `/app/*` paths and cannot claim these

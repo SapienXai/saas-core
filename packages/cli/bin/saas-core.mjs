@@ -37,6 +37,7 @@ const REQUIRED_BILLING_MIGRATIONS = [
   "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql",
 ]
 const PRODUCT_USAGE_EXTENSION = "src/product/usage.ts"
+const PRODUCT_PLATFORM_ADMIN_EXTENSION = "src/product/platform-admin.ts"
 const DEFAULT_PRODUCT_USAGE_EXTENSION = `import "server-only"
 
 import type { UsageResolverMap } from "@/lib/entitlements"
@@ -53,6 +54,27 @@ export const PRODUCT_USAGE_RESOLVERS: UsageResolverMap = {}
 
 export function getProductUsageResolvers(): UsageResolverMap {
   return PRODUCT_USAGE_RESOLVERS
+}
+`
+const DEFAULT_PRODUCT_PLATFORM_ADMIN_EXTENSION = `import "server-only"
+
+/**
+ * Product-owned details for the Core Platform workspace collection.
+ *
+ * Core owns the operator boundary and the collection shell. Products may add
+ * safe, server-resolved domain summaries and child records without editing a
+ * Core-managed route.
+ */
+export type ProductPlatformWorkspaceDetail = {
+  summary: Array<{ label: string; value: string }>
+  items?: Array<{ id: string; title: string; subtitle?: string | null; status?: string | null }>
+  itemsLabel?: string
+  emptyMessage?: string
+}
+
+export async function getProductPlatformWorkspaceDetails(workspaceIds: readonly string[]): Promise<Record<string, ProductPlatformWorkspaceDetail>> {
+  if (!workspaceIds.length) return {}
+  return {}
 }
 `
 const args = process.argv.slice(2)
@@ -172,6 +194,19 @@ async function ensureProductUsageExtension(directory, sourceRoot) {
   if (existsSync(target)) return false
   await mkdir(path.dirname(target), { recursive: true })
   await writeFile(target, await productUsageExtensionContent(sourceRoot), "utf8")
+  return true
+}
+
+async function productPlatformAdminExtensionContent(sourceRoot) {
+  const source = path.join(sourceRoot, PRODUCT_PLATFORM_ADMIN_EXTENSION)
+  return existsSync(source) ? readFile(source, "utf8") : DEFAULT_PRODUCT_PLATFORM_ADMIN_EXTENSION
+}
+
+async function ensureProductPlatformAdminExtension(directory, sourceRoot) {
+  const target = path.join(directory, PRODUCT_PLATFORM_ADMIN_EXTENSION)
+  if (existsSync(target)) return false
+  await mkdir(path.dirname(target), { recursive: true })
+  await writeFile(target, await productPlatformAdminExtensionContent(sourceRoot), "utf8")
   return true
 }
 
@@ -404,6 +439,7 @@ async function init(options) {
   await mkdir(directory, { recursive: true })
   await copyTree(sourceRoot, directory)
   await ensureProductUsageExtension(directory, sourceRoot)
+  await ensureProductPlatformAdminExtension(directory, sourceRoot)
   await writeProductConfig(directory, name, slug)
   await writeConsumerPackage(directory, slug, sourceRoot)
   await writeConsumerContractFiles(directory, name, slug, sourceRoot)
@@ -517,6 +553,10 @@ async function healthChecks(directory, manifest, sourceRoot = DEFAULT_TEMPLATE_R
   if (existsSync(path.join(sourceRoot, PRODUCT_USAGE_EXTENSION))) {
     if (!existsSync(path.join(directory, PRODUCT_USAGE_EXTENSION))) add("PRODUCT", "ERROR", `Product usage resolver extension is missing: ${PRODUCT_USAGE_EXTENSION}`)
     else add("PRODUCT", "INFO", `Product usage resolver extension is present and product-owned: ${PRODUCT_USAGE_EXTENSION}`)
+  }
+  if (existsSync(path.join(sourceRoot, PRODUCT_PLATFORM_ADMIN_EXTENSION))) {
+    if (!existsSync(path.join(directory, PRODUCT_PLATFORM_ADMIN_EXTENSION))) add("PRODUCT", "ERROR", `Product platform workspace extension is missing: ${PRODUCT_PLATFORM_ADMIN_EXTENSION}`)
+    else add("PRODUCT", "INFO", `Product platform workspace extension is present and product-owned: ${PRODUCT_PLATFORM_ADMIN_EXTENSION}`)
   }
   const database = await databaseSchemaCheck()
   add("DATABASE", database.status, database.detail)
@@ -710,7 +750,7 @@ async function validateUpdatedConsumer(directory, source, expectedManifest) {
   if (packageDriftItems.length) throw new Error(`Post-update package validation failed: ${packageDriftItems.map((item) => item.name).join(", ")}.`)
   const paths = localPathValues(packageJson)
   if (paths.length) throw new Error(`Post-update portability validation failed: ${paths.map((item) => `${item.name}=${item.value}`).join(", ")}.`)
-  for (const relative of ["product.catalog.json", "lib/product-config.ts", "src/product/domain.ts", PRODUCT_USAGE_EXTENSION, "types/supabase.ts", ...CONSUMER_CONTRACT_FILES]) {
+  for (const relative of ["product.catalog.json", "lib/product-config.ts", "src/product/domain.ts", PRODUCT_USAGE_EXTENSION, PRODUCT_PLATFORM_ADMIN_EXTENSION, "types/supabase.ts", ...CONSUMER_CONTRACT_FILES]) {
     if (!existsSync(path.join(directory, relative))) throw new Error(`Post-update consumer contract file is missing: ${relative}.`)
   }
   for (const relative of ["README.md", "AGENTS.md"]) {
@@ -748,6 +788,9 @@ async function update(options) {
   const productUsageExtensionFile = path.join(directory, PRODUCT_USAGE_EXTENSION)
   const scaffoldProductUsageExtension = !existsSync(productUsageExtensionFile)
   const productUsageExtension = scaffoldProductUsageExtension ? await productUsageExtensionContent(sourceRoot) : null
+  const productPlatformAdminExtensionFile = path.join(directory, PRODUCT_PLATFORM_ADMIN_EXTENSION)
+  const scaffoldProductPlatformAdminExtension = !existsSync(productPlatformAdminExtensionFile)
+  const productPlatformAdminExtension = scaffoldProductPlatformAdminExtension ? await productPlatformAdminExtensionContent(sourceRoot) : null
   const previous = manifest.managedFiles || {}
   const additions = []
   const replacements = []
@@ -807,7 +850,7 @@ async function update(options) {
   }
   const provenanceChanged = Boolean(coreSourceCommit && manifest.coreSourceCommit !== coreSourceCommit)
   const managedOwnershipChanged = [...source.keys()].some((relative) => !previous[relative])
-  const scaffolded = [...(scaffoldProductUsageExtension ? [PRODUCT_USAGE_EXTENSION] : []), ...missingContractFiles]
+  const scaffolded = [...(scaffoldProductUsageExtension ? [PRODUCT_USAGE_EXTENSION] : []), ...(scaffoldProductPlatformAdminExtension ? [PRODUCT_PLATFORM_ADMIN_EXTENSION] : []), ...missingContractFiles]
   const changed = additions.length + replacements.length + removals.length + scaffolded.length + (packageChanged ? 1 : 0) + (provenanceChanged ? 1 : 0) + (managedOwnershipChanged ? 1 : 0)
   const report = {
     dryRun: options.dryRun,
@@ -859,6 +902,7 @@ async function update(options) {
         await writeApplied("package.json", json(mergeCoreDependencies(currentPackage, corePackageVersions())))
       }
       if (scaffoldProductUsageExtension) await writeApplied(PRODUCT_USAGE_EXTENSION, productUsageExtension)
+      if (scaffoldProductPlatformAdminExtension) await writeApplied(PRODUCT_PLATFORM_ADMIN_EXTENSION, productPlatformAdminExtension)
       for (const relative of missingContractFiles) await writeApplied(relative, contractContents.get(relative))
       const managedFiles = await managedFilesForUpdate(directory, source, previous)
       const nextManifest = { ...manifest, coreVersion: VERSION, schemaVersion: SCHEMA_VERSION, packageVersions: corePackageVersions(), templateVersion: VERSION, productOwnedPaths, managedFiles, generatedAt: new Date().toISOString() }

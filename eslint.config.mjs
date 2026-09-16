@@ -27,6 +27,7 @@ export default defineConfig([
     "build/**",
     "dist/**",
     "**/dist/**",
+    ".saas-core-backups/**",
     "supabase/.branches/**",
     "supabase/.temp/**",
     "public/vendor/**",
