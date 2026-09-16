@@ -144,7 +144,7 @@ function paddleSubscriptionEventData(subscription: AuthoritativePaddleState["sub
       ? { action: subscription.scheduledChange.action, effectiveAt: subscription.scheduledChange.effectiveAt, resumeAt: subscription.scheduledChange.resumeAt }
       : null,
     customData: subscription.customData,
-    items: subscription.items.map((item) => ({ priceId: item.price?.id || null, quantity: item.quantity })),
+    items: subscription.items.map((item) => ({ priceId: item.price?.id || null, productId: item.price?.productId || null, quantity: item.quantity })),
   }
 }
 
@@ -499,6 +499,116 @@ export async function reconcilePaddleSubscription() {
     }
   } catch (error) {
     return { success: false, message: friendlyBillingError(error) }
+  }
+}
+
+const COMPLETED_PADDLE_TRANSACTION_STATUSES = new Set(["billed", "paid", "completed"])
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function checkoutVerificationFailure(message: string) {
+  return { success: false as const, message, data: { pending: false as const } }
+}
+
+/**
+ * Local development can receive Paddle's browser callback before a public
+ * webhook destination is reachable. Re-read the checkout and its recurring
+ * subscription server-side, then pass the provider observation through the
+ * same projection used by signed webhooks. The browser never grants access.
+ */
+export async function reconcilePaddleCheckoutTransaction(transactionId: string) {
+  try {
+    const membership = await requireCurrentWorkspaceOwner()
+    const requestedTransactionId = transactionId?.trim() || ""
+    if (!/^txn_[A-Za-z0-9_-]{8,200}$/.test(requestedTransactionId)) return checkoutVerificationFailure("Checkout could not be verified.")
+
+    const environment = getBillingEnvironment()
+    const supabase = createServiceRoleClient()
+    const checkout = await supabase
+      .from("billing_checkout_sessions")
+      .select("workspace_id, environment, target_plan_key, provider_price_id, provider_transaction_id, status")
+      .eq("workspace_id", membership.workspace_id)
+      .eq("environment", environment)
+      .eq("provider_transaction_id", requestedTransactionId)
+      .maybeSingle()
+    if (checkout.error) throw new Error(checkout.error.message)
+    if (!checkout.data) return checkoutVerificationFailure("Checkout could not be verified.")
+
+    const paddle = getPaddleServerClient()
+    const transaction = await paddle.transactions.get(requestedTransactionId)
+    if (transaction.status === "canceled") return checkoutVerificationFailure("Your payment was canceled. Start checkout again.")
+    if (!COMPLETED_PADDLE_TRANSACTION_STATUSES.has(transaction.status)) {
+      return { success: false as const, message: "Payment is still being confirmed.", data: { pending: true as const } }
+    }
+    if (!transaction.subscriptionId) {
+      return { success: false as const, message: "Payment is still being confirmed.", data: { pending: true as const } }
+    }
+
+    const transactionCustomData = recordValue(transaction.customData)
+    if (
+      transactionCustomData.saas_core_workspace_id !== membership.workspace_id ||
+      transactionCustomData.saas_core_target_plan !== checkout.data.target_plan_key ||
+      transactionCustomData.saas_core_billing_environment !== environment
+    ) return checkoutVerificationFailure("Checkout details could not be verified.")
+
+    const transactionItem = transaction.items?.[0]
+    if (transaction.items?.length !== 1 || transactionItem?.quantity !== 1 || transactionItem.price?.id !== checkout.data.provider_price_id) {
+      return checkoutVerificationFailure("Checkout details could not be verified.")
+    }
+
+    const providerSubscription = await paddle.subscriptions.get(transaction.subscriptionId)
+    if (providerSubscription.status !== "active" && providerSubscription.status !== "trialing") {
+      return checkoutVerificationFailure("Paddle did not activate the subscription. Check the payment method and try again.")
+    }
+
+    const subscriptionCustomData = recordValue(providerSubscription.customData)
+    if (
+      subscriptionCustomData.saas_core_workspace_id !== membership.workspace_id ||
+      subscriptionCustomData.saas_core_target_plan !== checkout.data.target_plan_key ||
+      subscriptionCustomData.saas_core_billing_environment !== environment
+    ) return checkoutVerificationFailure("Subscription details could not be verified.")
+
+    const subscriptionItem = providerSubscription.items?.[0]
+    if (providerSubscription.items?.length !== 1 || subscriptionItem?.quantity !== 1 || subscriptionItem.price?.id !== checkout.data.provider_price_id) {
+      return checkoutVerificationFailure("Subscription details could not be verified.")
+    }
+
+    const transactionOccurredAt = transaction.updatedAt || transaction.createdAt
+    const transactionResult = await applyPaddleSubscriptionEvent({
+      eventId: `checkout_reconcile_transaction_${transaction.id}`,
+      eventType: "transaction.completed",
+      occurredAt: transactionOccurredAt,
+      data: {
+        id: transaction.id,
+        customerId: transaction.customerId,
+        customData: transaction.customData,
+      },
+    })
+    const occurredAt = providerSubscription.updatedAt || transactionOccurredAt
+    const subscriptionResult = await applyPaddleSubscriptionEvent({
+      eventId: `checkout_reconcile_subscription_${providerSubscription.id}_${occurredAt}`,
+      eventType: "subscription.updated",
+      occurredAt,
+      data: paddleSubscriptionEventData(providerSubscription),
+    })
+    revalidatePath("/manage/plan")
+    return {
+      success: true as const,
+      data: {
+        pending: false as const,
+        status: providerSubscription.status,
+        planKey: checkout.data.target_plan_key,
+        checkoutStatus: transactionResult.status,
+        subscriptionStatus: subscriptionResult.status,
+      },
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("DUPLICATE_PROVIDER_SUBSCRIPTION")) {
+      return checkoutVerificationFailure("This workspace has another active Paddle subscription. Billing needs attention before this checkout can be activated.")
+    }
+    return { success: false as const, message: friendlyBillingError(error) }
   }
 }
 

@@ -136,6 +136,16 @@ durable state. An unknown operation result must be reconciled before another
 financial call is attempted, because an unavailable response does not prove
 that the provider did not apply the operation.
 
+Checkout confirmation has the same server-authoritative boundary. The
+provider's browser completion callback is only a wake-up signal for the UI.
+When signed webhook delivery is delayed or unreachable, the managed checkout
+action may re-read the exact workspace-scoped transaction and recurring
+subscription from the provider, validate its environment, custom data, plan
+price, item count, quantity, and active status, and pass those observations
+through the same canonical projection used by signed webhooks. Invalid or
+incomplete observations fail closed or remain pending; the browser never
+grants paid access.
+
 An immediate plan change becomes effective only after the verified provider
 event updates the local projection. A deferred downgrade or cancellation
 keeps current entitlements through its exact effective timestamp. Past-due

@@ -33,6 +33,8 @@ describe("reusable billing UI", () => {
     expect(source).toContain("reconcilePaddleSubscription()")
     expect(source).toContain("window.setTimeout(refreshUntilVerified, 2500)")
     expect(source).toContain("checkoutOutcomeRef.current")
+    expect(source).toContain("reconcilePaddleCheckoutTransaction")
+    expect(source).toContain("pendingOutcome.transactionId")
     expect(source).toContain("transitionId")
   })
 
@@ -66,6 +68,9 @@ describe("reusable billing UI", () => {
     expect(planActions).toContain('isIntervalChange ? "The pending billing cycle change was undone."')
     expect(planActions).toContain("The workspace is already on that plan and billing cycle.")
     expect(planActions).toContain("Paddle ${environment} ${interval} price mapping is not configured")
+    expect(planActions).toContain("billing_checkout_sessions")
+    expect(planActions).toContain("transactions.get(requestedTransactionId)")
+    expect(planActions).toContain("The browser never grants access")
     expect(success).toContain("prefers-reduced-motion")
     expect(success).toContain("isScheduledBilling")
     expect(banner).toContain('billingCycleChangeLabel')

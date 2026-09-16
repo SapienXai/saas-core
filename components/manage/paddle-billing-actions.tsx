@@ -34,6 +34,7 @@ import {
   consumeBillingTransitionForCurrentUser,
   previewPaddleCheckout,
   previewPaddlePlanChange,
+  reconcilePaddleCheckoutTransaction,
   reconcilePaddleSubscription,
   resumePaddleSubscription,
   startPaddleCheckout,
@@ -174,6 +175,7 @@ type PendingBillingOutcome = {
   targetPlanKey: string
   targetInterval: string
   transitionId?: string | null
+  transactionId?: string | null
   effectiveAt?: string | null
   fromPlanName?: string | null
 }
@@ -271,11 +273,23 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     if (!pendingOutcome) return
     let cancelled = false
     let attempts = 0
+    const checkoutTransactionId = pendingOutcome.kind === "purchase" ? pendingOutcome.transactionId || null : null
 
     const refreshUntilVerified = async () => {
       if (attempts === 0 || attempts % 3 === 0) {
-        await reconcilePaddleSubscription()
+        const reconciliation = checkoutTransactionId
+          ? await reconcilePaddleCheckoutTransaction(checkoutTransactionId)
+          : await reconcilePaddleSubscription()
         if (cancelled) return
+        const reconciliationData = reconciliation.data && typeof reconciliation.data === "object"
+          ? reconciliation.data as { pending?: unknown }
+          : null
+        if (checkoutTransactionId && !reconciliation.success && reconciliationData?.pending === false) {
+          setActivating(false)
+          setPendingOutcome(null)
+          setMessage(translateMessage(reconciliation.message || t("manage.planUsage.billing.actionFailed")))
+          return
+        }
       }
       const result = await getPlanUsage()
       if (cancelled) return
@@ -435,7 +449,11 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         }
         checkoutCompletedRef.current = false
         checkoutOutcomeRef.current = outcome
-          ? { ...outcome, transitionId: typeof data.transitionId === "string" ? data.transitionId : null }
+          ? {
+              ...outcome,
+              transitionId: typeof data.transitionId === "string" ? data.transitionId : null,
+              transactionId: typeof data.transactionId === "string" ? data.transactionId : null,
+            }
           : null
         paddleRef.current = instance
         setPaddle(instance)
