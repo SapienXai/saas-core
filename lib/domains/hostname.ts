@@ -240,20 +240,25 @@ export function classifyHostname(value: string): HostnameClassification {
 export type TrustedPlatformOriginOptions = { requestHost?: string | null }
 
 function developmentRequestHost(value: string | null | undefined) {
-  const raw = value?.trim() || ""
-  if (!raw || /^[a-z][a-z\d+.-]*:\/\//i.test(raw) || /[\\/\s?#]/.test(raw)) return null
-  try {
-    const parsed = new URL(`http://${raw}`)
-    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null
-    const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "")
-    const development = parseDevelopmentHostname(hostname)
-    const rootHostname = development?.rootHostname
-      || (isPrivateIPv4(hostname) ? `${hostname}${DEVELOPMENT_NIP_IO_SUFFIX}` : null)
-      || (isLoopbackDevelopmentHostname(hostname) ? "127.0.0.1.nip.io" : null)
-    return rootHostname ? { rootHostname, port: parsed.port } : null
-  } catch {
-    return null
+  const candidates = [value, process.env.APP_URL, process.env.NEXT_PUBLIC_APP_URL]
+  for (const [index, candidate] of candidates.entries()) {
+    const raw = candidate?.trim() || ""
+    const configuredOrigin = index > 0 && /^[a-z][a-z\d+.-]*:\/\//i.test(raw)
+    if (!raw || (!configuredOrigin && /^[a-z][a-z\d+.-]*:\/\//i.test(raw)) || (!configuredOrigin && /[\\/\s?#]/.test(raw))) continue
+    try {
+      const parsed = new URL(configuredOrigin ? raw : `http://${raw}`)
+      if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) continue
+      const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "")
+      const development = parseDevelopmentHostname(hostname)
+      const rootHostname = development?.rootHostname
+        || (isPrivateIPv4(hostname) ? `${hostname}${DEVELOPMENT_NIP_IO_SUFFIX}` : null)
+        || (isLoopbackDevelopmentHostname(hostname) ? "127.0.0.1.nip.io" : null)
+      if (rootHostname) return { rootHostname, port: parsed.port }
+    } catch {
+      continue
+    }
   }
+  return null
 }
 
 export function getDevelopmentPlatformOrigin(kind: "root" | "app", requestHost?: string | null) {
