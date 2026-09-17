@@ -1,12 +1,12 @@
 "use client"
 
 import { useEffect } from "react"
+import { isLocalDevelopmentHostname } from "@/lib/domains/hostname"
 
-const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"])
 const LOCAL_CACHE_PREFIXES = ["saas-core-manage-", "manage-offline-"]
 
 function isLocalDevelopment() {
-  return process.env.NODE_ENV !== "production" && LOCAL_HOSTNAMES.has(window.location.hostname)
+  return process.env.NODE_ENV !== "production" && isLocalDevelopmentHostname(window.location.hostname)
 }
 
 export function DevelopmentServiceWorkerCleanup() {

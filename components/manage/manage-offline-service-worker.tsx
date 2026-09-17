@@ -70,10 +70,6 @@ async function ensureServiceWorkerControlsPage() {
   }
 }
 
-function isLocalDevelopment() {
-  return process.env.NODE_ENV !== "production" && ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)
-}
-
 export function ManageOfflineServiceWorker() {
   const { getTranslation } = useLanguage()
   const [updateAvailable, setUpdateAvailable] = useState(false)
@@ -81,7 +77,7 @@ export function ManageOfflineServiceWorker() {
   const userRequestedUpdateRef = useRef(false)
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator) || isLocalDevelopment() || !isManagementPwaOrigin(window.location.hostname)) return
+    if (!("serviceWorker" in navigator) || process.env.NODE_ENV !== "production" || !isManagementPwaOrigin(window.location.hostname)) return
     let cancelled = false
     const onControllerChange = () => {
       if (userRequestedUpdateRef.current) window.location.reload()

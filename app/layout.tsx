@@ -1,6 +1,5 @@
 import type React from "react"
 import type { Metadata } from "next"
-import Script from "next/script"
 import { Suspense } from "react"
 import "./globals.css"
 import "../styles/globals.css"
@@ -67,12 +66,6 @@ export default async function RootLayout({
         <meta name="theme-color" content="#090b11" />
       </head>
       <body className="font-sans">
-        <Script id="product-pwa-install-capture" strategy="beforeInteractive">
-          {`window.addEventListener("beforeinstallprompt", function (event) {
-  event.preventDefault();
-  window.__productBeforeInstallPrompt = event;
-});`}
-        </Script>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <DevelopmentServiceWorkerCleanup />
           <LanguageProvider initialLanguage={language}>{children}</LanguageProvider>
