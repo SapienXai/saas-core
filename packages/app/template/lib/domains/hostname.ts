@@ -247,7 +247,9 @@ function developmentRequestHost(value: string | null | undefined) {
     if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null
     const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "")
     const development = parseDevelopmentHostname(hostname)
-    const rootHostname = development?.rootHostname || (isPrivateIPv4(hostname) ? `${hostname}${DEVELOPMENT_NIP_IO_SUFFIX}` : null)
+    const rootHostname = development?.rootHostname
+      || (isPrivateIPv4(hostname) ? `${hostname}${DEVELOPMENT_NIP_IO_SUFFIX}` : null)
+      || (isLoopbackDevelopmentHostname(hostname) ? "127.0.0.1.nip.io" : null)
     return rootHostname ? { rootHostname, port: parsed.port } : null
   } catch {
     return null
@@ -269,5 +271,35 @@ export function getTrustedPlatformOrigin(kind: "root" | "app", options: TrustedP
   const isLocal = process.env.NODE_ENV !== "production" && isLocalDevelopmentHostname(hostname)
   return `${isLocal ? "http" : "https"}://${hostname}`
 }
+
+/**
+ * Build a reachable public origin from an authoritative Core platform host.
+ * Local development keeps the persisted Core hostname as the source of the
+ * label, while the request host supplies the reachable nip.io root and port.
+ */
+export function getPlatformWorkspaceOrigin(workspaceHostname: string, options: TrustedPlatformOriginOptions = {}) {
+  let normalizedHostname: string
+  try {
+    normalizedHostname = normalizeHostname(workspaceHostname, { allowPlatform: true, allowDevelopment: process.env.NODE_ENV !== "production" })
+  } catch {
+    return null
+  }
+
+  if (process.env.NODE_ENV === "production") return `https://${normalizedHostname}`
+  const rootOrigin = getDevelopmentPlatformOrigin("root", options.requestHost)
+  if (!rootOrigin) return null
+  const suffix = `.${configuredRootDomain()}`
+  if (!normalizedHostname.endsWith(suffix)) return null
+  const label = normalizedHostname.slice(0, -suffix.length)
+  if (!label || label.includes(".")) return null
+  try {
+    const origin = new URL(rootOrigin)
+    origin.hostname = `${label}.${origin.hostname}`
+    return origin.origin
+  } catch {
+    return null
+  }
+}
+
 export function getConfiguredRootDomain() { return configuredRootDomain() }
 export function getConfiguredAppDomain() { return configuredAppDomain() }

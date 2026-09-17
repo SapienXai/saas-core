@@ -1,15 +1,19 @@
 import "server-only"
 
+import { headers } from "next/headers"
 import { isCoreProductKey, type CoreDomain, type CoreHostResolution, type CoreListDomainsInput, type CorePublicSite, type CorePlatformSubdomainInput } from "@sapienx/saas-core"
 import { can, EntitlementError, getWorkspaceEntitlements } from "@/lib/entitlements"
 import { getCurrentWorkspace, requireWorkspaceRole } from "@/lib/authorization"
 import {
   buildPlatformHostname,
+  getPlatformWorkspaceOrigin,
   getConfiguredRootDomain,
   getCustomerHostnameParts,
+  getTrustedHostFromHeaders,
   getTrustedRequestHost,
   HostnameValidationError,
   normalizeHostname,
+  parseDevelopmentHostname,
 } from "@/lib/domains/hostname"
 import { getCustomDomainTarget, isCustomDomainSetupConfigured } from "@/lib/domains/domain-config"
 import { createServiceRoleClient } from "@/lib/supabase"
@@ -320,7 +324,14 @@ export async function resolveHost(hostname: string): Promise<CoreHostResolution 
   } catch {
     return null
   }
-  const { data, error } = await createServiceRoleClient().rpc("resolve_domain_host", { target_normalized_hostname: normalizedHostname })
+  // A local hosted-workspace alias is a transport alias, not a second domain
+  // record. Resolve its authoritative persisted platform hostname in Core so
+  // a generated `felix.127.0.0.1.nip.io:3000` URL is actually usable.
+  const development = process.env.NODE_ENV !== "production" ? parseDevelopmentHostname(normalizedHostname) : null
+  const resolverHostname = development?.kind === "HOSTED_WORKSPACE" && development.workspaceSlug
+    ? buildPlatformHostname(development.workspaceSlug)
+    : normalizedHostname
+  const { data, error } = await createServiceRoleClient().rpc("resolve_domain_host", { target_normalized_hostname: resolverHostname })
   if (error) throw mapPlatformRpcError(error)
   const row = (Array.isArray(data) ? data[0] : data) as {
     domain_id?: string
@@ -370,19 +381,16 @@ export async function getWorkspaceDomainManagementData() {
   const domain = domains.find((item) => item.type === "custom" && item.status !== "removed") || null
   const platformDomain = domains.find((item) => item.type === "platform_subdomain") || null
   const rootDomain = getConfiguredRootDomain()
-  let expectedHostname = workspace.slug + "." + rootDomain
-  try {
-    expectedHostname = buildPlatformHostname(workspace.slug, rootDomain)
-  } catch {
-    // A legacy workspace slug may no longer satisfy the stricter platform rule.
-  }
+  const requestHeaders = await headers()
+  const requestHost = getTrustedHostFromHeaders(requestHeaders)?.host || null
+  const hostedOrigin = platformDomain ? getPlatformWorkspaceOrigin(platformDomain.hostname, { requestHost }) : null
   return {
     workspace,
     site: toCoreSite(site),
     domains: domains.map(toCoreDomain),
     domain,
     platformDomain: platformDomain ? toCoreDomain(platformDomain) : null,
-    hostedUrl: "https://" + (platformDomain?.hostname || expectedHostname),
+    hostedUrl: hostedOrigin ? `${hostedOrigin}/` : null,
     rootDomain,
     productKey: site.product_key,
     instructions: await instructions(domain),
