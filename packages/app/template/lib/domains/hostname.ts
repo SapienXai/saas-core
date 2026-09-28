@@ -41,7 +41,13 @@ function configuredAppDomain() {
 }
 export function isDevelopmentTunnelHostname(value: string) {
   const hostname = value.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")
-  return process.env.NODE_ENV !== "production" && ["ngrok-free.dev", "ngrok.app", "ngrok.io"].some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`))
+  return process.env.NODE_ENV !== "production" && [
+    "trycloudflare.com",
+    "ngrok-free.app",
+    "ngrok-free.dev",
+    "ngrok.app",
+    "ngrok.io",
+  ].some((suffix) => hostname === suffix || hostname.endsWith(`.${suffix}`))
 }
 export function isDevelopmentLanHostname(value: string) {
   const hostname = value.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")

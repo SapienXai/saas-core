@@ -12,6 +12,8 @@ const nextConfig = {
     '172.*.*.*',
     '192.168.*.*',
     '**.nip.io',
+    '*.trycloudflare.com',
+    '*.ngrok-free.app',
     '*.ngrok-free.dev',
     '*.ngrok.app',
     '*.ngrok.io',
