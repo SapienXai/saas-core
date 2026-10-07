@@ -98,6 +98,7 @@ type Plan = {
 type BillingState = {
   canManage: boolean
   paddleConfigured: boolean
+  billingDeferred: boolean
   environment: string | null
   provider: string | null
   customerId: string | null
@@ -271,6 +272,11 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
 
   useEffect(() => {
     if (!pendingOutcome) return
+    if (billing.billingDeferred) {
+      setActivating(false)
+      setPendingOutcome(null)
+      return
+    }
     let cancelled = false
     let attempts = 0
     const checkoutTransactionId = pendingOutcome.kind === "purchase" ? pendingOutcome.transactionId || null : null
@@ -371,7 +377,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     return () => {
       cancelled = true
     }
-  }, [pendingOutcome, planCopy, router, t, translateMessage, updateCurrentWorkspacePlan])
+  }, [billing.billingDeferred, pendingOutcome, planCopy, router, t, translateMessage, updateCurrentWorkspacePlan])
 
   useEffect(() => {
     const requestedInterval = searchParams.get("interval")
@@ -704,7 +710,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     configuredPrices.some((price) => price.planKey === currentPlan && price.interval === alternateBillingInterval),
   )
 
-  if (successExperience) {
+  if (successExperience && !billing.billingDeferred) {
     return (
       <BillingSuccessExperience
         kind={successExperience.kind}
@@ -720,6 +726,16 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         }}
         onManageBilling={manageBilling}
       />
+    )
+  }
+
+  if (billing.billingDeferred) {
+    return (
+      <section id="plan-options" className="manage-plan-card rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-6" role="status" data-billing-mode="deferred">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("eyebrow", "PlaceDJ plan")}</p>
+        <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{copyText("billingDeferredTitle", "Billing is coming soon")}</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">{copyText("billingDeferredNotice", "Billing is deferred while Stripe migration is pending. Your current plan and venue access remain active.")}</p>
+      </section>
     )
   }
 

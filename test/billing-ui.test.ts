@@ -6,6 +6,19 @@ const root = process.cwd()
 const read = (path: string) => readFileSync(`${root}/${path}`, "utf8")
 
 describe("reusable billing UI", () => {
+  it("renders the deferred billing state without provider actions", () => {
+    const source = read("components/manage/paddle-billing-actions.tsx")
+    const provider = read("lib/billing/paddle-client.ts")
+    const actions = read("app/manage/plan/actions.ts")
+
+    expect(provider).toContain('process.env.SAAS_CORE_BILLING_MODE === "deferred"')
+    expect(provider).toContain('"BILLING_DEFERRED"')
+    expect(actions).toContain("billingDeferred: billingPresentation.billingDeferred")
+    expect(source).toContain('data-billing-mode="deferred"')
+    expect(source).toContain("billingDeferredNotice")
+    expect(source).toContain("if (billing.billingDeferred)")
+  })
+
   it("resolves product plan order, intervals, feature labels, and limit rows", () => {
     const resolved = resolveBillingPresentation(
       [{ key: "starter_2" }, { key: "team_plus" }],

@@ -5,11 +5,22 @@ import { Environment, Paddle } from "@paddle/paddle-node-sdk"
 export type BillingEnvironment = "sandbox" | "live"
 
 export class BillingConfigurationError extends Error {
-  readonly code = "BILLING_NOT_CONFIGURED"
+  readonly code: "BILLING_NOT_CONFIGURED" | "BILLING_DEFERRED"
 
-  constructor(message = "Paddle billing is not configured for this environment.") {
+  constructor(message = "Paddle billing is not configured for this environment.", code: BillingConfigurationError["code"] = "BILLING_NOT_CONFIGURED") {
     super(message)
     this.name = "BillingConfigurationError"
+    this.code = code
+  }
+}
+
+export function isBillingDeferred() {
+  return process.env.SAAS_CORE_BILLING_MODE === "deferred"
+}
+
+function assertBillingEnabled() {
+  if (isBillingDeferred()) {
+    throw new BillingConfigurationError("Billing is deferred while the Stripe migration is pending.", "BILLING_DEFERRED")
   }
 }
 
@@ -20,6 +31,7 @@ function readEnvironment(): BillingEnvironment | null {
 }
 
 export function getBillingEnvironment(): BillingEnvironment {
+  assertBillingEnabled()
   const environment = readEnvironment()
   if (!environment) {
     throw new BillingConfigurationError("PADDLE_ENVIRONMENT must be set to sandbox or live.")
@@ -32,9 +44,9 @@ function environmentForSdk(environment: BillingEnvironment) {
 }
 
 export function getPaddleServerClient(idempotencyKey?: string) {
+  const environment = getBillingEnvironment()
   const apiKey = process.env.PADDLE_API_KEY
   if (!apiKey) throw new BillingConfigurationError("PADDLE_API_KEY is not configured.")
-  const environment = getBillingEnvironment()
   return new Paddle(apiKey, {
     environment: environmentForSdk(environment),
     ...(idempotencyKey ? { customHeaders: { "X-Transaction-ID": idempotencyKey } } : {}),
@@ -42,9 +54,9 @@ export function getPaddleServerClient(idempotencyKey?: string) {
 }
 
 export function verifyPaddleWebhook(rawBody: string, signature: string) {
+  const environment = getBillingEnvironment()
   const secret = process.env.PADDLE_WEBHOOK_SECRET
   if (!secret) throw new BillingConfigurationError("PADDLE_WEBHOOK_SECRET is not configured.")
-  const environment = getBillingEnvironment()
   // The SDK uses the API key only to configure the client object. Verification
   // itself uses the destination secret and never performs a network request.
   const verifier = new Paddle(process.env.PADDLE_API_KEY || "webhook-verifier", {
@@ -54,6 +66,7 @@ export function verifyPaddleWebhook(rawBody: string, signature: string) {
 }
 
 export function getPublicPaddleConfig() {
+  if (isBillingDeferred()) return null
   const token = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN
   const environment = readEnvironment()
   if (!token || !environment) return null
@@ -68,6 +81,7 @@ export function getPublicPaddleConfig() {
 }
 
 export function isPaddleBillingConfigured() {
+  if (isBillingDeferred()) return false
   try {
     getBillingEnvironment()
     return Boolean(process.env.PADDLE_API_KEY && process.env.PADDLE_WEBHOOK_SECRET)

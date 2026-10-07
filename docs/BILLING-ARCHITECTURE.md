@@ -34,6 +34,17 @@ example, the adapter may translate its immediate upgrade operation to Core's
 provider details stay under `lib/billing`; they do not appear in Core policy
 types.
 
+## Deferred provider mode
+
+Set `SAAS_CORE_BILLING_MODE=deferred` when a product intentionally pauses
+provider billing. Core then reports Paddle as unconfigured, returns no public
+Paddle client configuration, rejects Paddle server clients and webhook
+verification, and skips the provider checkout surface. The product keeps its
+local plan and entitlement projection. Unset the variable only for an
+environment that intentionally enables Paddle, such as a local Sandbox
+verification run. This flag does not implement or configure a replacement
+provider.
+
 ## Product catalog and copy
 
 The existing catalog remains valid:

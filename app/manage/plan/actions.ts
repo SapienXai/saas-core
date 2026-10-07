@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { AuthorizationError, getCurrentWorkspace, requireUser, requireWorkspaceRole } from "@/lib/authorization"
-import { getBillingEnvironment, getPaddleServerClient, getPublicPaddleConfig, isPaddleBillingConfigured } from "@/lib/billing/paddle-client"
+import { BillingConfigurationError, getBillingEnvironment, getPaddleServerClient, getPublicPaddleConfig, isBillingDeferred, isPaddleBillingConfigured } from "@/lib/billing/paddle-client"
 import { getActivePaddlePrice, getPaddlePriceByProviderId, isBillingInterval, isPaidPlanKey, type BillingInterval, type PaidPlanKey, type ProviderPriceMapping } from "@/lib/billing/price-mapping"
 import { getWorkspaceEntitlements, getWorkspaceUsage, validatePlanChangeEligibility } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
@@ -194,6 +194,7 @@ function planChangeFingerprint(subscription: Pick<SubscriptionRow, "provider_sub
 
 function friendlyBillingError(error: unknown) {
   if (error instanceof AuthorizationError) return error.message
+  if (error instanceof BillingConfigurationError && error.code === "BILLING_DEFERRED") return "Billing is coming soon. Stripe migration is pending."
   if (error instanceof Error && error.message.includes("not configured")) return "Billing is not configured for this environment."
   const providerUnavailable = error instanceof Error && /past_due|30 minutes|cannot change|not change/i.test(error.message)
   console.error("Billing action failed", { code: providerUnavailable ? "PROVIDER_CHANGE_UNAVAILABLE" : "BILLING_UNAVAILABLE" })
@@ -211,8 +212,8 @@ function downgradeEligibilityFailure(targetPlan: string, eligibility: PlanChange
 function getBillingPresentation() {
   try {
     const environment = getBillingEnvironment()
-    return { paddleConfigured: isPaddleBillingConfigured() && Boolean(getPublicPaddleConfig()), environment }
-  } catch { return { paddleConfigured: false, environment: null } }
+    return { paddleConfigured: isPaddleBillingConfigured() && Boolean(getPublicPaddleConfig()), environment, billingDeferred: isBillingDeferred() }
+  } catch { return { paddleConfigured: false, environment: null, billingDeferred: isBillingDeferred() } }
 }
 
 async function beginBillingMutation(workspaceId: string, requestKey: string, operation: string): Promise<BillingMutation> {
@@ -448,6 +449,7 @@ export async function getPlanUsage() {
         billing: {
           canManage: membership.role === "owner",
           paddleConfigured: billingPresentation.paddleConfigured,
+          billingDeferred: billingPresentation.billingDeferred,
           environment: subscription.provider_environment || billingPresentation.environment,
           provider: subscription.provider,
           customerId: subscription.provider_customer_id,
