@@ -12,6 +12,14 @@ internal destinations. The current user is derived from the verified session;
 owner IDs, Workspace IDs, roles, and plan state are not trusted from browser
 input.
 
+## Content Security Policy
+
+The canonical Next.js config sets the response security headers and the
+default Content Security Policy. Products can add exact HTTPS `frame-src`
+origins in the product-owned `src/product/security-config.json` extension;
+all other directives remain Core-owned. The build validates each origin and
+fails on malformed values rather than accepting arbitrary CSP fragments.
+
 ## Workspace isolation
 
 `workspace_members` is the tenancy boundary. `lib/authorization.ts` rechecks
