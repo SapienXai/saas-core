@@ -15,7 +15,7 @@ describe("reusable billing UI", () => {
     expect(provider).toContain('"BILLING_DEFERRED"')
     expect(actions).toContain("billingDeferred: billingPresentation.billingDeferred")
     expect(source).toContain('data-billing-mode="deferred"')
-    expect(source).toContain("billingDeferredNotice")
+    expect(source).toContain("billing-deferred-notice")
     expect(source).toContain("if (billing.billingDeferred)")
   })
 

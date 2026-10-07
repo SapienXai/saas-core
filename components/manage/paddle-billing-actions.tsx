@@ -733,8 +733,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     return (
       <section id="plan-options" className="manage-plan-card rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-6" role="status" data-billing-mode="deferred">
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("eyebrow", "PlaceDJ plan")}</p>
-        <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{copyText("billingDeferredTitle", "Billing is coming soon")}</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">{copyText("billingDeferredNotice", "Billing is deferred while Stripe migration is pending. Your current plan and venue access remain active.")}</p>
+        <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{copyText("billing-deferred-title", "Billing is coming soon")}</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">{copyText("billing-deferred-notice", "Billing is deferred while Stripe migration is pending. Your current plan and venue access remain active.")}</p>
       </section>
     )
   }
