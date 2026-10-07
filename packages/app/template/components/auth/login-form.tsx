@@ -1,13 +1,14 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AuthField, AuthShell } from "@/components/auth/auth-shell"
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
+import { TransitionLoader } from "@/components/ui/transition-loader"
 import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
 
@@ -38,7 +39,32 @@ export function LoginForm() {
     }
   }, [getTranslation])
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (submitting) return
+    setError("")
+    setSubmitting(true)
+    try {
+      const response = await fetch("/auth/signin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, redirect: redirectPath }),
+        signal: AbortSignal.timeout(25000),
+        cache: "no-store",
+      })
+      if (!response.ok) throw new Error("sign_in_failed")
+      // Cookies are installed before fetch resolves. A document navigation
+      // discards the anonymous router/session cache, including on mobile Safari.
+      window.location.replace(`/auth/continue?redirect=${encodeURIComponent(redirectPath)}`)
+    } catch {
+      setError(getTranslation("auth.errors.generic"))
+      setSubmitting(false)
+    }
+  }
+
   return (
+    <>
+    {submitting && <TransitionLoader label={getTranslation("auth.signingIn")} overlay />}
     <AuthShell
       showBrand
       title={getTranslation("auth.signInTitle")}
@@ -46,7 +72,7 @@ export function LoginForm() {
       footer={<span>{getTranslation("auth.dontHaveAccount")} {" "}<Link className="auth-footer-link" href={`/signup?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.register")}</Link></span>}
     >
       {error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>}
-      <form method="post" action="/auth/signin" onSubmit={(event) => { if (submitting) { event.preventDefault(); return }; setSubmitting(true) }} className="auth-form">
+      <form method="post" action="/auth/signin" onSubmit={handleSubmit} className="auth-form">
         <input type="hidden" name="redirect" value={redirectPath} />
         <AuthField id="login-email" label={getTranslation("auth.email")}>
           <div className="auth-input-shell">
@@ -58,9 +84,10 @@ export function LoginForm() {
           <PasswordField id="login-password" name="password" label={getTranslation("auth.password")} placeholder={getTranslation("auth.passwordPlaceholder")} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
         </AuthField>
         <div className="auth-form-meta"><Link href="/forgot-password" className="auth-muted-link">{getTranslation("auth.forgotPassword")}</Link></div>
-        <Button type="submit" loading={submitting} className="auth-primary-button">{submitting ? getTranslation("auth.signingIn") : getTranslation("auth.signInAction")}</Button>
+        <Button type="submit" disabled={submitting} className="auth-primary-button">{submitting ? getTranslation("auth.signingIn") : getTranslation("auth.signInAction")}</Button>
         <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
       </form>
     </AuthShell>
+    </>
   )
 }

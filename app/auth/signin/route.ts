@@ -10,7 +10,7 @@ type SignInBody = {
 }
 
 function safeRedirect(value: unknown) {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//")
+  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") && !/[\\\u0000-\u001f]/.test(value)
     ? value
     : "/app"
 }
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   let requestCookies = cookieStore.getAll()
   const continuation = `/auth/continue?redirect=${encodeURIComponent(redirect)}`
   const response = isFormRequest
-    ? new NextResponse(`<!doctype html><meta http-equiv="refresh" content="0;url=${continuation}"><script>window.location.replace(${JSON.stringify(continuation)})</script>`, {
+    ? new NextResponse(`<!doctype html><html lang="en"><title>Opening your workspace</title><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#faf8ff;color:#241a35;font:600 14px system-ui}.loader{display:grid;justify-items:center;gap:24px}.ring{width:46px;height:46px;border:3px solid #e5ddf5;border-top-color:#7c3aed;border-radius:50%;animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.ring{animation:none}}</style><body><div class="loader" role="status"><span class="ring" aria-hidden="true"></span>Opening your workspace</div><meta http-equiv="refresh" content="0;url=${continuation}"><script>window.location.replace(${JSON.stringify(continuation).replace(/</g, "\\u003c")})</script></body></html>`, {
       headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
     })
     : NextResponse.json({ ok: true })

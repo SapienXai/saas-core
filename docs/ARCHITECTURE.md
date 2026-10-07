@@ -27,6 +27,16 @@ venue, account type, or other product entity.
 
 ## Request and session flow
 
+Password sign-in progressively enhances the native POST with a bounded JSON
+request. Session cookies are installed before a full document continuation;
+that continuation resolves the product home directly. Native form responses
+also contain visible loading content. Logout clears the server session once
+and reloads the document to discard browser and router state. Root route
+loading and auth transitions use CSS-only status indicators, independent of
+hydration and WebGL. Fresh `getUser` reads are memoized only within a React
+server request; authorization and suspension checks remain server-owned.
+
+
 `proxy.ts` handles trusted-origin route boundaries. Server components and
 actions call `lib/supabase/server.ts`, which persists Supabase SSR cookies.
 `lib/auth-utils.ts` resolves the current user, platform membership, and

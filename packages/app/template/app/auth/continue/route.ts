@@ -1,3 +1,4 @@
+import { getProductHomePath } from "@/lib/product-shell"
 import { NextResponse } from "next/server"
 import { getAccountState, safeInternalRedirect } from "@/lib/account-state"
 import { getCurrentUserAccess } from "@/lib/auth-utils"
@@ -24,5 +25,5 @@ export async function GET(request: Request) {
   const destination = platformRequested
     ? requested
     : platformHome || (state.path === "/onboarding" ? "/onboarding" : requested.startsWith("/app") ? requested : "/app")
-  return NextResponse.redirect(new URL(destination, url))
+  return NextResponse.redirect(new URL(destination === "/app" ? getProductHomePath() : destination, url))
 }

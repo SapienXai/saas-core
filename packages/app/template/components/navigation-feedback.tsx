@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
-import { OrbLoader } from "@/components/ui/orb-loader"
+import { TransitionLoader } from "@/components/ui/transition-loader"
 
 const NAVIGATION_START_EVENT = "saas-core:navigation-start"
 
@@ -57,6 +57,6 @@ export function NavigationFeedback() {
   if (!isNavigating) return null
 
   return (
-    <OrbLoader label="Loading page" state="working" size="sm" showLabel={false} className="route-loading-indicator" />
+    <div className="route-loading-indicator"><TransitionLoader label="Loading page" /></div>
   )
 }

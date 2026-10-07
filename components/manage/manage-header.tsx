@@ -5,10 +5,11 @@ import { usePathname, useRouter } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { OrbLoader } from "@/components/ui/orb-loader"
+import { TransitionLoader } from "@/components/ui/transition-loader"
+import { flushSync } from "react-dom"
+import { startNavigationFeedback } from "@/components/navigation-feedback"
 import { useManageContext } from "@/context/manage-context"
 import { useManagePushNotifications } from "@/context/manage-push-notifications-context"
-import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
 import { getActiveProductNavigationKey, isProductNavigationVisible, resolveProductShell } from "@/lib/product-shell"
 import { getActivePlatformNavigationKey, isPlatformNavigationVisible, resolvePlatformNavigation } from "@/lib/platform-navigation"
@@ -31,19 +32,20 @@ export function ManageHeader({ user, toggleSidebar }: { user: { id: string; emai
     return pathname === "/app" || pathname === "/manage" ? "Workspace" : pathname.includes("/team") ? "Team" : pathname.includes("/plan") ? "Plan & usage" : pathname.includes("/domains") ? "Domains" : pathname.includes("/pwa") ? "Management app" : pathname.includes("/settings") ? "Settings" : isPlatformRoute ? "Platform" : PRODUCT_CONFIG.name
   }, [activePlatformItem, activeProductNavigationKey, isPlatformRoute, pathname, productShell, visibleProductNavigation])
   useEffect(() => { document.title = `${pageTitle} | ${PRODUCT_CONFIG.name}` }, [pageTitle])
-  const handleSignOut = useCallback(async () => {
-    setIsSigningOut(true)
-    try { await getSupabaseBrowserClient().auth.signOut({ scope: "local" }) } catch (error) { console.warn("Sign out failed:", error) }
+  const handleSignOut = useCallback(() => {
+    flushSync(() => setIsSigningOut(true))
+    // The server clears cookies and revokes this session once. Reloading then
+    // discards the browser client and any authenticated router state.
     window.location.replace("/auth/signout")
   }, [])
   useEffect(() => { const signOutFromSidebar = () => void handleSignOut(); window.addEventListener("saas-core-manage-sign-out", signOutFromSidebar); return () => window.removeEventListener("saas-core-manage-sign-out", signOutFromSidebar) }, [handleSignOut])
   return <>
-    {isSigningOut && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/25 backdrop-blur-sm" role="status" aria-live="polite"><OrbLoader label="Signing out" theme="dark" state="working" /></div>}
+    {isSigningOut && <TransitionLoader label="Signing out" overlay />}
     <header className="sticky top-0 z-30 shrink-0 border-b border-slate-200/80 bg-white/85 backdrop-blur-xl transition-colors dark:border-white/10 dark:bg-[#0b0c0f]/85">
       <div className="flex h-14 items-center justify-between px-3 sm:h-16 sm:px-5">
         <div className="flex min-w-0 items-center gap-2">
           <Button variant="ghost" size="icon" onClick={toggleSidebar} className="mr-1 rounded-xl hover:bg-slate-100 dark:hover:bg-white/10 md:hidden" aria-label="Open navigation"><Menu className="h-5 w-5" /></Button>
-          <button type="button" onClick={() => router.push(isPlatformRoute ? "/platform" : "/app")} className="min-w-0 text-left transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500" aria-label={isPlatformRoute ? "Open platform" : "Open workspace"}>
+          <button type="button" onClick={() => { startNavigationFeedback(); router.push(isPlatformRoute ? "/platform" : "/app") }} className="min-w-0 text-left transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500" aria-label={isPlatformRoute ? "Open platform" : "Open workspace"}>
             <div className="flex min-w-0 items-center gap-1.5"><p className="min-w-0 truncate text-[8px] font-bold uppercase leading-none tracking-[0.14em] text-slate-400 sm:text-[9px]">{isPlatformRoute ? "Platform · All workspaces" : currentWorkspace?.workspace?.name || "Workspace"}</p>{!isPlatformRoute && currentWorkspace?.plan?.name && <span className="inline-flex h-4 items-center rounded-md border border-violet-200 bg-violet-50 px-1.5 text-[8px] font-bold uppercase tracking-[0.08em] text-violet-700">{currentWorkspace.plan.name}</span>}</div>
             <h1 className="mt-0.5 truncate text-base font-bold leading-none tracking-tight text-slate-950 dark:text-white sm:text-lg">{pageTitle}</h1>
           </button>

@@ -95,20 +95,25 @@ export const getPreferredWorkspaceId = cache(async function getPreferredWorkspac
   try { return (await cookies()).get("saas_core_workspace_id")?.value || null } catch { return null }
 })
 
+export const getAuthenticatedUser = cache(async function getAuthenticatedUser() {
+  const { data, error } = await (await createSupabaseServerClient()).auth.getUser()
+  return error ? null : data.user
+})
+
 export const getCurrentUserAccess = cache(async function getCurrentUserAccess(): Promise<UserAccess | null> {
   try {
-    const { data, error } = await (await createSupabaseServerClient()).auth.getUser()
-    if (error || !data.user) return null
-    const [control, initialPlatform, memberships] = await Promise.all([getPlatformUserControl(data.user.id), getPlatformMember(data.user.id), getWorkspaceMemberships(data.user.id)])
+    const user = await getAuthenticatedUser()
+    if (!user) return null
+    const [control, initialPlatform, memberships] = await Promise.all([getPlatformUserControl(user.id), getPlatformMember(user.id), getWorkspaceMemberships(user.id)])
     if (control === "suspended") return null
     let platform = initialPlatform
-    if (platform.available && !platform.member && data.user.email && await bootstrapPlatformOwner(data.user.id, data.user.email, false)) platform = await getPlatformMember(data.user.id)
+    if (platform.available && !platform.member && user.email && await bootstrapPlatformOwner(user.id, user.email, false)) platform = await getPlatformMember(user.id)
     const preferred = await getPreferredWorkspaceId()
     const membership = memberships.memberships.find((item) => item.workspace_id === preferred) || memberships.memberships[0]
-    const name = typeof data.user.user_metadata?.full_name === "string" ? data.user.user_metadata.full_name.trim() : ""
+    const name = typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name.trim() : ""
     return {
-      userId: data.user.id,
-      email: data.user.email?.trim() || "",
+      userId: user.id,
+      email: user.email?.trim() || "",
       name,
       // Platform authority is deliberately not represented as a Workspace
       // role. Platform-only operators have no implied Workspace admin access.
