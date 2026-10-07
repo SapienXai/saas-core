@@ -37,6 +37,26 @@ the migration directory are not migrations.
 replace this module at its application boundary. It must not scatter identity
 constants through Core components or server modules.
 
+## Content security policy extensions
+
+Core owns the default response security headers. A product may extend only the
+`frame-src` directive through the optional product-owned
+`src/product/security-config.json` file. It accepts exact HTTPS origins and
+does not replace the rest of the Core policy:
+
+```json
+{
+  "contentSecurityPolicy": {
+    "frameSrc": ["https://video.example"]
+  }
+}
+```
+
+The file is read by the Next.js config at build time. Invalid JSON, non-HTTPS
+values, wildcards, paths, credentials, or other non-origin values fail the
+build so malformed input cannot silently weaken the policy. Keep vendor
+origins limited to the frames the product actually embeds.
+
 ## Ownership and dependency direction
 
 Classify a requested change before editing a consumer:

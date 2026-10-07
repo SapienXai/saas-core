@@ -1,3 +1,7 @@
+import { loadProductCspFrameSources } from './lib/content-security-policy.mjs'
+
+const productCspFrameSources = loadProductCspFrameSources()
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -48,7 +52,7 @@ const nextConfig = {
           "font-src 'self' data:",
           "media-src 'self' blob: https:",
           "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.paddle.com https://tiles.openfreemap.org",
-          "frame-src 'self' https://*.paddle.com",
+          `frame-src 'self' https://*.paddle.com ${productCspFrameSources.join(' ')}`.trim(),
           "worker-src 'self' blob:",
           "manifest-src 'self'",
         ].join('; '),
