@@ -20,6 +20,7 @@ import { BillingSuccessExperience } from "@/components/manage/billing-success-ex
 import { PlanFeaturePreview } from "@/components/manage/plan-feature-preview"
 import { useLanguage } from "@/context/language-context"
 import { useManageContext } from "@/context/manage-context"
+import { isProductCapabilityEnabled } from "@/lib/product-config"
 import { formatDate as formatLocalizedDate, formatNumber } from "@/i18n/format"
 import type { TranslationKey } from "@/i18n"
 import type { PlanChangeEligibility } from "@sapienx/saas-core"
@@ -207,7 +208,9 @@ type BillingAction =
 
 export function BillingActions({ currentPlan, billing, plans, configuredPaidPlans, configuredPrices, catalogPlans = [], presentation, usageMetrics = [], supportedIntervals = ["month", "year"], defaultInterval = "month" }: Props) {
   const { currentLang, getTranslation, translateMessage } = useLanguage()
-  const { updateCurrentWorkspacePlan } = useManageContext()
+  const { platformRole, updateCurrentWorkspacePlan } = useManageContext()
+  const showTeamManagement = isProductCapabilityEnabled("workspaceTeamManagement", platformRole)
+  const showWorkspaceManagement = isProductCapabilityEnabled("workspaceManagement", platformRole)
   const t = getTranslation
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -239,9 +242,9 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
     return {
       label: configured.label?.trim() || plan.name,
       description: configured.description?.trim() || t("manage.planUsage.billing.catalogDescription"),
-      highlights: configuredHighlights.length ? configuredHighlights : [t(GENERIC_PLAN_COPY.highlights[0]), t(GENERIC_PLAN_COPY.highlights[1])],
+      highlights: configuredHighlights.length ? configuredHighlights : showTeamManagement ? [t(GENERIC_PLAN_COPY.highlights[0]), t(GENERIC_PLAN_COPY.highlights[1])] : [t(GENERIC_PLAN_COPY.highlights[0])],
     }
-  }, [planPresentation, t])
+  }, [planPresentation, showTeamManagement, t])
   const displayKey = (key: string) => presentationCopy[key] || presentationCopy[`feature.${key}`] || presentationCopy[`limit.${key}`] || key.replaceAll(/[._-]+/g, " ").replace(/([a-z])([A-Z])/g, "$1 $2")
   const usageMetricName = (key: string) => usageMetrics.find((metric) => metric.key === key)?.name || displayKey(key)
   const eligibilityCapabilityName = (key: string) => key === "core.workspaces"
@@ -261,8 +264,16 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
   }
   const planLimitKeys = (plan: Plan) => {
     const requested = presentation?.limitKeys?.length ? presentation.limitKeys : Object.keys(plan.limits)
-    return [...new Set(requested)].filter((key) => Object.prototype.hasOwnProperty.call(plan.limits, key))
+    return [...new Set(requested)].filter((key) =>
+      Object.prototype.hasOwnProperty.call(plan.limits, key) &&
+      (showWorkspaceManagement || key !== "core.workspaces") &&
+      (showTeamManagement || key !== "core.members")
+    )
   }
+  const comparisonRows = resolvedPresentation.comparisonRows.filter((row) =>
+    (showWorkspaceManagement || row.limitKey !== "core.workspaces") &&
+    (showTeamManagement || row.limitKey !== "core.members")
+  )
   const planLimitValue = (plan: Plan, key: string) => {
     const value = plan.limits[key]
     return value === null ? "Unlimited" : value === undefined ? "—" : value.toLocaleString()
@@ -751,14 +762,14 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
               </article>
             })}
           </div>
-          {resolvedPresentation.comparisonRows.length > 0 && <section className="mt-5 overflow-x-auto border-t border-slate-200 pt-4 dark:border-white/10" aria-label={copyText("comparisonLabel", "Plan comparison")}>
+          {comparisonRows.length > 0 && <section className="mt-5 overflow-x-auto border-t border-slate-200 pt-4 dark:border-white/10" aria-label={copyText("comparisonLabel", "Plan comparison")}>
             <h3 className="mb-3 text-sm font-bold text-slate-950 dark:text-white">{copyText("comparisonTitle", "Plan features and limits")}</h3>
             <div className="min-w-[34rem]" role="table" aria-label={copyText("comparisonLabel", "Plan comparison")}>
               <div className="grid gap-2 border-b border-slate-200 pb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:border-white/10 dark:text-slate-400" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
                 <span role="columnheader">{copyText("comparison-feature-label", "Plan detail")}</span>
                 {orderedPlans.map((plan) => <span key={plan.key} className="text-center" role="columnheader">{planCopy(plan).label}</span>)}
               </div>
-              {resolvedPresentation.comparisonRows.map((row) => <div key={row.key} className="grid gap-2 border-b border-slate-100 py-2.5 text-xs last:border-0 dark:border-white/10" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
+              {comparisonRows.map((row) => <div key={row.key} className="grid gap-2 border-b border-slate-100 py-2.5 text-xs last:border-0 dark:border-white/10" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
                 <span className="font-medium text-slate-700 dark:text-slate-200" role="rowheader">{row.label}</span>
                 {orderedPlans.map((plan) => <span key={plan.key} className="text-center font-semibold tabular-nums text-slate-600 dark:text-slate-300" role="cell" aria-label={`${planCopy(plan).label}: ${comparisonValue(plan, row)}`}>{comparisonValue(plan, row)}</span>)}
               </div>)}
@@ -870,14 +881,14 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
         {!billing.billingConfigured && billing.canManage && !isPaid && <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.billingNotConfigured")}</p>}
       </section>
 
-      {resolvedPresentation.comparisonRows.length > 0 && <section id="plan-comparison" className="manage-plan-card overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-5" aria-label={copyText("comparisonLabel", "Plan comparison")}>
+      {comparisonRows.length > 0 && <section id="plan-comparison" className="manage-plan-card overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-5" aria-label={copyText("comparisonLabel", "Plan comparison")}>
         <div className="mb-3"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("comparisonEyebrow", "Compare plans")}</p><h2 className="mt-1 text-base font-bold tracking-tight text-slate-950 dark:text-white">{copyText("comparison-title", "Plan features and limits")}</h2></div>
         <div className="min-w-[34rem]" role="table" aria-label={copyText("comparisonLabel", "Plan comparison")}>
           <div className="grid gap-2 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:border-white/10 dark:text-slate-400" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
             <span role="columnheader">{copyText("comparison-feature-label", "Plan detail")}</span>
             {orderedPlans.map((plan) => <span key={plan.key} className="text-center" role="columnheader">{planCopy(plan).label}</span>)}
           </div>
-          {resolvedPresentation.comparisonRows.map((row) => <div key={row.key} className="grid gap-2 border-b border-slate-100 py-2.5 text-xs last:border-0 dark:border-white/10" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
+          {comparisonRows.map((row) => <div key={row.key} className="grid gap-2 border-b border-slate-100 py-2.5 text-xs last:border-0 dark:border-white/10" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
             <span className="font-medium text-slate-700 dark:text-slate-200" role="rowheader">{row.label || (row.featureKey ? displayKey(row.featureKey) : row.limitKey ? usageMetricName(row.limitKey) : displayKey(row.key))}</span>
             {orderedPlans.map((plan) => <span key={plan.key} className={`text-center font-semibold tabular-nums ${row.kind === "feature" && plan.features[row.featureKey || ""] ? "text-emerald-600 dark:text-emerald-300" : "text-slate-600 dark:text-slate-300"}`} role="cell" aria-label={`${planCopy(plan).label}: ${comparisonValue(plan, row)}`}>{comparisonValue(plan, row)}</span>)}
           </div>)}

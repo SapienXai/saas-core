@@ -5,7 +5,8 @@ import { ScheduledPlanChangeBanner } from "@/components/manage/scheduled-plan-ch
 import { getServerLanguage, translateServer, translateServerMessage } from "@/lib/server-i18n"
 import { formatDate } from "@/i18n/format"
 import { formatCurrentSubscriptionPrice, resolveCurrentSubscriptionPrice } from "@/lib/billing/presentation"
-import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { getCurrentUserAccess } from "@/lib/auth-utils"
+import { isProductCapabilityEnabled, PRODUCT_CONFIG } from "@/lib/product-config"
 import { ManageMetricCard, ManageMetricGrid, ManagePage, ManagePageHeader, ManageSurface, ManageUsageMetric } from "@/components/manage/manage-responsive"
 import { EntitlementLimitNotice } from "@/components/manage/entitlement-limit-notice"
 
@@ -41,6 +42,7 @@ function displayKey(key: string, presentation?: BillingPresentationConfig) {
 
 export default async function PlanUsagePage() {
   const language = await getServerLanguage()
+  const access = await getCurrentUserAccess()
   const result = await getPlanUsage()
   if (!result.success || !result.data) return <div className="p-6 text-sm text-slate-600 dark:text-slate-300">{translateServerMessage(language, result.message || "Plan information could not be loaded.")}</div>
 
@@ -82,7 +84,8 @@ export default async function PlanUsagePage() {
   const hasLimit = (key: string) => Object.prototype.hasOwnProperty.call(entitlements.limits, key)
   const presentedLimitKeys = presentation?.limitKeys
   const isLimitPresented = (key: string) => !presentedLimitKeys?.length || presentedLimitKeys.includes(key)
-  const showTeamManagement = PRODUCT_CONFIG.capabilities.workspaceTeamManagement !== false
+  const showTeamManagement = isProductCapabilityEnabled("workspaceTeamManagement", access?.platformRole)
+  const showWorkspaceManagement = isProductCapabilityEnabled("workspaceManagement", access?.platformRole)
   const usageMetricLabel = (key: string) => key === "core.workspaces"
     ? copyText("workspacesLabel", translateServer(language, "manage.planUsage.billing.workspaces"))
     : key === "core.members"
@@ -94,7 +97,7 @@ export default async function PlanUsagePage() {
     ...Object.keys(usage.metrics).filter((key) => !key.startsWith("core.")),
   ])]
   const usageRows = [
-    ...(isLimitPresented("core.workspaces") ? [{ key: "core.workspaces", label: usageMetricLabel("core.workspaces"), value: usage.workspaces, limit: hasLimit("core.workspaces") ? entitlements.limits["core.workspaces"] : undefined }] : []),
+    ...(showWorkspaceManagement && isLimitPresented("core.workspaces") ? [{ key: "core.workspaces", label: usageMetricLabel("core.workspaces"), value: usage.workspaces, limit: hasLimit("core.workspaces") ? entitlements.limits["core.workspaces"] : undefined }] : []),
     ...(showTeamManagement && isLimitPresented("core.members") ? [{ key: "core.members", label: usageMetricLabel("core.members"), value: usage.users, limit: hasLimit("core.members") ? entitlements.limits["core.members"] : undefined }] : []),
     ...usageKeys.filter(isLimitPresented).map((key) => ({ key, label: usageMetricLabel(key), value: usage.metrics[key] ?? undefined, limit: hasLimit(key) ? entitlements.limits[key] : undefined })),
   ]

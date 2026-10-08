@@ -1,11 +1,17 @@
 import { createServiceRoleClient } from "@/lib/supabase"
 import { getCurrentUserAccess, getPreferredWorkspaceId, getWorkspaceMemberships, type WorkspaceMembership, type WorkspaceRole } from "@/lib/auth-utils"
+import { isProductCapabilityEnabled } from "@/lib/product-config"
 
 export class AuthorizationError extends Error {
   constructor(public code: "UNAUTHENTICATED" | "FORBIDDEN" | "NOT_FOUND", message: string) { super(message); this.name = "AuthorizationError" }
 }
 export function roleAllows(role: string | null | undefined, allowedRoles: readonly WorkspaceRole[]) { return Boolean(role && allowedRoles.includes(role as WorkspaceRole)) }
 export async function requireUser() { const access = await getCurrentUserAccess(); if (!access) throw new AuthorizationError("UNAUTHENTICATED", "Please sign in to continue."); return access }
+export async function requireProductCapability(capability: string) {
+  const access = await requireUser()
+  if (!isProductCapabilityEnabled(capability, access.platformRole)) throw new AuthorizationError("FORBIDDEN", "You do not have access to this product capability.")
+  return access
+}
 export async function getCurrentWorkspace() {
   const access = await requireUser(); const memberships = await getWorkspaceMemberships(access.userId)
   if (!memberships.available || !memberships.memberships.length) return null

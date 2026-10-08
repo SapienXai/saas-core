@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase"
-import { AuthorizationError, getCurrentWorkspace, requireWorkspaceRole } from "@/lib/authorization"
+import { AuthorizationError, getCurrentWorkspace, requireProductCapability, requireWorkspaceRole } from "@/lib/authorization"
 import { getWorkspaceEntitlements, getWorkspaceUsage } from "@/lib/entitlements"
 import { createInvitationToken, hashInvitationToken, INVITATION_RESEND_COOLDOWN_SECONDS } from "@/lib/invitations"
 import { sendWorkspaceInvitationEmail } from "@/lib/invitation-email"
@@ -11,7 +11,7 @@ import { sendWorkspaceInvitationEmail } from "@/lib/invitation-email"
 type Role = "admin" | "manager" | "staff"
 const managedRoles = new Set<Role>(["admin", "manager", "staff"])
 function friendly(error: unknown) { const message = error instanceof Error ? error.message : ""; if (message.includes("EMAIL")) return "Enter a valid email address."; if (message.includes("USER_LIMIT")) return "There are no available team seats on the current plan."; if (message.includes("INVITATION_RESEND_COOLDOWN")) return "Please wait before resending this invitation."; if (message.includes("INVITATION_NOT_PENDING")) return "That invitation is no longer pending."; if (message.includes("INVITATION_NOT_FOUND")) return "Invitation not found."; if (message.includes("OWNER")) return "The workspace owner cannot be changed."; if (message.includes("ROLE")) return "You do not have permission to assign that role."; return "We could not complete that team action." }
-async function currentAdminWorkspace() { const membership = await getCurrentWorkspace(); if (!membership) throw new AuthorizationError("FORBIDDEN", "No active workspace is available."); const result = await requireWorkspaceRole(membership.workspace_id, ["owner", "admin"]); return { workspaceId: membership.workspace_id, access: result.access, membership: result.membership } }
+async function currentAdminWorkspace() { const access = await requireProductCapability("workspaceTeamManagement"); const membership = await getCurrentWorkspace(); if (!membership) throw new AuthorizationError("FORBIDDEN", "No active workspace is available."); const result = await requireWorkspaceRole(membership.workspace_id, ["owner", "admin"]); return { workspaceId: membership.workspace_id, access, membership: result.membership } }
 function invitationStatus(item: { accepted_at: string | null; revoked_at: string | null; expires_at: string }) { if (item.accepted_at) return "accepted"; if (item.revoked_at) return "revoked"; return new Date(item.expires_at).getTime() <= Date.now() ? "expired" : "pending" }
 
 export async function getTeamManagementData() {

@@ -18,7 +18,7 @@ import { WorkspaceUpgradeModal } from "@/components/manage/workspace-upgrade-mod
 import { localeConfig, type SupportedLanguage } from "@/i18n"
 import { getPlanNavigationHref } from "@/lib/plan-navigation"
 import { resolveSidebarUsageItems, type SidebarUsageItem } from "@/lib/management-sidebar-usage"
-import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { isProductCapabilityEnabled, PRODUCT_CONFIG } from "@/lib/product-config"
 import { getActiveProductNavigationKey, isProductHomeActive, isProductNavigationVisible, resolveProductShell } from "@/lib/product-shell"
 import { getActivePlatformNavigationKey, isPlatformNavigationVisible, resolvePlatformNavigation } from "@/lib/platform-navigation"
 
@@ -108,6 +108,8 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const pathname = usePathname()
   const { currentLang, getTranslation, setLanguage } = useLanguage()
   const { role, platformRole, user, currentWorkspace, planCatalog, ownedWorkspaceId, canCreateWorkspace } = useManageContext()
+  const canManageWorkspace = isProductCapabilityEnabled("workspaceManagement", platformRole)
+  const canManageTeam = isProductCapabilityEnabled("workspaceTeamManagement", platformRole)
   const isStaff = role === "staff"
   const isDomainAdmin = role === "owner" || role === "admin"
   const currentPlanKey = currentWorkspace?.plan?.key || null
@@ -127,7 +129,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
   const orderedUpgradePlans = planCatalog.filter((plan) => (orderIndex.get(plan.key) ?? Number.MAX_SAFE_INTEGER) > currentPlanIndex).sort((a, b) => (orderIndex.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.key) ?? Number.MAX_SAFE_INTEGER))
   const workspaceUsage = currentWorkspace?.usage
   const workspaceLimits = currentWorkspace?.plan?.limits
-  const usageItems: SidebarUsageItem[] = workspaceUsage && workspaceLimits
+  const allUsageItems: SidebarUsageItem[] = workspaceUsage && workspaceLimits
     ? resolveSidebarUsageItems({
         usage: workspaceUsage,
         limits: workspaceLimits,
@@ -139,6 +141,10 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
         maxItems: 10,
       })
     : []
+  const usageItems = allUsageItems.filter((item) =>
+    (canManageWorkspace || item.key !== "core.workspaces") &&
+    (canManageTeam || item.key !== "core.members")
+  )
   const quotaRows = usageItems.filter((item) => typeof item.used === "number" && typeof item.limit === "number" && item.used >= item.limit)
   const nextPlan = quotaRows.length
     ? orderedUpgradePlans.find((plan) => quotaRows.every((item) => {
@@ -175,7 +181,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
     ...visibleProductNavigation.map((item) => ({ key: item.key, name: item.label, href: item.href, icon: PRODUCT_NAVIGATION_ICONS[item.icon] || Layers3, current: activeProductNavigationKey === item.key, disabled: false })),
   ]
   const settingsNavigation: SidebarNavigationItem[] = hasWorkspaceScope ? [
-    ...(PRODUCT_CONFIG.capabilities.workspaceTeamManagement === false ? [] : [{ key: "team", name: getTranslation("manage.sidebar.team"), href: "/app/team", icon: Users, current: isActive("/app/team"), disabled: !isDomainAdmin }]),
+    ...(!canManageTeam ? [] : [{ key: "team", name: getTranslation("manage.sidebar.team"), href: "/app/team", icon: Users, current: isActive("/app/team"), disabled: !isDomainAdmin && platformRole !== "platform_owner" }]),
     { key: "plan", name: getTranslation("manage.sidebar.planUsage"), href: "/app/plan", icon: WalletCards, current: isActive("/app/plan"), disabled: isStaff },
     { key: "domains", name: getTranslation("manage.sidebar.domains"), href: "/app/domains", icon: Globe2, current: isActive("/app/domains"), disabled: !isDomainAdmin },
     { key: "pwa", name: getTranslation("manage.sidebar.managementApp"), href: "/app/pwa", icon: Smartphone, current: isActive("/app/pwa"), disabled: false },
@@ -243,7 +249,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
       <div className={cn("flex h-14 shrink-0 items-center border-b border-slate-200/80 dark:border-white/10 md:h-16", compact ? "justify-center px-2" : "px-3")}>
         {compact ? (
           <div className="relative">
-            <WorkspaceSwitcher compact={compact} isDark={isDark} logoAsset={logoAsset} onClose={mobile ? onClose : undefined} canCreateWorkspace={canCreateWorkspace} onCreateWorkspace={requestWorkspaceCreation} />
+            <WorkspaceSwitcher compact={compact} isDark={isDark} logoAsset={logoAsset} onClose={mobile ? onClose : undefined} canManageWorkspace={canManageWorkspace} canCreateWorkspace={canCreateWorkspace} onCreateWorkspace={requestWorkspaceCreation} />
             <TooltipProvider delayDuration={180}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -261,6 +267,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
             isDark={isDark}
             logoAsset={logoAsset}
             onClose={mobile ? onClose : undefined}
+            canManageWorkspace={canManageWorkspace}
             headerAction={mobile ? (
               <div className="ml-1.5 flex h-9 items-center border-l border-slate-200/80 pl-1.5 dark:border-white/10">
                 <button type="button" onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-200/70 dark:text-slate-400 dark:hover:bg-white/10" aria-label={getTranslation("manage.common.closeSidebar")}>
@@ -281,7 +288,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
       </div>
 
       <ScrollArea className={cn("min-h-0 flex-1", mobile ? "py-3" : "py-5", compact ? "px-1.5" : "px-3")}>
-        {!compact && hasWorkspaceScope && <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{getTranslation("manage.common.workspace")}</p>}
+        {!compact && hasWorkspaceScope && canManageWorkspace && <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">{getTranslation("manage.common.workspace")}</p>}
         <TooltipProvider delayDuration={180}>
           {hasWorkspaceScope && <nav className="manage-sidebar-nav space-y-1.5">
             {navigation.map((item) => {
@@ -453,10 +460,10 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-xs font-bold text-white">{initials}</span>
               <div className="min-w-0"><p className="truncate text-xs font-bold">{userDisplayName}</p><p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{userSecondaryLabel}</p></div>
             </div>
-            <div className="space-y-1.5 border-b border-slate-100 px-2 py-3 dark:border-white/10">
-              <div className="flex items-center justify-between gap-3 text-[11px]"><span className="text-slate-400">{getTranslation("manage.common.workspaceRole")}</span><span className="truncate font-semibold text-slate-700 dark:text-slate-200">{workspaceRoleLabel(currentWorkspaceRole, getTranslation)}</span></div>
+            {(canManageWorkspace || platformRole) && <div className="space-y-1.5 border-b border-slate-100 px-2 py-3 dark:border-white/10">
+              {canManageWorkspace && <div className="flex items-center justify-between gap-3 text-[11px]"><span className="text-slate-400">{getTranslation("manage.common.workspaceRole")}</span><span className="truncate font-semibold text-slate-700 dark:text-slate-200">{workspaceRoleLabel(currentWorkspaceRole, getTranslation)}</span></div>}
               {platformRole && <div className="flex items-center justify-between gap-3 text-[11px]"><span className="text-slate-400">{getTranslation("manage.common.platformRole")}</span><span className="truncate font-semibold capitalize text-violet-700 dark:text-violet-300">{platformRole.replaceAll("_", " ")}</span></div>}
-            </div>
+            </div>}
             <div className="px-1 py-3">
               <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">{getTranslation("language.label")}</p>
               <div className="grid grid-cols-2 gap-1.5">
@@ -470,11 +477,11 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
               <Switch aria-label={isDark ? getTranslation("manage.common.darkMode") : getTranslation("manage.common.lightMode")} checked={isDark} onCheckedChange={onThemeChange} className="h-5 w-9 border-0 bg-slate-300 data-[state=checked]:bg-violet-600 dark:bg-slate-600" />
             </div>
             <ManagePushNotificationSwitch className="mx-1 mt-2" />
-            {canCreateWorkspace ? (
+            {canManageWorkspace && (canCreateWorkspace ? (
               <DropdownMenuItem asChild className="mt-2 cursor-pointer rounded-xl px-3 py-2.5 text-xs font-semibold text-violet-700 focus:bg-violet-50 focus:text-violet-800 dark:text-violet-200 dark:focus:bg-violet-500/10 dark:focus:text-violet-100"><Link href="/onboarding/workspace"><Plus className="h-4 w-4" />{getTranslation("manage.common.createWorkspace")}</Link></DropdownMenuItem>
             ) : (
               <DropdownMenuItem onSelect={requestWorkspaceCreation} className="mt-2 cursor-pointer rounded-xl px-3 py-2.5 text-xs font-semibold text-violet-700 focus:bg-violet-50 focus:text-violet-800 dark:text-violet-200 dark:focus:bg-violet-500/10 dark:focus:text-violet-100"><Plus className="h-4 w-4" />{getTranslation("manage.common.createWorkspace")}</DropdownMenuItem>
-            )}
+            ))}
             <DropdownMenuItem onClick={() => window.dispatchEvent(new Event("saas-core-manage-sign-out"))} className="mt-2 cursor-pointer rounded-xl px-3 py-2.5 text-xs font-semibold text-rose-600 focus:bg-rose-50 focus:text-rose-700 dark:text-rose-300 dark:focus:bg-rose-500/10 dark:focus:text-rose-200"><LogOut className="h-4 w-4" />{getTranslation("manage.common.signOut")}</DropdownMenuItem>
           </div>
           </DropdownMenuContent>
@@ -489,7 +496,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
       <Sheet open={isOpen} onOpenChange={(open) => { if (!open) onClose() }}>
         <SheetContent side="left" className="h-[100dvh] w-[min(20rem,86vw)] border-0 bg-transparent p-0 shadow-2xl">
           <SheetTitle className="sr-only">{getTranslation("common.navigationMenu")}</SheetTitle>
-          <SheetDescription className="sr-only">{getTranslation(hasWorkspaceScope ? "manage.common.workspaceNavigation" : "manage.common.platformNavigation")}</SheetDescription>
+          <SheetDescription className="sr-only">{getTranslation(!hasWorkspaceScope && platformRole ? "manage.common.platformNavigation" : hasWorkspaceScope && canManageWorkspace ? "manage.common.workspaceNavigation" : "common.navigationMenu")}</SheetDescription>
           <div className={cn("h-full", isDark && "dark")}>
             {content(true)}
           </div>

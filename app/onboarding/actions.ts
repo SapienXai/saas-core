@@ -1,6 +1,6 @@
 "use server"
 import { revalidatePath } from "next/cache"
-import { requireUser, requireWorkspaceCreationAccess } from "@/lib/authorization"
+import { requireProductCapability, requireUser, requireWorkspaceCreationAccess } from "@/lib/authorization"
 import { getPreferredWorkspaceId, getWorkspaceMemberships } from "@/lib/auth-utils"
 import { getWorkspaceEntitlements } from "@/lib/entitlements"
 import { getProductOnboardingPath } from "@/lib/product-config"
@@ -27,7 +27,10 @@ export async function createWorkspace(input: { name?: string; slug?: string }, m
       await ensurePlatformSubdomain(workspaceId, workspaceSlug)
       return { success: true as const, data: [{ workspace_id: workspaceId, workspace_slug: workspaceSlug }], nextPath: getProductOnboardingPath() }
     }
-    if (mode === "additional") await requireWorkspaceCreationAccess()
+    if (mode === "additional") {
+      await requireProductCapability("workspaceManagement")
+      await requireWorkspaceCreationAccess()
+    }
 
     const name = input.name?.trim() || ""
     if (name.length < 2) return { success: false as const, message: "Workspace name must be at least two characters." }

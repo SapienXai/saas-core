@@ -3,11 +3,13 @@ import { createServiceRoleClient } from "@/lib/supabase"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { hashInvitationToken, INVITATION_INTENT_COOKIE, isInvitationToken } from "@/lib/invitations"
 import { getRequestUrl } from "@/lib/request-url"
-import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { PRODUCT_CONFIG, isProductCapabilityEnabled } from "@/lib/product-config"
+import { getCurrentUserAccess } from "@/lib/auth-utils"
 
 export async function GET(request: Request) {
   const url = getRequestUrl(request)
-  if (PRODUCT_CONFIG.capabilities.workspaceTeamManagement === false) {
+  const access = await getCurrentUserAccess()
+  if (!isProductCapabilityEnabled("workspaceTeamManagement", access?.platformRole)) {
     return NextResponse.redirect(new URL(PRODUCT_CONFIG.shell?.homePath || "/manage", url))
   }
   const token = url.searchParams.get("token")

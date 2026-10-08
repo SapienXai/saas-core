@@ -76,6 +76,8 @@ export type ProductConfig = {
   themeColor: string
   description: string
   capabilities: Readonly<Record<string, boolean>>
+  /** Optional platform-role allowlists for capabilities that are operator-only. */
+  capabilityPlatformRoles?: Readonly<Record<string, readonly string[]>>
   onboarding?: ProductOnboardingConfig
   auth?: ProductAuthConfig
   shell?: ProductShellConfig
@@ -120,4 +122,14 @@ export function getWorkspaceProvisioningMode() {
 
 export function isDeferredWorkspaceProvisioning() {
   return getWorkspaceProvisioningMode() === "deferred"
+}
+
+export function isProductCapabilityEnabled(
+  capability: string,
+  platformRole?: string | null,
+  config: Pick<ProductConfig, "capabilities" | "capabilityPlatformRoles"> = PRODUCT_CONFIG,
+) {
+  if (config.capabilities[capability] === false) return false
+  const allowedRoles = config.capabilityPlatformRoles?.[capability]
+  return !allowedRoles || Boolean(platformRole && allowedRoles.includes(platformRole))
 }

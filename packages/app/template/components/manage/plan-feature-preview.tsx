@@ -2,6 +2,8 @@
 
 import { ArrowUpRight, Check, Sparkles } from "lucide-react"
 import { useLanguage } from "@/context/language-context"
+import { useManageContext } from "@/context/manage-context"
+import { isProductCapabilityEnabled } from "@/lib/product-config"
 import type { BillingPresentationConfig, BillingUsageMetricConfig } from "@/components/manage/billing-actions"
 
 type PlanFeaturePreviewPlan = {
@@ -25,13 +27,21 @@ function displayKey(key: string, presentation?: BillingPresentationConfig) {
 /** SaaS Core-derived plan capability preview, with product-neutral feature keys. */
 export function PlanFeaturePreview({ plan, currentPlanKey, presentation, usageMetrics = [] }: Props) {
   const { getTranslation } = useLanguage()
+  const { platformRole } = useManageContext()
+  const showTeamManagement = isProductCapabilityEnabled("workspaceTeamManagement", platformRole)
+  const showWorkspaceManagement = isProductCapabilityEnabled("workspaceManagement", platformRole)
   const t = getTranslation
   const features = plan?.features || {}
   const limits = plan?.limits || {}
   const orderedFeatureKeys = presentation?.featureKeys?.length ? presentation.featureKeys.filter((key) => key in features) : Object.keys(features)
   const enabledFeatures = orderedFeatureKeys.filter((key) => features[key])
   const disabledFeatures = orderedFeatureKeys.filter((key) => !features[key])
-  const orderedLimitKeys = presentation?.limitKeys?.length ? presentation.limitKeys.filter((key) => key in limits) : Object.keys(limits)
+  const requestedLimitKeys = presentation?.limitKeys?.length ? presentation.limitKeys : Object.keys(limits)
+  const orderedLimitKeys = requestedLimitKeys.filter((key) =>
+    key in limits &&
+    (showTeamManagement || key !== "core.members") &&
+    (showWorkspaceManagement || key !== "core.workspaces")
+  )
   const usageMetricName = (key: string) => usageMetrics.find((metric) => metric.key === key)?.name || displayKey(key, presentation)
   const copyText = (key: string, fallback: string) => presentation?.copy?.[key]?.trim() || fallback
   const formatLimit = (value: number | null | undefined) => value === null ? "∞" : value === undefined ? "—" : value.toLocaleString()

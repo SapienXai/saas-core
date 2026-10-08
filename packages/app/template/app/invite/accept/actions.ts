@@ -3,8 +3,14 @@
 import { cookies } from "next/headers"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
+import { requireProductCapability } from "@/lib/authorization"
 
 export async function acceptInvitation() {
+  try {
+    await requireProductCapability("workspaceTeamManagement")
+  } catch {
+    return { success: false, message: "You do not have access to team invitations." }
+  }
   const cookieStore = await cookies()
   const tokenHash = cookieStore.get(INVITATION_INTENT_COOKIE)?.value
   if (!tokenHash) return { success: false, message: "This invitation link is missing or has expired." }

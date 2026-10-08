@@ -18,6 +18,7 @@ import { useManageContext } from "@/context/manage-context"
 import { selectWorkspace } from "@/app/manage/context-actions"
 import type { TranslationKey, TranslationReplacements } from "@/i18n"
 import { cn } from "@/lib/utils"
+import { PRODUCT_CONFIG } from "@/lib/product-config"
 
 type WorkspaceSwitcherProps = {
   compact: boolean
@@ -25,6 +26,7 @@ type WorkspaceSwitcherProps = {
   logoAsset: string
   onClose?: () => void
   headerAction?: ReactNode
+  canManageWorkspace: boolean
   canCreateWorkspace: boolean
   onCreateWorkspace?: () => void
 }
@@ -46,7 +48,7 @@ function getRoleLabel(role: string, getTranslation: (key: TranslationKey, replac
   }
 }
 
-export function WorkspaceSwitcher({ compact, isDark, logoAsset, onClose, headerAction, canCreateWorkspace, onCreateWorkspace }: WorkspaceSwitcherProps) {
+export function WorkspaceSwitcher({ compact, isDark, logoAsset, onClose, headerAction, canManageWorkspace, canCreateWorkspace, onCreateWorkspace }: WorkspaceSwitcherProps) {
   const { getTranslation } = useLanguage()
   const { memberships, currentWorkspace, platformRole } = useManageContext()
   const [switchingWorkspaceId, setSwitchingWorkspaceId] = useState<string | null>(null)
@@ -60,6 +62,32 @@ export function WorkspaceSwitcher({ compact, isDark, logoAsset, onClose, headerA
     : currentWorkspace
       ? [{ workspaceId: currentWorkspace.id, role: currentWorkspace.role, workspace: currentWorkspace.workspace }]
       : []
+
+  if (!canManageWorkspace) {
+    return (
+      <div className={cn("flex min-w-0 items-center", compact ? "mx-auto h-10 w-10 justify-center" : "flex-1")}>
+        <div
+          role="img"
+          aria-label={PRODUCT_CONFIG.name}
+          title={compact ? PRODUCT_CONFIG.name : undefined}
+          className={cn("flex min-w-0 items-center", compact ? "h-10 w-10 justify-center" : "flex-1 gap-3")}
+        >
+          <span className={cn(
+            "manage-brand-mark flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 shadow-lg shadow-violet-500/25",
+            compact ? "h-9 w-9" : "h-10 w-10"
+          )}>
+            <Image src={logoAsset} alt="" width={40} height={40} className="h-full w-full rounded-[inherit] object-cover" priority />
+          </span>
+          {!compact && <span className="min-w-0 flex-1 truncate text-sm font-bold tracking-tight text-slate-950 dark:text-white">{PRODUCT_CONFIG.name}</span>}
+        </div>
+        {!compact && headerAction && (
+          <div className="shrink-0" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+            {headerAction}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   async function changeWorkspace(workspaceId: string) {
     if (workspaceId === currentWorkspaceId || switchingWorkspaceId) return
