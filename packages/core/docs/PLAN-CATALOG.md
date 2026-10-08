@@ -9,10 +9,14 @@ The stable plan key is the identity used by `ProductCatalog`,
 `workspace_subscriptions`, and provider mappings. Keys are not renamed. Plan
 rows can be activated, archived, duplicated, or edited by the server-only
 Platform Billing actions. Archive keeps the row and every historical foreign
-key intact. A plan referenced by subscription history cannot have its
-entitlement maps or commercial metadata changed; presentation fields remain
-editable. A plan referenced by an active subscription or scheduled change
-cannot be archived until that lifecycle has ended.
+key intact. For a referenced plan, prices and commercial metadata remain
+immutable. Entitlement maps can receive a monotonic expansion: existing
+features and limits cannot be removed or reduced, new features must be enabled,
+and new limits must be positive integers or explicit unlimited values. This
+allows existing subscribers to receive additional capabilities while keeping
+every prior entitlement. Presentation fields remain editable. A plan
+referenced by an active subscription or scheduled change cannot be archived
+until that lifecycle has ended.
 
 ## Define plans
 
@@ -127,11 +131,8 @@ const billing = createEntitlementService({
 
 ## Validate a target plan before downgrade
 
-The managed server helper resolves the active target catalog row and current
-effective plan. It reads authoritative usage for finite limits that are
-reduced or newly introduced by the target. Unchanged and wider limits do not
-need a usage resolver because they do not reduce the resources the Workspace
-can retain:
+The managed server helper resolves the active target catalog row, the current
+effective plan, and authoritative usage for every target/current limit key:
 
 ```ts
 import { validatePlanChangeEligibility } from "@/lib/entitlements"
@@ -161,8 +162,8 @@ non-managed consumers. Its structured result is:
 }
 ```
 
-`LIMIT_EXCEEDED` means current usage is greater than a finite reduced target
-limit; exactly equal usage is eligible. `USAGE_UNAVAILABLE` and
+`LIMIT_EXCEEDED` means current usage is greater than a finite target limit;
+exactly equal usage is eligible. `USAGE_UNAVAILABLE` and
 `CAPABILITY_NOT_CONFIGURED` are restrictive verification failures, not zero
 usage. `null` is explicit unlimited. The managed action revalidates the same
 contract immediately before writing scheduled state or calling the provider, so a
