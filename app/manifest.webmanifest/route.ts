@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 import { classifyHostname, getRequestHostname } from "@/lib/domains/hostname"
 import { getManagementContext } from "@/lib/management-context"
-import { getEffectivePwaBranding, getGenericPwaBranding, getPwaIconAssetUrl, getPublicPwaBranding, PWA_FALLBACK_ICON } from "@/lib/pwa"
+import { getEffectivePwaBranding, getGenericPwaBranding, getPwaIconAssetUrl, getPublicPwaBranding, PWA_FALLBACK_ICON, PWA_FALLBACK_ICON_192 } from "@/lib/pwa"
+import { getPwaIconMimeType } from "@/lib/pwa-icon"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -25,10 +26,9 @@ export async function GET(request: Request) {
     ? await getEffectivePwaBranding(workspaceId)
     : getGenericPwaBranding())
   const resolvedWorkspaceId = branding.workspaceId || workspaceId
-  const fallbackIconType = PWA_FALLBACK_ICON.endsWith(".svg") ? "image/svg+xml" : PWA_FALLBACK_ICON.endsWith(".webp") ? "image/webp" : "image/png"
   const fallbackIcons = [
-    { src: PWA_FALLBACK_ICON, sizes: "192x192", type: fallbackIconType, purpose: "any maskable" },
-    { src: PWA_FALLBACK_ICON, sizes: "512x512", type: fallbackIconType, purpose: "any maskable" },
+    { src: PWA_FALLBACK_ICON_192, sizes: "192x192", type: getPwaIconMimeType(PWA_FALLBACK_ICON_192), purpose: "any maskable" },
+    { src: PWA_FALLBACK_ICON, sizes: "512x512", type: getPwaIconMimeType(PWA_FALLBACK_ICON), purpose: "any maskable" },
   ]
   const icons = branding.iconUrl === PWA_FALLBACK_ICON
     ? fallbackIcons

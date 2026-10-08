@@ -3,9 +3,12 @@ import { can } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import { getAssetVersion } from "@/lib/asset-version"
 import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { resolvePwaFallbackIconPath } from "@/lib/pwa-icon"
 import { cache } from "react"
 
 export const PWA_FALLBACK_ICON = PRODUCT_CONFIG.iconPath
+const optionalProductConfig = PRODUCT_CONFIG as typeof PRODUCT_CONFIG & { iconPath192?: unknown }
+export const PWA_FALLBACK_ICON_192 = resolvePwaFallbackIconPath(PWA_FALLBACK_ICON, optionalProductConfig.iconPath192, 192)
 export const PWA_DEFAULT_THEME_COLOR = PRODUCT_CONFIG.themeColor
 export const PWA_DEFAULT_BACKGROUND_COLOR = "#ffffff"
 const PWA_ICON_RENDER_VERSION = "1"

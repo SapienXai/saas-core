@@ -278,6 +278,9 @@ domain screen.
 Products may customize:
 
 - logo, icon, colors, type, and public metadata;
+- an optional root-relative `PRODUCT_CONFIG.iconPath192` for the 192px generic
+  PWA manifest icon; `iconPath` remains the 512px fallback, and authorized
+  Workspace-specific icons keep using Core's size-aware asset route;
 - navigation labels and product routes;
 - dashboard cards and product-specific empty/loading states;
 - product CSS and domain-specific responsive views;

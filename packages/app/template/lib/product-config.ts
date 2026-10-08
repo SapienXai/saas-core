@@ -71,6 +71,8 @@ export type ProductConfig = {
   slug: string
   logoPath: string
   iconPath: string
+  /** Optional same-origin 192px app icon; iconPath remains the 512px fallback. */
+  iconPath192?: string
   themeColor: string
   description: string
   capabilities: Readonly<Record<string, boolean>>
