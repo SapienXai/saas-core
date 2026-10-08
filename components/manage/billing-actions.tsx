@@ -124,6 +124,10 @@ type BillingState = {
 }
 
 type ConfiguredPrice = { planKey: string; interval: string; currency: string; providerPriceId: string; amount: string | null }
+type CatalogPlan = {
+  key: string
+  prices?: Partial<Record<"month" | "year", { amount: number | null; currency: string }>>
+}
 
 type Props = {
   currentPlan: string
@@ -131,6 +135,7 @@ type Props = {
   plans: Plan[]
   configuredPaidPlans: string[]
   configuredPrices: ConfiguredPrice[]
+  catalogPlans?: readonly CatalogPlan[]
   presentation?: BillingPresentationConfig
   usageMetrics?: BillingUsageMetricConfig[]
   supportedIntervals?: readonly string[]
@@ -200,7 +205,7 @@ type BillingAction =
   | `plan-preview:${string}`
   | `invoice:${string}`
 
-export function BillingActions({ currentPlan, billing, plans, configuredPaidPlans, configuredPrices, presentation, usageMetrics = [], supportedIntervals = ["month", "year"], defaultInterval = "month" }: Props) {
+export function BillingActions({ currentPlan, billing, plans, configuredPaidPlans, configuredPrices, catalogPlans = [], presentation, usageMetrics = [], supportedIntervals = ["month", "year"], defaultInterval = "month" }: Props) {
   const { currentLang, getTranslation, translateMessage } = useLanguage()
   const { updateCurrentWorkspacePlan } = useManageContext()
   const t = getTranslation
@@ -529,7 +534,9 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
   const renderBillingIntervalSwitch = (className = "") => (
     <div className={`inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-white/10 dark:bg-white/[0.06] ${className}`} role="group" aria-label={t("manage.planUsage.billing.billingCycle")}>
       {resolvedPresentation.supportedIntervals.map((interval) => {
-        const available = configuredPrices.some((price) => price.interval === interval)
+        const available = billing.billingDeferred
+          ? catalogPlans.some((plan) => typeof plan.prices?.[interval]?.amount === "number")
+          : configuredPrices.some((price) => price.interval === interval)
         const active = billingInterval === interval
         return (
           <button
@@ -574,6 +581,16 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
     }
     const value = row.limitKey ? plan.limits[row.limitKey] : undefined
     return value === null ? "∞" : value === undefined ? "—" : value.toLocaleString()
+  }
+  const catalogPriceLabel = (planKey: string) => {
+    const interval: "month" | "year" = billingInterval === "year" ? "year" : "month"
+    const price = catalogPlans.find((plan) => plan.key === planKey)?.prices?.[interval]
+    if (!price || typeof price.amount !== "number" || !Number.isFinite(price.amount) || price.amount < 0 || !price.currency) return null
+    try {
+      return formatNumber(price.amount, currentLang, { style: "currency", currency: price.currency, minimumFractionDigits: 0, maximumFractionDigits: 2 })
+    } catch {
+      return null
+    }
   }
 
   const planChangeConfirmation = billingConfirmation?.type === "plan-change" ? billingConfirmation : null
@@ -708,11 +725,47 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
 
   if (billing.billingDeferred) {
     return (
-      <section id="plan-options" className="manage-plan-card rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-6" role="status" data-billing-mode="deferred">
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("eyebrow", "PlaceDJ plan")}</p>
-        <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{copyText("billing-deferred-title", "Billing is coming soon")}</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">{copyText("billing-deferred-notice", "Billing setup is pending. Your current plan and venue access remain active.")}</p>
-      </section>
+      <div id="plan-options" className="space-y-5" data-billing-mode="deferred">
+        <section id="upgrade-plans" className="manage-plan-card scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-6" aria-labelledby="deferred-plan-heading">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("eyebrow", "PlaceDJ plan")}</p>
+          <h2 id="deferred-plan-heading" className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{copyText("billing-deferred-title", "Compare plans")}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300" role="status">{copyText("billing-deferred-notice", "Checkout and subscription changes are unavailable until billing setup is complete. Your current plan and venue access remain active.")}</p>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{copyText("catalogPricingLabel", "Published plan pricing")}</p>
+            {renderBillingIntervalSwitch()}
+          </div>
+          <div className={`mt-4 grid gap-3 ${orderedPlans.length < 3 ? "sm:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-4"}`}>
+            {orderedPlans.map((plan) => {
+              const copy = planCopy(plan)
+              const price = catalogPriceLabel(plan.key)
+              const isCurrent = plan.key === currentPlan
+              const isSelected = plan.key === selectedPlanKey
+              return <article key={plan.key} className={`rounded-2xl border p-4 ${isCurrent || isSelected ? "border-violet-300 bg-violet-50/60 dark:border-violet-300/30 dark:bg-violet-500/[0.08]" : "border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.025]"}`} data-plan-key={plan.key} data-selected-plan={isSelected || undefined} aria-label={`${copy.label}${isCurrent ? `, ${copyText("currentPlanLabel", "Current plan")}` : ""}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="text-base font-bold text-slate-950 dark:text-white">{copy.label}</h3>
+                  {isCurrent && <span className="rounded-full bg-violet-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-violet-800 dark:bg-violet-300/10 dark:text-violet-200">{copyText("currentPlanLabel", "Current plan")}</span>}
+                </div>
+                <p className="mt-1 min-h-10 text-xs leading-5 text-slate-600 dark:text-slate-300">{copy.description}</p>
+                <p className="mt-3 text-xl font-bold tabular-nums text-slate-950 dark:text-white">{price || copyText("catalogPriceUnavailable", "Price not configured")}{price && <span className="ml-1 text-xs font-medium text-slate-500 dark:text-slate-400">/ {billingInterval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly")}</span>}</p>
+                <ul className="mt-3 space-y-2 border-t border-slate-200 pt-3 text-xs text-slate-700 dark:border-white/10 dark:text-slate-200">{copy.highlights.map((highlight) => <li key={highlight} className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" /><span>{highlight}</span></li>)}</ul>
+              </article>
+            })}
+          </div>
+          {resolvedPresentation.comparisonRows.length > 0 && <section className="mt-5 overflow-x-auto border-t border-slate-200 pt-4 dark:border-white/10" aria-label={copyText("comparisonLabel", "Plan comparison")}>
+            <h3 className="mb-3 text-sm font-bold text-slate-950 dark:text-white">{copyText("comparisonTitle", "Plan features and limits")}</h3>
+            <div className="min-w-[34rem]" role="table" aria-label={copyText("comparisonLabel", "Plan comparison")}>
+              <div className="grid gap-2 border-b border-slate-200 pb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:border-white/10 dark:text-slate-400" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
+                <span role="columnheader">{copyText("comparison-feature-label", "Plan detail")}</span>
+                {orderedPlans.map((plan) => <span key={plan.key} className="text-center" role="columnheader">{planCopy(plan).label}</span>)}
+              </div>
+              {resolvedPresentation.comparisonRows.map((row) => <div key={row.key} className="grid gap-2 border-b border-slate-100 py-2.5 text-xs last:border-0 dark:border-white/10" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
+                <span className="font-medium text-slate-700 dark:text-slate-200" role="rowheader">{row.label}</span>
+                {orderedPlans.map((plan) => <span key={plan.key} className="text-center font-semibold tabular-nums text-slate-600 dark:text-slate-300" role="cell" aria-label={`${planCopy(plan).label}: ${comparisonValue(plan, row)}`}>{comparisonValue(plan, row)}</span>)}
+              </div>)}
+            </div>
+          </section>}
+        </section>
+      </div>
     )
   }
 
@@ -818,10 +871,10 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
       </section>
 
       {resolvedPresentation.comparisonRows.length > 0 && <section id="plan-comparison" className="manage-plan-card overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-5" aria-label={copyText("comparisonLabel", "Plan comparison")}>
-        <div className="mb-3"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("comparisonEyebrow", "Compare plans")}</p><h2 className="mt-1 text-base font-bold tracking-tight text-slate-950 dark:text-white">{copyText("comparisonTitle", "Plan features and limits")}</h2></div>
+        <div className="mb-3"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("comparisonEyebrow", "Compare plans")}</p><h2 className="mt-1 text-base font-bold tracking-tight text-slate-950 dark:text-white">{copyText("comparison-title", "Plan features and limits")}</h2></div>
         <div className="min-w-[34rem]" role="table" aria-label={copyText("comparisonLabel", "Plan comparison")}>
           <div className="grid gap-2 border-b border-slate-100 pb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:border-white/10 dark:text-slate-400" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">
-            <span role="columnheader">{copyText("comparisonFeatureLabel", "Feature")}</span>
+            <span role="columnheader">{copyText("comparison-feature-label", "Plan detail")}</span>
             {orderedPlans.map((plan) => <span key={plan.key} className="text-center" role="columnheader">{planCopy(plan).label}</span>)}
           </div>
           {resolvedPresentation.comparisonRows.map((row) => <div key={row.key} className="grid gap-2 border-b border-slate-100 py-2.5 text-xs last:border-0 dark:border-white/10" style={{ gridTemplateColumns: `minmax(9rem,1.4fr) repeat(${orderedPlans.length}, minmax(6rem,1fr))` }} role="row">

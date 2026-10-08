@@ -6,7 +6,7 @@ import { getManagementUsage } from "@/app/manage/context-actions"
 type ManageUser = { id: string; email: string; name: string }
 export type ManageWorkspacePlan = { key: string; name: string; pricing?: Record<string, { amount: number | null; currency: string }>; features?: Record<string, boolean>; limits?: Record<string, number | null>; scheduledPlan?: { key: string; name: string; effectiveAt: string; limits: Record<string, number | null> } | null }
 export type ManageUsage = { workspaces: number; users: number; metrics: Record<string, number>; periodStart: string; periodEnd: string }
-export type ManagePlanCatalogItem = { key: string; name: string; sortOrder: number; metadata?: Record<string, unknown> }
+export type ManagePlanCatalogItem = { key: string; name: string; sortOrder: number; limits?: Record<string, number | null>; metadata?: Record<string, unknown> }
 export type ManageInitialContext = { user: ManageUser; role: string | null; platformRole: string | null; isSuperAdmin: boolean; memberships: Array<{ workspaceId: string; role: string; workspace?: { id: string; name: string; slug: string; status: string } | null }>; currentWorkspace: { id: string; role: string; workspace?: { id: string; name: string; slug: string; status: string } | null; plan?: ManageWorkspacePlan | null; usage?: ManageUsage | null; customPwaEnabled?: boolean; pushNotificationsEnabled?: boolean } | null; planCatalog: ManagePlanCatalogItem[]; ownedWorkspaceId: string | null; canCreateWorkspace: boolean }
 type ManageContextType = ManageInitialContext & { loading: boolean; refreshRole: (force?: boolean) => Promise<void>; updateCurrentWorkspacePlan: (plan: ManageWorkspacePlan) => void }
 const emptyUser = { id: "", email: "", name: "" }

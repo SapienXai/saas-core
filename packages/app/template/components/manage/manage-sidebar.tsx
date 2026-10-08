@@ -124,10 +124,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
     : planCatalog.slice().sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key)).map((plan) => plan.key)
   const orderIndex = new Map(planOrder.map((key, index) => [key, index]))
   const currentPlanIndex = currentPlanKey ? orderIndex.get(currentPlanKey) ?? -1 : -1
-  const nextPlan = planCatalog.filter((plan) => (orderIndex.get(plan.key) ?? Number.MAX_SAFE_INTEGER) > currentPlanIndex).sort((a, b) => (orderIndex.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.key) ?? Number.MAX_SAFE_INTEGER))[0]
-  const nextPlanKey = nextPlan?.key || null
-  const nextPlanLabel = nextPlan ? billingPresentation?.plans?.[nextPlan.key]?.label?.trim() || nextPlan.name : null
-  const canShowUpgrade = Boolean(nextPlanKey && nextPlanLabel && currentWorkspace?.role === "owner" && !isStaff)
+  const orderedUpgradePlans = planCatalog.filter((plan) => (orderIndex.get(plan.key) ?? Number.MAX_SAFE_INTEGER) > currentPlanIndex).sort((a, b) => (orderIndex.get(a.key) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.key) ?? Number.MAX_SAFE_INTEGER))
   const workspaceUsage = currentWorkspace?.usage
   const workspaceLimits = currentWorkspace?.plan?.limits
   const usageItems: SidebarUsageItem[] = workspaceUsage && workspaceLimits
@@ -139,8 +136,18 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
           "core.workspaces": getTranslation("manage.planUsage.workspaces"),
           "core.members": getTranslation("manage.planUsage.teamMembers"),
         },
+        maxItems: 10,
       })
     : []
+  const quotaRows = usageItems.filter((item) => typeof item.used === "number" && typeof item.limit === "number" && item.used >= item.limit)
+  const nextPlan = quotaRows.length
+    ? orderedUpgradePlans.find((plan) => quotaRows.every((item) => {
+        const limit = plan.limits?.[item.key]
+        return limit === null || typeof limit === "number" && limit > item.used!
+      }))
+    : orderedUpgradePlans[0]
+  const nextPlanKey = nextPlan?.key || null
+  const canShowUpgrade = Boolean(nextPlanKey && currentWorkspace?.role === "owner" && !isStaff)
   const hasWorkspaceUsage = usageItems.length > 0
   const upgradePlanHref = nextPlanKey
     ? getPlanNavigationHref({
@@ -363,7 +370,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
         </TooltipProvider>
       </ScrollArea>
 
-      {canShowUpgrade && nextPlanKey && nextPlanLabel && (
+      {canShowUpgrade && nextPlanKey && (
         compact ? (
           <div className="shrink-0 px-1.5 pb-3">
             <TooltipProvider delayDuration={180}>
@@ -373,12 +380,12 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
                     href={upgradePlanHref}
                     onClick={closeAfterUpgradeNavigation}
                     className="group mx-auto flex h-10 w-10 items-center justify-center rounded-xl border border-amber-300/70 bg-gradient-to-br from-amber-300 via-yellow-400 to-orange-500 text-white shadow-md shadow-amber-500/25 transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-amber-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 dark:border-amber-200/25 dark:from-amber-300 dark:via-yellow-500 dark:to-orange-500 dark:focus-visible:ring-offset-[#0b0c0f]"
-                    aria-label={getTranslation("manage.common.upgradeTo", { plan: nextPlanLabel })}
+                    aria-label={getTranslation("manage.common.viewPlans")}
                   >
                     <Crown className="h-4 w-4 transition-transform duration-300 motion-safe:animate-pulse group-hover:rotate-[-8deg]" />
                   </Link>
                 </TooltipTrigger>
-                <TooltipContent side="right" sideOffset={10} className="manage-sidebar-tooltip">{getTranslation("manage.common.upgradeTo", { plan: nextPlanLabel })}</TooltipContent>
+                <TooltipContent side="right" sideOffset={10} className="manage-sidebar-tooltip">{getTranslation("manage.common.viewPlans")}</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           </div>
@@ -396,7 +403,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-amber-700 dark:text-amber-300">{getTranslation("manage.common.nextStep")}</p>
-                  <p className="mt-0.5 truncate text-sm font-bold text-slate-950 dark:text-white">{getTranslation("manage.common.upgradeTo", { plan: nextPlanLabel })}</p>
+                  <p className="mt-0.5 truncate text-sm font-bold text-slate-950 dark:text-white">{getTranslation("manage.common.viewPlans")}</p>
                 </div>
                 <ArrowUpRight className="h-4 w-4 shrink-0 text-amber-700 transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 dark:text-amber-300" aria-hidden="true" />
               </div>

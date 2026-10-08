@@ -23,7 +23,7 @@ type Entitlements = {
 
 type ProductRuntimeConfig = {
   catalog?: {
-    plans?: readonly { key: string; name?: string; description?: string; metadata?: Record<string, unknown> }[]
+    plans?: readonly { key: string; name?: string; description?: string; metadata?: Record<string, unknown>; prices?: Partial<Record<"month" | "year", { amount: number | null; currency: string }>> }[]
     usageMetrics?: readonly BillingUsageMetricConfig[]
     presentation?: BillingPresentationConfig
     billingPresentation?: BillingPresentationConfig
@@ -98,10 +98,11 @@ export default async function PlanUsagePage() {
     ...(showTeamManagement && isLimitPresented("core.members") ? [{ key: "core.members", label: usageMetricLabel("core.members"), value: usage.users, limit: hasLimit("core.members") ? entitlements.limits["core.members"] : undefined }] : []),
     ...usageKeys.filter(isLimitPresented).map((key) => ({ key, label: usageMetricLabel(key), value: usage.metrics[key] ?? undefined, limit: hasLimit(key) ? entitlements.limits[key] : undefined })),
   ]
+  const enabledFeatures = Object.entries(entitlements.features).filter(([, enabled]) => enabled)
   const productRows = usageRows.filter((row) => !row.key.startsWith("core."))
   const productMetric = productRows[0]
-  const activeStatus = billing.providerStatus || copyText("activeStatus", "Active")
-  const throughLabel = billing.currentPeriodEnd ? `${copyText("throughLabel", "Through")} ${formatDate(billing.currentPeriodEnd, language, { dateStyle: "medium" })}` : copyText("workspaceAccess", "Workspace access")
+  const activeStatus = providerBacked ? billing.providerStatus || copyText("activeStatus", "Active") : copyText("included-status", "Included")
+  const throughLabel = providerBacked && billing.currentPeriodEnd ? `${copyText("throughLabel", "Through")} ${formatDate(billing.currentPeriodEnd, language, { dateStyle: "medium" })}` : copyText("workspaceAccess", "Workspace access")
   const memberLimit = usageRows.find((row) => row.key === "core.members")?.limit
   const currentPlanOrder = plans.find((plan) => plan.key === entitlements.planKey)?.sort_order ?? Number.MAX_SAFE_INTEGER
   const nextPlanFor = (row: typeof usageRows[number]) => {
@@ -126,8 +127,8 @@ export default async function PlanUsagePage() {
       {usageRows.some((row) => row.key === "core.members") && <ManageMetricCard label={copyText("membersLabel", translateServer(language, "manage.planUsage.billing.teamMembers"))} value={usage.users} detail={memberLimit === undefined ? "—" : memberLimit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${memberLimit}`} />}
       {productMetric && <ManageMetricCard label={productMetric.label} value={productMetric.value ?? "—"} detail={productMetric.limit === undefined ? "—" : productMetric.limit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${productMetric.limit}`} />}
     </ManageMetricGrid>
-    <ManageSurface className="overflow-hidden"><div className="flex items-center gap-2 border-b border-slate-100 px-3.5 py-3 dark:border-white/10 sm:px-4"><Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-300" /><h2 className="text-sm font-semibold text-slate-950 dark:text-white">{copyText("includedFeaturesTitle", "Included features")}</h2></div><div className="grid gap-2 p-3.5 sm:grid-cols-2 sm:p-4">{Object.entries(entitlements.features).filter(([, enabled]) => enabled).map(([key]) => <div key={key} className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200"><Check className="h-3.5 w-3.5 text-emerald-600" />{displayKey(key, presentation)}</div>)}</div><div className={`grid border-t border-slate-100 dark:border-white/10 ${usageRows.length > 3 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>{usageRows.map((row) => <ManageUsageMetric key={row.key} label={row.label} value={row.value} limit={row.limit} />)}</div></ManageSurface>
+    <ManageSurface className="overflow-hidden">{enabledFeatures.length > 0 && <><div className="flex items-center gap-2 border-b border-slate-100 px-3.5 py-3 dark:border-white/10 sm:px-4"><Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-300" /><h2 className="text-sm font-semibold text-slate-950 dark:text-white">{copyText("includedFeaturesTitle", "Included features")}</h2></div><div className="grid gap-2 p-3.5 sm:grid-cols-2 sm:p-4">{enabledFeatures.map(([key]) => <div key={key} className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200"><Check className="h-3.5 w-3.5 text-emerald-600" />{displayKey(key, presentation)}</div>)}</div></>}<div className={`grid ${enabledFeatures.length ? "border-t border-slate-100 dark:border-white/10" : ""} ${usageRows.length > 3 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>{usageRows.map((row) => <ManageUsageMetric key={row.key} label={row.label} value={row.value} limit={row.limit} />)}</div></ManageSurface>
     {reachedRows.length > 0 && <section className="space-y-2" aria-label={copyText("limitReachedLabel", "Plan limits")}>{reachedRows.map((row) => <EntitlementLimitNotice key={row.key} capability={row.key} label={row.label} current={row.value} limit={row.limit} requiredPlan={nextPlanFor(row)?.name} />)}</section>}
-    <BillingActions currentPlan={entitlements.planKey} billing={billing} plans={plans} configuredPaidPlans={configuredPaidPlans} configuredPrices={configuredPrices} presentation={presentation} usageMetrics={usageMetrics} supportedIntervals={supportedIntervals} defaultInterval={defaultInterval} />
+    <BillingActions currentPlan={entitlements.planKey} billing={billing} plans={plans} catalogPlans={catalog.plans} configuredPaidPlans={configuredPaidPlans} configuredPrices={configuredPrices} presentation={presentation} usageMetrics={usageMetrics} supportedIntervals={supportedIntervals} defaultInterval={defaultInterval} />
   </ManagePage>
 }
