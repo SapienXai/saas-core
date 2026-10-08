@@ -308,6 +308,7 @@ export type ProductConfig = {
   themeColor: string
   description: string
   capabilities: Readonly<Record<string, boolean>>
+  capabilityPlatformRoles?: Readonly<Record<string, readonly string[]>>
   onboarding?: { productSetupPath?: string | null; workspaceProvisioning?: "manual" | "deferred" }
   auth?: ProductAuthConfig
   shell?: ProductShellConfig
@@ -376,6 +377,16 @@ export function getWorkspaceProvisioningMode() {
 
 export function isDeferredWorkspaceProvisioning() {
   return getWorkspaceProvisioningMode() === "deferred"
+}
+
+export function isProductCapabilityEnabled(
+  capability: string,
+  platformRole?: string | null,
+  config: Pick<ProductConfig, "capabilities" | "capabilityPlatformRoles"> = PRODUCT_CONFIG,
+) {
+  if (config.capabilities[capability] === false) return false
+  const allowedRoles = config.capabilityPlatformRoles?.[capability]
+  return !allowedRoles || Boolean(platformRole && allowedRoles.includes(platformRole))
 }
 `, "utf8")
   await writeFile(path.join(directory, "product.catalog.json"), json({
