@@ -13,6 +13,9 @@ const templateEntitlementMigration = await readFile(path.join(root, "packages/ap
 const planCatalogMigrationPath = path.join(root, "supabase/migrations/20260914100000_reusable_plan_catalog_management.sql")
 const planCatalogMigration = await readFile(planCatalogMigrationPath, "utf8")
 const templatePlanCatalogMigration = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260914100000_reusable_plan_catalog_management.sql"), "utf8")
+const additivePlanExpansionPath = path.join(root, "supabase/migrations/20261008190000_allow_additive_plan_entitlement_expansions.sql")
+const additivePlanExpansion = await readFile(additivePlanExpansionPath, "utf8")
+const templateAdditivePlanExpansion = await readFile(path.join(root, "packages/app/template/supabase/migrations/20261008190000_allow_additive_plan_entitlement_expansions.sql"), "utf8")
 const invitationRenewalFixPath = path.join(root, "supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql")
 const invitationRenewalFix = await readFile(invitationRenewalFixPath, "utf8")
 const templateInvitationRenewalFix = await readFile(path.join(root, "packages/app/template/supabase/migrations/20260914110000_fix_renew_workspace_invitation.sql"), "utf8")
@@ -53,6 +56,7 @@ for (const contract of [
 if (persistenceMigration !== templatePersistenceMigration) throw new Error("Root and template reusable billing migrations are not byte-for-byte identical.")
 if (entitlementMigration !== templateEntitlementMigration) throw new Error("Root and template entitlement enforcement migrations are not byte-for-byte identical.")
 if (planCatalogMigration !== templatePlanCatalogMigration) throw new Error("Root and template plan catalog migrations are not byte-for-byte identical.")
+if (additivePlanExpansion !== templateAdditivePlanExpansion) throw new Error("Root and template additive plan expansion migrations are not byte-for-byte identical.")
 if (invitationRenewalFix !== templateInvitationRenewalFix) throw new Error("Root and template invitation renewal fix migrations are not byte-for-byte identical.")
 if (scheduledDowngradeCeiling !== templateScheduledDowngradeCeiling) throw new Error("Root and template scheduled downgrade ceiling migrations are not byte-for-byte identical.")
 if (invalidScheduledDowngradeFix !== templateInvalidScheduledDowngradeFix) throw new Error("Root and template invalid scheduled downgrade fix migrations are not byte-for-byte identical.")
@@ -204,6 +208,9 @@ if (!planCatalogMigration.includes("add column if not exists description") || !p
 }
 if (!planCatalogMigration.includes("before update on public.plans") || !planCatalogMigration.includes("revoke all on function private.guard_referenced_plan_change() from public, anon, authenticated")) {
   throw new Error("Plan catalog lifecycle guard is not attached or restricted to server-controlled execution.")
+}
+for (const contract of ["private.is_plan_entitlement_expansion(", "new_features", "new_limits", "PLAN_REFERENCED_IMMUTABLE", "revoke all on function private.is_plan_entitlement_expansion(jsonb, jsonb, jsonb, jsonb) from public, anon, authenticated"]) {
+  if (!additivePlanExpansion.includes(contract)) throw new Error(`Referenced plan expansion migration is missing its monotonic grant contract: ${contract}`)
 }
 if (!invitationRenewalFix.includes("create or replace function public.renew_workspace_invitation(") || !invitationRenewalFix.includes("update public.workspace_invitations as invitation") || !invitationRenewalFix.includes("returning invitation.id, invitation.email, invitation.role, invitation.expires_at") || invitationRenewalFix.includes("returning id, email, role, expires_at into")) {
   throw new Error("Invitation renewal fix is missing the qualified RETURNING contract.")

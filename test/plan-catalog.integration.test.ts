@@ -48,7 +48,13 @@ integration("plan catalog lifecycle schema", () => {
     const bound = await service!.from("workspace_subscriptions").update({ plan_key: planKey, status: "active", source: "manual" }).eq("workspace_id", workspaceId)
     expect(bound.error).toBeNull()
 
-    const commercialEdit = await service!.from("plans").update({ limits: { "core.workspaces": 99, items: 2 } }).eq("key", planKey)
+    const additiveExpansion = await service!.from("plans").update({
+      features: { exports: true, analytics: true },
+      limits: { "core.workspaces": 1, items: 2, device_slots: 3 },
+    }).eq("key", planKey)
+    expect(additiveExpansion.error).toBeNull()
+
+    const commercialEdit = await service!.from("plans").update({ limits: { "core.workspaces": 1, items: 1, device_slots: 3 } }).eq("key", planKey)
     expect(commercialEdit.error?.message).toContain("PLAN_REFERENCED_IMMUTABLE")
     const presentationEdit = await service!.from("plans").update({ name: "Catalog fixture renamed", description: "Updated catalog copy" }).eq("key", planKey)
     expect(presentationEdit.error).toBeNull()

@@ -4,10 +4,12 @@ import { createServiceRoleClient } from "@/lib/supabase"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
 import { InvitationAcceptance } from "@/components/invitations/invitation-acceptance"
+import { PRODUCT_CONFIG } from "@/lib/product-config"
 
 export const dynamic = "force-dynamic"
 
 export default async function InvitationAcceptPage() {
+  if (PRODUCT_CONFIG.capabilities.workspaceTeamManagement === false) redirect(PRODUCT_CONFIG.shell?.homePath || "/manage")
   const cookieStore = await cookies()
   const tokenHash = cookieStore.get(INVITATION_INTENT_COOKIE)?.value
   if (!tokenHash) redirect("/login?error=invalid_invitation")

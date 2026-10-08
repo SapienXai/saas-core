@@ -168,7 +168,7 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
     ...visibleProductNavigation.map((item) => ({ key: item.key, name: item.label, href: item.href, icon: PRODUCT_NAVIGATION_ICONS[item.icon] || Layers3, current: activeProductNavigationKey === item.key, disabled: false })),
   ]
   const settingsNavigation: SidebarNavigationItem[] = hasWorkspaceScope ? [
-    { key: "team", name: getTranslation("manage.sidebar.team"), href: "/app/team", icon: Users, current: isActive("/app/team"), disabled: !isDomainAdmin },
+    ...(PRODUCT_CONFIG.capabilities.workspaceTeamManagement === false ? [] : [{ key: "team", name: getTranslation("manage.sidebar.team"), href: "/app/team", icon: Users, current: isActive("/app/team"), disabled: !isDomainAdmin }]),
     { key: "plan", name: getTranslation("manage.sidebar.planUsage"), href: "/app/plan", icon: WalletCards, current: isActive("/app/plan"), disabled: isStaff },
     { key: "domains", name: getTranslation("manage.sidebar.domains"), href: "/app/domains", icon: Globe2, current: isActive("/app/domains"), disabled: !isDomainAdmin },
     { key: "pwa", name: getTranslation("manage.sidebar.managementApp"), href: "/app/pwa", icon: Smartphone, current: isActive("/app/pwa"), disabled: false },

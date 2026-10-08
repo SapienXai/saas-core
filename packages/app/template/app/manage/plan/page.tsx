@@ -80,6 +80,9 @@ export default async function PlanUsagePage() {
       ? currentSubscriptionPriceText
       : `${currentSubscriptionPriceText} / ${translateServer(language, currentSubscriptionPrice?.interval === "year" ? "manage.planUsage.billing.annual" : "manage.planUsage.billing.monthly")}`
   const hasLimit = (key: string) => Object.prototype.hasOwnProperty.call(entitlements.limits, key)
+  const presentedLimitKeys = presentation?.limitKeys
+  const isLimitPresented = (key: string) => !presentedLimitKeys?.length || presentedLimitKeys.includes(key)
+  const showTeamManagement = PRODUCT_CONFIG.capabilities.workspaceTeamManagement !== false
   const usageMetricLabel = (key: string) => key === "core.workspaces"
     ? copyText("workspacesLabel", translateServer(language, "manage.planUsage.billing.workspaces"))
     : key === "core.members"
@@ -91,9 +94,9 @@ export default async function PlanUsagePage() {
     ...Object.keys(usage.metrics).filter((key) => !key.startsWith("core.")),
   ])]
   const usageRows = [
-    { key: "core.workspaces", label: usageMetricLabel("core.workspaces"), value: usage.workspaces, limit: hasLimit("core.workspaces") ? entitlements.limits["core.workspaces"] : undefined },
-    { key: "core.members", label: usageMetricLabel("core.members"), value: usage.users, limit: hasLimit("core.members") ? entitlements.limits["core.members"] : undefined },
-    ...usageKeys.map((key) => ({ key, label: usageMetricLabel(key), value: usage.metrics[key] ?? undefined, limit: hasLimit(key) ? entitlements.limits[key] : undefined })),
+    ...(isLimitPresented("core.workspaces") ? [{ key: "core.workspaces", label: usageMetricLabel("core.workspaces"), value: usage.workspaces, limit: hasLimit("core.workspaces") ? entitlements.limits["core.workspaces"] : undefined }] : []),
+    ...(showTeamManagement && isLimitPresented("core.members") ? [{ key: "core.members", label: usageMetricLabel("core.members"), value: usage.users, limit: hasLimit("core.members") ? entitlements.limits["core.members"] : undefined }] : []),
+    ...usageKeys.filter(isLimitPresented).map((key) => ({ key, label: usageMetricLabel(key), value: usage.metrics[key] ?? undefined, limit: hasLimit(key) ? entitlements.limits[key] : undefined })),
   ]
   const productRows = usageRows.filter((row) => !row.key.startsWith("core."))
   const productMetric = productRows[0]
@@ -120,7 +123,7 @@ export default async function PlanUsagePage() {
     <ManageMetricGrid>
       <ManageMetricCard label={copyText("currentPlanLabel", "Current plan")} value={entitlements.planName} detail={currentSubscriptionPriceDetail} icon={Sparkles} />
       <ManageMetricCard label={copyText("billingLabel", translateServer(language, "manage.planUsage.billing.billingDetails"))} value={activeStatus} detail={throughLabel} icon={CreditCard} />
-      <ManageMetricCard label={copyText("membersLabel", translateServer(language, "manage.planUsage.billing.teamMembers"))} value={usage.users} detail={memberLimit === undefined ? "—" : memberLimit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${memberLimit}`} />
+      {usageRows.some((row) => row.key === "core.members") && <ManageMetricCard label={copyText("membersLabel", translateServer(language, "manage.planUsage.billing.teamMembers"))} value={usage.users} detail={memberLimit === undefined ? "—" : memberLimit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${memberLimit}`} />}
       {productMetric && <ManageMetricCard label={productMetric.label} value={productMetric.value ?? "—"} detail={productMetric.limit === undefined ? "—" : productMetric.limit === null ? "Unlimited" : `${copyText("ofLabel", "of")} ${productMetric.limit}`} />}
     </ManageMetricGrid>
     <ManageSurface className="overflow-hidden"><div className="flex items-center gap-2 border-b border-slate-100 px-3.5 py-3 dark:border-white/10 sm:px-4"><Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-300" /><h2 className="text-sm font-semibold text-slate-950 dark:text-white">{copyText("includedFeaturesTitle", "Included features")}</h2></div><div className="grid gap-2 p-3.5 sm:grid-cols-2 sm:p-4">{Object.entries(entitlements.features).filter(([, enabled]) => enabled).map(([key]) => <div key={key} className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200"><Check className="h-3.5 w-3.5 text-emerald-600" />{displayKey(key, presentation)}</div>)}</div><div className={`grid border-t border-slate-100 dark:border-white/10 ${usageRows.length > 3 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>{usageRows.map((row) => <ManageUsageMetric key={row.key} label={row.label} value={row.value} limit={row.limit} />)}</div></ManageSurface>

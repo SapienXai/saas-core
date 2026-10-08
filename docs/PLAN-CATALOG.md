@@ -9,10 +9,14 @@ The stable plan key is the identity used by `ProductCatalog`,
 `workspace_subscriptions`, and provider mappings. Keys are not renamed. Plan
 rows can be activated, archived, duplicated, or edited by the server-only
 Platform Billing actions. Archive keeps the row and every historical foreign
-key intact. A plan referenced by subscription history cannot have its
-entitlement maps or commercial metadata changed; presentation fields remain
-editable. A plan referenced by an active subscription or scheduled change
-cannot be archived until that lifecycle has ended.
+key intact. For a referenced plan, prices and commercial metadata remain
+immutable. Entitlement maps can receive a monotonic expansion: existing
+features and limits cannot be removed or reduced, new features must be enabled,
+and new limits must be positive integers or explicit unlimited values. This
+allows existing subscribers to receive additional capabilities while keeping
+every prior entitlement. Presentation fields remain editable. A plan
+referenced by an active subscription or scheduled change cannot be archived
+until that lifecycle has ended.
 
 ## Define plans
 
