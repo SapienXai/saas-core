@@ -134,6 +134,8 @@ try {
   // managed files; its product-owned theme remains byte-for-byte unchanged.
   result = run(coreA, ["init", "Agent Surface Consumer", agentSurfaceProduct])
   assert(result.status === 0, result.stderr || "Agent Surface fixture init failed")
+  const generatedProductConfig = await readFile(path.join(agentSurfaceProduct, "lib/product-config.ts"), "utf8")
+  assert(generatedProductConfig.includes("export function isProductCapabilityEnabled(") && generatedProductConfig.includes("capabilityPlatformRoles"), "new consumer product config omitted the capability authorization contract")
   const agentThemeFile = path.join(agentSurfaceProduct, "styles/product-theme.css")
   const agentTheme = `${await readFile(agentThemeFile, "utf8")}\n:root { --agent-surface-test-token: #123456; }\n`
   await writeFile(agentThemeFile, agentTheme, "utf8")

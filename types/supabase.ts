@@ -1175,6 +1175,9 @@ export type Database = {
           billing_currency: string | null
           billing_interval: string | null
           billing_issue_code: string | null
+          billing_projection_lease_token: string | null
+          billing_projection_lease_until: string | null
+          billing_projection_revision: number
           cancel_at_period_end: boolean
           created_at: string
           current_period_end: string | null
@@ -1209,6 +1212,9 @@ export type Database = {
           billing_currency?: string | null
           billing_interval?: string | null
           billing_issue_code?: string | null
+          billing_projection_lease_token?: string | null
+          billing_projection_lease_until?: string | null
+          billing_projection_revision?: number
           cancel_at_period_end?: boolean
           created_at?: string
           current_period_end?: string | null
@@ -1243,6 +1249,9 @@ export type Database = {
           billing_currency?: string | null
           billing_interval?: string | null
           billing_issue_code?: string | null
+          billing_projection_lease_token?: string | null
+          billing_projection_lease_until?: string | null
+          billing_projection_revision?: number
           cancel_at_period_end?: boolean
           created_at?: string
           current_period_end?: string | null
@@ -1399,6 +1408,17 @@ export type Database = {
         Returns: {
           workspace_id: string
           workspace_slug: string
+        }[]
+      }
+      claim_billing_projection: {
+        Args: {
+          p_lease_seconds?: number
+          p_lease_token: string
+          p_workspace_id: string
+        }
+        Returns: {
+          lease_revision: number
+          lease_until: string
         }[]
       }
       claim_billing_webhook_event: {
@@ -1598,6 +1618,14 @@ export type Database = {
           transition_key: string
           workspace_id: string
         }[]
+      }
+      release_billing_projection: {
+        Args: {
+          p_lease_revision: number
+          p_lease_token: string
+          p_workspace_id: string
+        }
+        Returns: boolean
       }
       renew_workspace_invitation: {
         Args: { target_invitation_id: string; target_token_hash: string }

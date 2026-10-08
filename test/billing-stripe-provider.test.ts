@@ -244,7 +244,7 @@ describe("Stripe billing provider boundary", () => {
 
   it("verifies Stripe webhook signatures over the exact raw request body", async () => {
     configureStripeSandbox()
-    const secret = "whsec_local_contract_test_secret"
+    const secret = "whsec_placeholder"
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", secret)
     const rawBody = JSON.stringify({
       id: "evt_signed_sandbox",

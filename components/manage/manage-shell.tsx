@@ -66,8 +66,10 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
 
   useEffect(() => {
     if (!hasLoadedThemePreferenceRef.current || !hasLoadedThemePreference) return
-    window.localStorage.setItem("saas-core:manage:theme", manageDarkMode ? "dark" : "light")
-  }, [hasLoadedThemePreference, manageDarkMode])
+    const theme = manageDarkMode ? "dark" : "light"
+    window.localStorage.setItem("saas-core:manage:theme", theme)
+    setTheme(theme)
+  }, [hasLoadedThemePreference, manageDarkMode, setTheme])
 
   useEffect(() => {
     // Selects and popovers are portalled to <body>, outside the .dark shell.
