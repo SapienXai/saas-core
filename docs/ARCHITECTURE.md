@@ -155,7 +155,7 @@ authorization remains in Core/product server boundaries.
 
 ## Infrastructure boundaries
 
-Paddle is a billing provider, not an entitlement authority. Signed webhook
+Stripe is a billing provider, not an entitlement authority. Signed webhook
 events are stored idempotently and update local subscription state only after
 validation. `lib/entitlements.ts` reads keyed `features`, `limits`, and
 `workspace_usage_periods.usage`; Core never requires Free/Starter/Pro/Business,

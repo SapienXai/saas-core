@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest"
 import { resolveBillingRetry } from "@sapienx/saas-core"
-import { validatePaddleSubscriptionShape } from "../lib/billing/webhook"
+import { normalizeStripeSubscription } from "../lib/billing/providers/stripe"
+import {
+  getStripeWebhookDrainBatchLimit,
+  isExhaustedWebhookLease,
+  selectStripeWebhookDrainCandidates,
+} from "../lib/billing/lifecycle"
 import {
   compareBillingEventOrder,
   isBillingEnvironmentMatch,
   projectCanonicalSubscription,
 } from "../lib/billing/reconciliation"
+import type Stripe from "stripe"
 
 const mapping = {
   id: "mapping-1",
-  provider: "paddle" as const,
+  provider: "stripe" as const,
   environment: "sandbox" as const,
   plan_key: "paid",
   provider_product_id: "pro-1",
@@ -33,7 +39,7 @@ const subscription = {
 describe("canonical billing lifecycle", () => {
   it("permits a canceled subscription to be replaced and converges duplicate events", () => {
     const current = {
-      provider: "paddle",
+      provider: "stripe",
       provider_environment: "sandbox",
       provider_subscription_id: "sub-old",
       provider_status: "canceled",
@@ -74,6 +80,59 @@ describe("canonical billing lifecycle", () => {
     expect(isBillingEnvironmentMatch("sandbox", "live")).toBe(false)
   })
 
+  it("terminalizes an exhausted webhook lease only after it expires", () => {
+    const now = new Date("2026-10-08T10:00:00.000Z")
+    expect(isExhaustedWebhookLease({ attempts: 5, max_attempts: 5, lease_until: "2026-10-08T09:59:59.000Z" }, now)).toBe(true)
+    expect(isExhaustedWebhookLease({ attempts: 4, max_attempts: 5, lease_until: "2026-10-08T09:59:59.000Z" }, now)).toBe(false)
+    expect(isExhaustedWebhookLease({ attempts: 5, max_attempts: 5, lease_until: "2026-10-08T10:00:01.000Z" }, now)).toBe(false)
+  })
+
+  it("bounds each scheduled webhook drain to a safe batch size", () => {
+    expect(getStripeWebhookDrainBatchLimit()).toBe(4)
+    expect(getStripeWebhookDrainBatchLimit(1)).toBe(1)
+    expect(getStripeWebhookDrainBatchLimit(100)).toBe(4)
+    expect(getStripeWebhookDrainBatchLimit(0)).toBe(1)
+    expect(getStripeWebhookDrainBatchLimit(Number.NaN)).toBe(4)
+  })
+
+  it("selects the oldest retry or expired lease first without exceeding the batch", () => {
+    const selected = selectStripeWebhookDrainCandidates(
+      [
+        { id: "new-retry", attempts: 1, max_attempts: 8, received_at: "2026-10-08T10:03:00.000Z" },
+        { id: "exhausted", attempts: 8, max_attempts: 8, received_at: "2026-10-08T10:00:00.000Z" },
+      ],
+      [
+        { id: "old-lease", attempts: 1, max_attempts: 8, received_at: "2026-10-08T10:01:00.000Z" },
+        { id: "middle-retry", attempts: 2, max_attempts: 8, received_at: "2026-10-08T10:02:00.000Z" },
+      ],
+      2,
+    )
+    expect(selected.map((row) => row.id)).toEqual(["old-lease", "middle-retry"])
+  })
+
+  it("allows a freshly fetched authoritative provider snapshot to supersede stale event time", () => {
+    const projection = projectCanonicalSubscription({
+      eventId: "evt-delayed",
+      occurredAt: "2026-09-01T00:00:00Z",
+      subscription,
+      mapping,
+      fallbackPlanKey: "workspace",
+      current: {
+        provider: "stripe",
+        provider_environment: "sandbox",
+        provider_subscription_id: "sub-new",
+        provider_status: "past_due",
+        plan_key: "workspace",
+        last_provider_event_at: "2026-10-01T00:00:00Z",
+        last_provider_event_id: "evt-later",
+      },
+      now: new Date("2026-10-02T00:00:00Z"),
+      authoritative: true,
+    })
+    expect(projection.applied).toBe(true)
+    expect(projection.planKey).toBe("paid")
+  })
+
   it("applies the exact grace boundary and fails closed on unexpected items", () => {
     const pastDue = projectCanonicalSubscription({
       eventId: "evt-grace",
@@ -85,8 +144,16 @@ describe("canonical billing lifecycle", () => {
       now: new Date("2026-09-15T00:00:00Z"),
     })
     expect(pastDue.planKey).toBe("workspace")
-    expect(() => validatePaddleSubscriptionShape({ ...subscription, items: [] })).toThrow(/exactly one recurring item/)
-    expect(() => validatePaddleSubscriptionShape({ ...subscription, items: [{ ...subscription.items[0], productId: "other" }] })).not.toThrow()
+    expect(() => normalizeStripeSubscription({
+      ...subscription,
+      id: "sub-invalid",
+      livemode: false,
+      metadata: {},
+      cancel_at: null,
+      cancel_at_period_end: false,
+      pause_collection: null,
+      items: { data: [] },
+    } as unknown as Stripe.Subscription)).toThrow(/exactly one registered recurring item/)
   })
 
   it("keeps the current plan when reconciliation observes a mapped future target price", () => {
@@ -126,6 +193,36 @@ describe("canonical billing lifecycle", () => {
     expect(boundary.planKey).toBe("target")
     expect(boundary.billingInterval).toBe("year")
     expect(boundary.scheduledPlanKey).toBeNull()
+  })
+
+  it("projects a Stripe schedule as a future target while retaining current paid access", () => {
+    const currentMapping = { ...mapping, provider: "stripe" as const, provider_price_id: "price-current", plan_key: "paid" }
+    const targetMapping = { ...mapping, provider: "stripe" as const, provider_price_id: "price-target", plan_key: "target", billing_interval: "year" as const }
+    const current = {
+      provider: "stripe",
+      provider_environment: "sandbox",
+      provider_subscription_id: "sub-new",
+      provider_status: "active",
+      plan_key: "paid",
+      billing_interval: "month",
+      billing_currency: "USD",
+    }
+    const pending = projectCanonicalSubscription({
+      eventId: "evt-schedule-created",
+      occurredAt: "2026-09-20T00:00:00Z",
+      subscription,
+      mapping: currentMapping,
+      scheduledPlan: { mapping: targetMapping, effectiveAt: "2026-10-01T00:00:00Z" },
+      fallbackPlanKey: "workspace",
+      current,
+      now: new Date("2026-09-20T00:00:00Z"),
+      authoritative: true,
+    })
+    expect(pending.planKey).toBe("paid")
+    expect(pending.billingInterval).toBe("month")
+    expect(pending.scheduledPlanKey).toBe("target")
+    expect(pending.scheduledPlanInterval).toBe("year")
+    expect(pending.scheduledProviderPriceId).toBe("price-target")
   })
 
   it("keeps a same-plan annual subscription active until a deferred monthly boundary", () => {

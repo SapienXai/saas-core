@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { ArrowDownLeft, ArrowRight, CalendarClock, Check, CreditCard, ExternalLink, ReceiptText, ShieldCheck, Sparkles, X } from "lucide-react"
-import { initializePaddle, type Paddle } from "@paddle/paddle-js"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -25,21 +24,21 @@ import { formatDate as formatLocalizedDate, formatNumber } from "@/i18n/format"
 import type { TranslationKey } from "@/i18n"
 import type { PlanChangeEligibility } from "@sapienx/saas-core"
 import {
-  cancelPaddleSubscription,
-  changePaddlePlan,
-  createPaddlePortalSession,
+  cancelSubscription as cancelSubscriptionAction,
+  changePlan as changePlanAction,
+  createBillingPortalSession,
   getBillingInvoiceUrl,
   getBillingTransactions,
   getPlanUsage,
   consumeBillingTransitionForCurrentUser,
-  previewPaddleCheckout,
-  previewPaddlePlanChange,
-  reconcilePaddleCheckoutTransaction,
-  reconcilePaddleSubscription,
-  resumePaddleSubscription,
-  startPaddleCheckout,
+  previewCheckout,
+  previewPlanChange,
+  reconcileCheckoutSession,
+  reconcileSubscription,
+  resumeSubscription,
+  startCheckout as startCheckoutAction,
   startPaymentMethodRecovery,
-} from "@/app/manage/plan/actions"
+  } from "@/app/manage/plan/actions"
 
 export type BillingPresentationConfig = {
   planOrder?: readonly string[]
@@ -97,10 +96,12 @@ type Plan = {
 
 type BillingState = {
   canManage: boolean
-  paddleConfigured: boolean
+  isProviderBacked: boolean
+  canManageProvider: boolean
+  canUsePortal: boolean
+  billingConfigured: boolean
   billingDeferred: boolean
   environment: string | null
-  provider: string | null
   customerId: string | null
   subscriptionId: string | null
   providerStatus: string | null
@@ -151,7 +152,7 @@ type PlanChangePreview = {
   interval: string
   isDowngrade: boolean
   changeTiming: "immediate" | "period_end"
-  prorationBillingMode: string
+  prorationPolicy: string
   action: string | null
   amount: string | null
   currency: string | null
@@ -176,7 +177,7 @@ type PendingBillingOutcome = {
   targetPlanKey: string
   targetInterval: string
   transitionId?: string | null
-  transactionId?: string | null
+  checkoutSessionId?: string | null
   effectiveAt?: string | null
   fromPlanName?: string | null
 }
@@ -199,7 +200,7 @@ type BillingAction =
   | `plan-preview:${string}`
   | `invoice:${string}`
 
-export function PaddleBillingActions({ currentPlan, billing, plans, configuredPaidPlans, configuredPrices, presentation, usageMetrics = [], supportedIntervals = ["month", "year"], defaultInterval = "month" }: Props) {
+export function BillingActions({ currentPlan, billing, plans, configuredPaidPlans, configuredPrices, presentation, usageMetrics = [], supportedIntervals = ["month", "year"], defaultInterval = "month" }: Props) {
   const { currentLang, getTranslation, translateMessage } = useLanguage()
   const { updateCurrentWorkspacePlan } = useManageContext()
   const t = getTranslation
@@ -207,10 +208,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   const searchParams = useSearchParams()
   const [pending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
-  const [paddle, setPaddle] = useState<Paddle | null>(null)
-  const paddleRef = useRef<Paddle | null>(null)
-  const checkoutCompletedRef = useRef(false)
-  const checkoutOutcomeRef = useRef<PendingBillingOutcome | null>(null)
+  const handledCheckoutSessionRef = useRef<string | null>(null)
   const [activating, setActivating] = useState(false)
   const [activeAction, setActiveAction] = useState<BillingAction | null>(null)
   const [pendingOutcome, setPendingOutcome] = useState<PendingBillingOutcome | null>(null)
@@ -279,18 +277,20 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     }
     let cancelled = false
     let attempts = 0
-    const checkoutTransactionId = pendingOutcome.kind === "purchase" ? pendingOutcome.transactionId || null : null
+    const checkoutSessionId = pendingOutcome.kind === "purchase" ? pendingOutcome.checkoutSessionId || null : null
+    let activeTransitionId = pendingOutcome.transitionId || null
 
     const refreshUntilVerified = async () => {
       if (attempts === 0 || attempts % 3 === 0) {
-        const reconciliation = checkoutTransactionId
-          ? await reconcilePaddleCheckoutTransaction(checkoutTransactionId)
-          : await reconcilePaddleSubscription()
+        const reconciliation = checkoutSessionId
+          ? await reconcileCheckoutSession(checkoutSessionId)
+          : await reconcileSubscription()
         if (cancelled) return
         const reconciliationData = reconciliation.data && typeof reconciliation.data === "object"
-          ? reconciliation.data as { pending?: unknown }
+          ? reconciliation.data as { pending?: unknown; transitionId?: unknown }
           : null
-        if (checkoutTransactionId && !reconciliation.success && reconciliationData?.pending === false) {
+        if (typeof reconciliationData?.transitionId === "string") activeTransitionId = reconciliationData.transitionId
+        if (checkoutSessionId && !reconciliation.success && reconciliationData?.pending === false) {
           setActivating(false)
           setPendingOutcome(null)
           setMessage(translateMessage(reconciliation.message || t("manage.planUsage.billing.actionFailed")))
@@ -310,13 +310,13 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         ? data?.billing.scheduledPlanInterval === pendingOutcome.targetInterval
         : data?.billing.billingInterval === pendingOutcome.targetInterval
       if (data && planIsVerified && intervalIsVerified && subscriptionIsActive) {
-        if (!pendingOutcome.transitionId) {
+        if (!activeTransitionId) {
           setActivating(false)
           setPendingOutcome(null)
           setMessage(t("manage.planUsage.billing.paymentReceived"))
           return
         }
-        const consumption = await consumeBillingTransitionForCurrentUser(pendingOutcome.transitionId)
+        const consumption = await consumeBillingTransitionForCurrentUser(activeTransitionId)
         if (cancelled) return
         if (!consumption.success || !consumption.data || consumption.data.state !== "succeeded") {
           attempts += 1
@@ -380,6 +380,25 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
   }, [billing.billingDeferred, pendingOutcome, planCopy, router, t, translateMessage, updateCurrentWorkspacePlan])
 
   useEffect(() => {
+    const checkoutSessionId = searchParams.get("checkout_session_id")
+    const checkoutState = searchParams.get("checkout")
+    if (checkoutState === "cancelled") setMessage(t("manage.planUsage.billing.checkoutClosed"))
+    if (checkoutSessionId && handledCheckoutSessionRef.current !== checkoutSessionId) {
+      handledCheckoutSessionRef.current = checkoutSessionId
+      const targetPlanKey = searchParams.get("plan") || ""
+      const targetInterval = searchParams.get("interval") || "month"
+      setPendingOutcome({ kind: "purchase", targetPlanKey, targetInterval, checkoutSessionId })
+    }
+    if (checkoutSessionId || checkoutState) {
+      const nextParams = new URLSearchParams(searchParams.toString())
+      nextParams.delete("checkout_session_id")
+      nextParams.delete("checkout")
+      const query = nextParams.toString()
+      router.replace(query ? "/manage/plan?" + query : "/manage/plan", { scroll: false })
+    }
+  }, [router, searchParams, t])
+
+  useEffect(() => {
     const requestedInterval = searchParams.get("interval")
     if (resolvedPresentation.supportedIntervals.includes(requestedInterval as "month" | "year")) setBillingInterval(requestedInterval as "month" | "year")
   }, [resolvedPresentation.supportedIntervals, searchParams])
@@ -399,7 +418,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     beginAction(action, async () => {
       setMessage(null)
       const result = await operation()
-      const data = result.data && typeof result.data === "object" ? result.data as { transactionId?: unknown; transitionId?: unknown; token?: unknown; environment?: unknown; url?: unknown } : null
+      const data = result.data && typeof result.data === "object" ? result.data as { transitionId?: unknown; url?: unknown } : null
       if (!result.success) {
         const eligibilityData = result.data && typeof result.data === "object" ? result.data as { targetPlan?: unknown; eligibility?: unknown } : null
         if (typeof eligibilityData?.targetPlan === "string" && eligibilityData.eligibility && typeof eligibilityData.eligibility === "object") {
@@ -423,50 +442,6 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         window.location.assign(data.url)
         return
       }
-      if (typeof data.transactionId === "string" && typeof data.token === "string" && (data.environment === "sandbox" || data.environment === "production")) {
-        const instance = paddle || await initializePaddle({
-          token: data.token,
-          environment: data.environment,
-          eventCallback: (event) => {
-            if (event.name === "checkout.completed") {
-              checkoutCompletedRef.current = true
-              setMessage(null)
-              setActivating(true)
-              if (checkoutOutcomeRef.current) setPendingOutcome(checkoutOutcomeRef.current)
-              else {
-                setActivating(false)
-                setMessage(t("manage.planUsage.billing.actionCompleted"))
-                router.refresh()
-              }
-              try {
-                paddleRef.current?.Checkout.close()
-              } catch {
-                // Keep server-side verification running if Paddle has already closed itself.
-              }
-            }
-            if (event.name === "checkout.closed" && !checkoutCompletedRef.current) {
-              setMessage(t("manage.planUsage.billing.checkoutClosed"))
-            }
-          },
-        })
-        if (!instance) {
-          setMessage(t("manage.planUsage.billing.checkoutInitFailed"))
-          return
-        }
-        checkoutCompletedRef.current = false
-        checkoutOutcomeRef.current = outcome
-          ? {
-              ...outcome,
-              transitionId: typeof data.transitionId === "string" ? data.transitionId : null,
-              transactionId: typeof data.transactionId === "string" ? data.transactionId : null,
-            }
-          : null
-        paddleRef.current = instance
-        setPaddle(instance)
-        instance.Checkout.open({ transactionId: data.transactionId })
-        setMessage(t("manage.planUsage.billing.completeCheckout"))
-        return
-      }
       if (outcome) {
         const transitionId = typeof data.transitionId === "string" ? data.transitionId : null
         setPendingOutcome({ ...outcome, transitionId })
@@ -482,7 +457,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     setBlockedPlanChange(null)
     beginAction(`checkout-preview:${planKey}`, async () => {
       setMessage(null)
-      const preview = await previewPaddleCheckout(planKey, billingInterval)
+      const preview = await previewCheckout(planKey, billingInterval)
       if (!preview.success || !preview.data) {
         setMessage(translateMessage(preview.message || t("manage.planUsage.billing.actionFailed")))
         return
@@ -495,7 +470,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     setMessage(null)
     setBlockedPlanChange(null)
     beginAction(`plan-preview:${planKey}`, async () => {
-      const preview = await previewPaddlePlanChange(planKey, targetInterval)
+      const preview = await previewPlanChange(planKey, targetInterval)
       if (!preview.success || !preview.data) {
         const eligibilityData = preview.data && typeof preview.data === "object" ? preview.data as { targetPlan?: unknown; eligibility?: unknown } : null
         if (typeof eligibilityData?.targetPlan === "string" && eligibilityData.eligibility && typeof eligibilityData.eligibility === "object") {
@@ -510,15 +485,17 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     })
   }
 
-  const manageBilling = () => run("manage-billing", () => createPaddlePortalSession())
+  const manageBilling = () => run("manage-billing", () => createBillingPortalSession())
 
   const cancelSubscription = () => setBillingConfirmation({ type: "cancel", reason: cancellationReason, feedback: cancellationFeedback })
 
   // The effective local plan is authoritative for UI state. A provider row
   // can remain present after cancellation, pause, or grace expiry.
-  const isPaid = configuredPaidPlans.includes(currentPlan) && billing.providerStatus !== "canceled" && billing.providerStatus !== "paused"
+  const isPaid = configuredPaidPlans.includes(currentPlan) && !["canceled", "paused", "pending", "expired", "unpaid"].includes(billing.providerStatus || "")
   const currentPlanRecord = plans.find((plan) => plan.key === currentPlan)
   const currentPlanName = currentPlanRecord ? planCopy(currentPlanRecord).label : t("manage.planUsage.activePlan")
+  const scheduledPlanRecord = billing.scheduledPlanKey ? plans.find((plan) => plan.key === billing.scheduledPlanKey) : null
+  const scheduledPlanName = scheduledPlanRecord ? planCopy(scheduledPlanRecord).label : billing.scheduledPlanKey
   const selectedPlanKey = searchParams.get("plan") || (isPaid ? currentPlan : null)
   const dateLabel = (value: string | null) => value ? formatLocalizedDate(value, currentLang, { dateStyle: "medium" }) : null
   const configuredMoney = (price: ConfiguredPrice | undefined) => {
@@ -572,7 +549,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
       })}
     </div>
   )
-  const formatPaddleAmount = (amount: string | null, currency: string | null) => {
+  const formatMinorAmount = (amount: string | null, currency: string | null) => {
     if (!amount || !currency) return null
     const numericAmount = Number(amount)
     if (!Number.isFinite(numericAmount)) return null
@@ -611,11 +588,11 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     planChangeConfirmation.preview.interval !== billing.billingInterval,
   )
   const previewAmount = planChangeConfirmation?.preview.action === "charge"
-    ? formatPaddleAmount(planChangeConfirmation.preview.amount, planChangeConfirmation.preview.currency)
+    ? formatMinorAmount(planChangeConfirmation.preview.amount, planChangeConfirmation.preview.currency)
     : null
   const previewIsCredit = !previewIsDowngrade && planChangeConfirmation?.preview.action === "credit"
   const previewCreditToBalance = planChangeConfirmation?.preview.creditToBalance && !/^0+$/.test(planChangeConfirmation.preview.creditToBalance)
-    ? formatPaddleAmount(planChangeConfirmation.preview.creditToBalance, planChangeConfirmation.preview.currency)
+    ? formatMinorAmount(planChangeConfirmation.preview.creditToBalance, planChangeConfirmation.preview.currency)
     : null
   const previewActionLabel = previewIsDowngrade
     ? t("manage.planUsage.billing.changePlanDowngradeNoRefund")
@@ -628,7 +605,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     ? t("manage.planUsage.billing.changePlanDowngradeTiming")
     : previewIsPeriodEnd
     ? t("manage.planUsage.billing.changeBillingCyclePeriodEnd")
-    : planChangeConfirmation?.preview.prorationBillingMode === "prorated_immediately"
+    : planChangeConfirmation?.preview.prorationPolicy === "immediate"
     ? t("manage.planUsage.billing.changePlanProrationImmediate")
     : t("manage.planUsage.billing.changePlanProrationNext")
 
@@ -639,7 +616,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     if (confirmation.type === "checkout") {
       run(
         "confirm-billing",
-        () => startPaddleCheckout(confirmation.planKey, confirmation.preview.interval, `${confirmation.planKey}-${crypto.randomUUID()}`),
+        () => startCheckoutAction(confirmation.planKey, confirmation.preview.interval, `${confirmation.planKey}-${crypto.randomUUID()}`),
         { kind: "purchase", targetPlanKey: confirmation.planKey, targetInterval: confirmation.preview.interval },
       )
       return
@@ -655,10 +632,10 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         effectiveAt: confirmation.preview.effectiveAt,
         fromPlanName: currentPlanName,
       }
-      run("confirm-billing", () => changePaddlePlan(confirmation.planKey, confirmation.preview.previewToken, `plan-${crypto.randomUUID()}`, confirmation.preview.interval), outcome)
+      run("confirm-billing", () => changePlanAction(confirmation.planKey, confirmation.preview.previewToken, `plan-${crypto.randomUUID()}`, confirmation.preview.interval), outcome)
       return
     }
-    run("confirm-billing", () => cancelPaddleSubscription(confirmation.reason, confirmation.feedback, `cancel-${crypto.randomUUID()}`))
+    run("confirm-billing", () => cancelSubscriptionAction(confirmation.reason, confirmation.feedback, `cancel-${crypto.randomUUID()}`))
   }
 
   const loadHistory = (action: "view-invoices" | "refresh-invoices") => {
@@ -669,9 +646,9 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
     })
   }
 
-  const openPaymentMethod = () => run("payment-method", () => createPaddlePortalSession("payment_method"))
+  const openPaymentMethod = () => run("payment-method", () => createBillingPortalSession())
   const recoverPayment = () => run("recover-payment", () => startPaymentMethodRecovery())
-  const reactivate = (action: "reactivate-banner" | "reactivate-details") => run(action, () => resumePaddleSubscription(`resume-${crypto.randomUUID()}`))
+  const reactivate = (action: "reactivate-banner" | "reactivate-details") => run(action, () => resumeSubscription(`resume-${crypto.randomUUID()}`))
 
   const selectPlan = (planKey: string) => {
     if (selectedPlanKey === planKey) return
@@ -734,18 +711,19 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
       <section id="plan-options" className="manage-plan-card rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-6" role="status" data-billing-mode="deferred">
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">{copyText("eyebrow", "PlaceDJ plan")}</p>
         <h2 className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{copyText("billing-deferred-title", "Billing is coming soon")}</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">{copyText("billing-deferred-notice", "Billing is deferred while Stripe migration is pending. Your current plan and venue access remain active.")}</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">{copyText("billing-deferred-notice", "Billing setup is pending. Your current plan and venue access remain active.")}</p>
       </section>
     )
   }
 
   return (
     <div id="plan-options" className="space-y-5">
+      {message && <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100" role="alert" aria-live="assertive">{message}</div>}
       {(billing.cancelAtPeriodEnd || billing.billingIssueCode === "past_due" || billing.billingIssueCode === "grace_expired") && (
         <section className="space-y-3" aria-label={t("manage.planUsage.billing.subscription") }>
-          {billing.cancelAtPeriodEnd && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100"><div><p>{t("manage.planUsage.billing.cancellationScheduled", { date: dateLabel(billing.scheduledChangeAt || billing.currentPeriodEnd) ? t("manage.planUsage.billing.cancellationDate", { date: dateLabel(billing.scheduledChangeAt || billing.currentPeriodEnd) || "" }) : t("manage.planUsage.billing.cancellationEnd") })}</p><p className="mt-1 text-xs font-normal text-amber-800/75 dark:text-amber-200/75">{t("manage.planUsage.billing.cancelDialogDescription")}</p></div>{billing.canManage && <Button type="button" onClick={() => reactivate("reactivate-banner")} loading={activeAction === "reactivate-banner"} className="min-h-9 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-300/30 dark:bg-white/10 dark:text-amber-100">{t("manage.planUsage.billing.reactivateSubscription")}</Button>}</div>}
-          {billing.billingIssueCode === "past_due" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100"><div><p className="font-semibold">{t("manage.planUsage.billing.paymentCouldNot")}</p><p className="mt-1 text-xs font-normal text-amber-800/75 dark:text-amber-200/75">{t("manage.planUsage.billing.paymentGraceDescription", { date: dateLabel(billing.paymentGraceEndsAt) || "—" })}</p></div>{billing.canManage && <Button type="button" onClick={recoverPayment} loading={activeAction === "recover-payment"} className="min-h-9 rounded-lg bg-amber-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-800">{t("manage.planUsage.billing.updatePaymentMethod")}</Button>}</div>}
-          {billing.billingIssueCode === "grace_expired" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100"><div><p className="font-semibold">{t("manage.planUsage.billing.paymentGraceExpired")}</p><p className="mt-1 text-xs font-normal text-rose-800/75 dark:text-rose-200/75">{t("manage.planUsage.billing.paymentGraceExpiredDescription")}</p></div>{billing.canManage && <Button type="button" onClick={recoverPayment} loading={activeAction === "recover-payment"} className="min-h-9 rounded-lg bg-rose-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-800">{t("manage.planUsage.billing.updatePaymentMethod")}</Button>}</div>}
+          {billing.cancelAtPeriodEnd && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100"><div><p>{t("manage.planUsage.billing.cancellationScheduled", { date: dateLabel(billing.scheduledChangeAt || billing.currentPeriodEnd) ? t("manage.planUsage.billing.cancellationDate", { date: dateLabel(billing.scheduledChangeAt || billing.currentPeriodEnd) || "" }) : t("manage.planUsage.billing.cancellationEnd") })}</p><p className="mt-1 text-xs font-normal text-amber-800/75 dark:text-amber-200/75">{t("manage.planUsage.billing.cancelDialogDescription")}</p></div>{billing.canManageProvider && <Button type="button" onClick={() => reactivate("reactivate-banner")} loading={activeAction === "reactivate-banner"} className="min-h-9 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-300/30 dark:bg-white/10 dark:text-amber-100">{t("manage.planUsage.billing.reactivateSubscription")}</Button>}</div>}
+          {billing.billingIssueCode === "past_due" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100"><div><p className="font-semibold">{t("manage.planUsage.billing.paymentCouldNot")}</p><p className="mt-1 text-xs font-normal text-amber-800/75 dark:text-amber-200/75">{t("manage.planUsage.billing.paymentGraceDescription", { date: dateLabel(billing.paymentGraceEndsAt) || "—" })}</p></div>{billing.canManageProvider && <Button type="button" onClick={recoverPayment} loading={activeAction === "recover-payment"} className="min-h-9 rounded-lg bg-amber-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-800">{t("manage.planUsage.billing.updatePaymentMethod")}</Button>}</div>}
+          {billing.billingIssueCode === "grace_expired" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100"><div><p className="font-semibold">{t("manage.planUsage.billing.paymentGraceExpired")}</p><p className="mt-1 text-xs font-normal text-rose-800/75 dark:text-rose-200/75">{t("manage.planUsage.billing.paymentGraceExpiredDescription")}</p></div>{billing.canManageProvider && <Button type="button" onClick={recoverPayment} loading={activeAction === "recover-payment"} className="min-h-9 rounded-lg bg-rose-900 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-800">{t("manage.planUsage.billing.updatePaymentMethod")}</Button>}</div>}
         </section>
       )}
 
@@ -765,14 +743,14 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
           {(availablePlans.length > 0 || isPaid) && <div className="flex items-center gap-2"><span className="hidden text-xs font-semibold text-slate-500 dark:text-slate-400 sm:inline">{t("manage.planUsage.billing.billingCycle")}</span>{renderBillingIntervalSwitch()}</div>}
         </div>
 
-        {billing.canManage && isPaid && currentSubscriptionInterval && alternateBillingInterval && (
+        {billing.canManageProvider && isPaid && currentSubscriptionInterval && alternateBillingInterval && (
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50/70 px-4 py-3 dark:border-violet-400/20 dark:bg-violet-500/10" data-billing-interval-change="true">
             <div>
               <p className="text-sm font-semibold text-violet-950 dark:text-violet-100">{t("manage.planUsage.billing.billingCycle")}: {currentSubscriptionInterval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly")}</p>
               <p className="mt-0.5 text-xs text-violet-800/75 dark:text-violet-200/75">{t("manage.planUsage.billing.changeBillingCycleDescription")}</p>
             </div>
-            <Button type="button" onClick={() => changePlan(currentPlan, alternateBillingInterval)} loading={activeAction === `plan-preview:${currentPlan}`} disabled={!billing.paddleConfigured || !alternateBillingIntervalConfigured || hasPendingBillingCycleChange} className="min-h-9 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
-              {hasPendingBillingCycleChange ? t("manage.planUsage.billing.billingCycleChangeScheduled", { date: dateLabel(billing.scheduledPlanAt) || "—" }) : billing.paddleConfigured && alternateBillingIntervalConfigured ? t("manage.planUsage.billing.switchBillingCycle", { interval: alternateBillingInterval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly") }) : t("manage.planUsage.billing.billingSetupRequired")}
+            <Button type="button" onClick={() => changePlan(currentPlan, alternateBillingInterval)} loading={activeAction === `plan-preview:${currentPlan}`} disabled={!billing.billingConfigured || !alternateBillingIntervalConfigured || hasPendingBillingCycleChange} className="min-h-9 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">
+              {hasPendingBillingCycleChange ? t("manage.planUsage.billing.billingCycleChangeScheduled", { date: dateLabel(billing.scheduledPlanAt) || "—" }) : billing.billingConfigured && alternateBillingIntervalConfigured ? t("manage.planUsage.billing.switchBillingCycle", { interval: alternateBillingInterval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly") }) : t("manage.planUsage.billing.billingSetupRequired")}
             </Button>
           </div>
         )}
@@ -782,6 +760,9 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
             {!isPaid && <div className="manage-plan-offer-banner mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-violet-50 px-4 py-3 dark:bg-violet-500/10"><div><p className="text-sm font-semibold text-violet-950 dark:text-violet-100">{t("manage.planUsage.billing.startWithPlan")}</p><p className="mt-0.5 text-xs text-violet-800/75 dark:text-violet-200/75">{t("manage.planUsage.billing.noLongSetup")}</p></div><span className="flex items-center gap-1 text-xs font-semibold text-violet-700 dark:text-violet-200"><ShieldCheck className="h-3.5 w-3.5" /> {t("manage.planUsage.billing.secureCheckout")}</span></div>}
             <div className={`mt-4 grid gap-4 ${availablePlans.length === 1 ? "max-w-2xl" : availablePlans.length === 2 ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>
               {availablePlans.map((plan) => {
+                const isFreePlan = !configuredPaidPlans.includes(plan.key)
+                const switchesToFree = isPaid && isFreePlan
+                const isAlreadyScheduled = billing.scheduledPlanKey === plan.key && billing.scheduledPlanInterval === billingInterval
                 const configured = configuredPrices.some((price) => price.planKey === plan.key && price.interval === billingInterval) && configuredPaidPlans.includes(plan.key)
                 const recommended = Boolean(plan.metadata.recommended)
                 const isDowngrade = isPaid && (currentPlanPresentationOrder >= 0 ? resolvedPresentation.planOrder.indexOf(plan.key) < currentPlanPresentationOrder : plan.sort_order < currentPlanSortOrder)
@@ -814,16 +795,16 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                     </div>
                     <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
                       <div>
-                        <div className="flex items-baseline gap-1.5"><p className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{configuredMoney(configuredPriceFor(plan.key))}</p><span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{billingInterval === "year" ? t("manage.planUsage.billing.perYear") : t("manage.planUsage.billing.perMonth")}</span></div>
-                        {billingInterval === "year" && savings && <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"><span className="font-semibold text-slate-400 line-through dark:text-slate-500">{savings.regularAnnualAmount} {t("manage.planUsage.billing.perYear")}</span><span className="font-bold text-emerald-700 dark:text-emerald-300">{t("manage.planUsage.billing.annualSavings", { amount: savings.amount, percent: String(savings.percent) })}</span></div>}
-                        <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">{billingInterval === "year" ? t("manage.planUsage.billing.billedAnnually") : t("manage.planUsage.billing.billedMonthly")}</p>
+                        <div className="flex items-baseline gap-1.5"><p className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{isFreePlan ? t("manage.planUsage.billing.freePlan") : configuredMoney(configuredPriceFor(plan.key))}</p>{!isFreePlan && <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{billingInterval === "year" ? t("manage.planUsage.billing.perYear") : t("manage.planUsage.billing.perMonth")}</span>}</div>
+                        {!isFreePlan && billingInterval === "year" && savings && <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"><span className="font-semibold text-slate-400 line-through dark:text-slate-500">{savings.regularAnnualAmount} {t("manage.planUsage.billing.perYear")}</span><span className="font-bold text-emerald-700 dark:text-emerald-300">{t("manage.planUsage.billing.annualSavings", { amount: savings.amount, percent: String(savings.percent) })}</span></div>}
+                        {!isFreePlan && <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">{billingInterval === "year" ? t("manage.planUsage.billing.billedAnnually") : t("manage.planUsage.billing.billedMonthly")}</p>}
                       </div>
-                      {billingInterval === "year" && savings && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{t("manage.planUsage.billing.savePercent", { percent: String(savings.percent) })}</span>}
+                      {!isFreePlan && billingInterval === "year" && savings && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{t("manage.planUsage.billing.savePercent", { percent: String(savings.percent) })}</span>}
                     </div>
                     <p className="mt-2 min-h-10 text-xs leading-5 text-slate-600 dark:text-slate-300">{copy.description}</p>
                     {planLimitKeys(plan).length > 0 && <div className={`mt-4 grid gap-2 border-y border-slate-100 py-3 dark:border-white/10 ${planLimitKeys(plan).length > 2 ? "sm:grid-cols-3" : planLimitKeys(plan).length === 2 ? "sm:grid-cols-2" : "grid-cols-1"}`}>{planLimitKeys(plan).map((key) => <div key={key} className="min-w-0"><p className="truncate text-lg font-bold leading-none tabular-nums text-slate-950 dark:text-white">{planLimitValue(plan, key)}</p><p className="mt-1 truncate text-[10px] text-slate-500 dark:text-slate-400">{key === "core.workspaces" ? copyText("workspacesLabel", t("manage.planUsage.billing.workspaces")) : key === "core.members" ? copyText("teamMembersLabel", t("manage.planUsage.billing.teamMembers")) : usageMetricName(key)}</p></div>)}</div>}
                     <ul className="mt-4 space-y-2 text-xs text-slate-700 dark:text-slate-200">{copy.highlights.map((highlight) => <li key={highlight} className="flex items-start gap-2"><Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-300" />{highlight}</li>)}</ul>
-                    <Button type="button" onClick={() => isPaid ? changePlan(plan.key) : startCheckout(plan.key)} loading={activeAction === (isPaid ? `plan-preview:${plan.key}` : `checkout-preview:${plan.key}`)} disabled={!billing.paddleConfigured || !configured} className={`mt-5 min-h-11 w-full rounded-xl px-3 py-2 text-sm font-semibold transition ${recommended && !isDowngrade ? "bg-violet-600 text-white hover:bg-violet-700" : "border border-slate-200 bg-transparent text-slate-800 hover:bg-slate-50 dark:border-white/10 dark:text-white dark:hover:bg-white/10"}`}>{configured && billing.paddleConfigured ? <><span>{isPaid ? t(isDowngrade ? "manage.planUsage.billing.moveTo" : "manage.planUsage.billing.upgradeTo", { plan: copy.label }) : t("manage.planUsage.billing.choose", { plan: copy.label })}</span><ArrowRight className="ml-1 h-3.5 w-3.5" /></> : t("manage.planUsage.billing.billingSetupRequired")}</Button>
+                    <Button type="button" onClick={() => switchesToFree ? cancelSubscription() : isPaid ? changePlan(plan.key) : startCheckout(plan.key)} loading={!isFreePlan && activeAction === (isPaid ? `plan-preview:${plan.key}` : `checkout-preview:${plan.key}`)} disabled={isFreePlan ? !switchesToFree || !billing.canManageProvider || billing.cancelAtPeriodEnd : !billing.billingConfigured || !configured || (isPaid && !billing.canManageProvider) || isAlreadyScheduled} className={`mt-5 min-h-11 w-full rounded-xl px-3 py-2 text-sm font-semibold transition ${recommended && !isDowngrade ? "bg-violet-600 text-white hover:bg-violet-700" : "border border-slate-200 bg-transparent text-slate-800 hover:bg-slate-50 dark:border-white/10 dark:text-white dark:hover:bg-white/10"}`}>{switchesToFree ? t(billing.cancelAtPeriodEnd ? "manage.planUsage.billing.freePlanScheduled" : "manage.planUsage.billing.switchToFree") : isFreePlan ? t(plan.key === currentPlan ? "manage.planUsage.billing.selected" : "manage.planUsage.billing.freePlan") : isAlreadyScheduled ? t("manage.planUsage.billing.alreadyScheduled") : configured && billing.billingConfigured ? <><span>{isPaid ? t(isDowngrade ? "manage.planUsage.billing.moveTo" : "manage.planUsage.billing.upgradeTo", { plan: copy.label }) : t("manage.planUsage.billing.choose", { plan: copy.label })}</span><ArrowRight className="ml-1 h-3.5 w-3.5" /></> : t("manage.planUsage.billing.billingSetupRequired")}</Button>
                     {selecting && <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 rounded-2xl bg-white/80 text-[10px] font-semibold text-violet-700 backdrop-blur-[2px] dark:bg-[#22232e]/85 dark:text-violet-200" role="status"><OrbLoader label={t("manage.planUsage.billing.loadingPreview", { plan: plan.name })} state="working" size="sm" showLabel={false} /><span>{t("manage.planUsage.billing.updatingPreview")}</span></div>}
                   </article>
                 )
@@ -833,7 +814,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         )}
         {billing.canManage && isPaid && availablePlans.length === 0 && <p className="mt-5 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:bg-white/[0.03] dark:text-slate-300">{t("manage.planUsage.billing.highestPlan")}</p>}
         {!billing.canManage && <p className="mt-5 text-sm text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.ownerOnly")}</p>}
-        {!billing.paddleConfigured && billing.canManage && !isPaid && <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.paddleNotConfigured")}</p>}
+        {!billing.billingConfigured && billing.canManage && !isPaid && <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.billingNotConfigured")}</p>}
       </section>
 
       {resolvedPresentation.comparisonRows.length > 0 && <section id="plan-comparison" className="manage-plan-card overflow-x-auto rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-5" aria-label={copyText("comparisonLabel", "Plan comparison")}>
@@ -853,11 +834,11 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
       <PlanFeaturePreview plan={selectedPlan} currentPlanKey={currentPlan} presentation={presentation} usageMetrics={usageMetrics} />
 
       <section id="billing-details" className="manage-plan-card scroll-mt-6 rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.04] sm:p-6">
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.subscription")}</p><h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{t("manage.planUsage.billing.billingDetails")}</h2><p className="mt-1.5 text-sm text-slate-600 dark:text-slate-300">{t("manage.planUsage.billing.billingDetailsDescription")}</p></div>{billing.canManage && billing.provider === "paddle" && billing.customerId && <Button type="button" onClick={manageBilling} loading={activeAction === "manage-billing"} className="min-h-10 rounded-xl border border-slate-200 bg-transparent px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10">{t("manage.planUsage.billing.manageBilling")}</Button>}</div>
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.subscription")}</p><h2 className="mt-1 text-xl font-bold tracking-tight text-slate-950 dark:text-white">{t("manage.planUsage.billing.billingDetails")}</h2><p className="mt-1.5 text-sm text-slate-600 dark:text-slate-300">{t("manage.planUsage.billing.billingDetailsDescription")}</p></div>{billing.canUsePortal && <Button type="button" onClick={manageBilling} loading={activeAction === "manage-billing"} className="min-h-10 rounded-xl border border-slate-200 bg-transparent px-3.5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10">{t("manage.planUsage.billing.manageBilling")}</Button>}</div>
         <div className="mt-5 grid gap-3 lg:grid-cols-3">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm dark:bg-white/10 dark:text-violet-300"><CreditCard className="h-4 w-4" /></span><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{t("manage.planUsage.billing.paymentMethod")}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{isPaid ? paymentMethodLabel : t("manage.planUsage.billing.noPaymentMethod")}</p></div></div>{isPaid && billing.canManage && <Button type="button" onClick={openPaymentMethod} loading={activeAction === "payment-method"} className="mt-4 min-h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-white">{t("manage.planUsage.billing.updatePaymentMethod")}</Button>}</div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm dark:bg-white/10 dark:text-violet-300"><ReceiptText className="h-4 w-4" /></span><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{t("manage.planUsage.billing.invoices")}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.invoicesDescription")}</p></div></div>{isPaid && billing.canManage && <Button type="button" onClick={() => loadHistory("view-invoices")} loading={activeAction === "view-invoices"} className="mt-4 min-h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-white">{t("manage.planUsage.billing.viewInvoices")}</Button>}</div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm dark:bg-white/10 dark:text-violet-300"><CalendarClock className="h-4 w-4" /></span><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{t("manage.planUsage.billing.subscription")}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{billing.nextBilledAt ? t("manage.planUsage.billing.nextBill", { date: dateLabel(billing.nextBilledAt) || "" }) : isPaid ? t("manage.planUsage.billing.currentPeriodOnly") : t("manage.planUsage.billing.basePlanDetails")}</p></div></div>{isPaid && billing.canManage && billing.provider === "paddle" && billing.subscriptionId && <div className="mt-4 flex justify-end">{billing.cancelAtPeriodEnd ? <Button type="button" onClick={() => reactivate("reactivate-details")} loading={activeAction === "reactivate-details"} className="min-h-9 rounded-lg border border-emerald-200 bg-transparent px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400/30 dark:text-emerald-300 dark:hover:bg-emerald-500/10">{t("manage.planUsage.billing.reactivateSubscription")}</Button> : <Button type="button" onClick={cancelSubscription} className="min-h-9 rounded-lg border border-rose-200 bg-transparent px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-400/30 dark:text-rose-300 dark:hover:bg-rose-500/10">{t("manage.planUsage.billing.cancelAtPeriodEnd")}</Button>}</div>}</div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm dark:bg-white/10 dark:text-violet-300"><CreditCard className="h-4 w-4" /></span><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{t("manage.planUsage.billing.paymentMethod")}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{isPaid ? paymentMethodLabel : t("manage.planUsage.billing.noPaymentMethod")}</p></div></div>{isPaid && billing.canManageProvider && <Button type="button" onClick={openPaymentMethod} loading={activeAction === "payment-method"} className="mt-4 min-h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-white">{t("manage.planUsage.billing.updatePaymentMethod")}</Button>}</div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm dark:bg-white/10 dark:text-violet-300"><ReceiptText className="h-4 w-4" /></span><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{t("manage.planUsage.billing.invoices")}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.invoicesDescription")}</p></div></div>{isPaid && billing.canManageProvider && <Button type="button" onClick={() => loadHistory("view-invoices")} loading={activeAction === "view-invoices"} className="mt-4 min-h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-white/10 dark:text-white">{t("manage.planUsage.billing.viewInvoices")}</Button>}</div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 dark:border-white/10 dark:bg-white/[0.03]"><div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-violet-600 shadow-sm dark:bg-white/10 dark:text-violet-300"><CalendarClock className="h-4 w-4" /></span><div><p className="text-sm font-semibold text-slate-900 dark:text-white">{t("manage.planUsage.billing.subscription")}</p><p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{billing.nextBilledAt ? t("manage.planUsage.billing.nextBill", { date: dateLabel(billing.nextBilledAt) || "" }) : isPaid ? t("manage.planUsage.billing.currentPeriodOnly") : t("manage.planUsage.billing.basePlanDetails")}</p></div></div>{isPaid && billing.canManageProvider && billing.subscriptionId && <div className="mt-4 flex justify-end">{billing.cancelAtPeriodEnd ? <Button type="button" onClick={() => reactivate("reactivate-details")} loading={activeAction === "reactivate-details"} className="min-h-9 rounded-lg border border-emerald-200 bg-transparent px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-400/30 dark:text-emerald-300 dark:hover:bg-emerald-500/10">{t("manage.planUsage.billing.reactivateSubscription")}</Button> : <Button type="button" onClick={cancelSubscription} className="min-h-9 rounded-lg border border-rose-200 bg-transparent px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 dark:border-rose-400/30 dark:text-rose-300 dark:hover:bg-rose-500/10">{t("manage.planUsage.billing.cancelAtPeriodEnd")}</Button>}</div>}</div>
         </div>
         {history && (
           <div className="mt-5 rounded-2xl border border-slate-200 dark:border-white/10">
@@ -879,7 +860,7 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                       <p className="mt-0.5 text-slate-500 dark:text-slate-400">{transaction.date ? dateLabel(transaction.date) : "—"} · {transaction.status}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900 dark:text-white">{transaction.amount && transaction.currency ? formatPaddleAmount(transaction.amount, transaction.currency) : "—"}</span>
+                      <span className="font-bold text-slate-900 dark:text-white">{transaction.amount && transaction.currency ? formatMinorAmount(transaction.amount, transaction.currency) : "—"}</span>
                       {transaction.id && <Button type="button" onClick={() => beginAction(`invoice:${transaction.id}`, async () => {
                         const result = await getBillingInvoiceUrl(transaction.id as string)
                         if (result.success && result.url) window.location.assign(result.url)
@@ -896,10 +877,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
         )}
       </section>
 
-      {configuredPaidPlans.includes(currentPlan) && billing.provider !== "paddle" && <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-white/[0.03] dark:text-slate-300"><ShieldCheck className="mr-2 inline h-4 w-4" />{t("manage.planUsage.billing.grandfathered")}</p>}
+      {configuredPaidPlans.includes(currentPlan) && !billing.isProviderBacked && <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-white/[0.03] dark:text-slate-300"><ShieldCheck className="mr-2 inline h-4 w-4" />{t("manage.planUsage.billing.grandfathered")}</p>}
       {(pending || activating) && <BillingOverlayPortal><div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/20 p-4 backdrop-blur-sm dark:bg-slate-950/55" role="status" aria-live="polite"><div className="billing-success-card flex w-full max-w-sm items-center gap-4 rounded-2xl border border-white/90 bg-white/95 p-5 shadow-[0_24px_70px_-30px_rgba(30,20,70,0.55)] dark:border-white/10 dark:bg-[#1c1b29]/95"><OrbLoader label={activating ? t("manage.planUsage.billing.activatingPlan") : t("common.updating")} size={activating ? "sm" : "md"} showLabel={false} className="shrink-0" /><div><p className="text-sm font-bold text-slate-950 dark:text-white">{activating ? t("manage.planUsage.billing.activatingPlan") : t("common.updating")}</p>{activating && <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.activatingAfterConfirmation")}</p>}</div></div></div></BillingOverlayPortal>}
-      {message && <p className="text-sm text-slate-600 dark:text-slate-300" role="status">{message}</p>}
-
       <AlertDialog open={billingConfirmation !== null} onOpenChange={(open) => { if (!open) setBillingConfirmation(null) }}>
         <AlertDialogContent className="!flex !h-dvh !max-h-dvh !w-screen !max-w-none !flex-col !gap-0 overflow-hidden rounded-none border border-violet-200/70 bg-white p-0 shadow-2xl shadow-slate-950/20 dark:border-violet-400/20 dark:bg-[#1c1b29] sm:!h-auto sm:!max-h-[calc(100dvh-2rem)] sm:!w-full sm:!max-w-md sm:rounded-[1.75rem]">
           <div className="relative shrink-0 overflow-hidden bg-gradient-to-br from-violet-50 via-white to-indigo-50 p-4 dark:from-violet-500/15 dark:via-[#1c1b29] dark:to-indigo-500/10 sm:p-7">
@@ -917,11 +896,11 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
             </div>
             <AlertDialogHeader className="relative mt-4 text-left sm:mt-6">
               <AlertDialogTitle className="text-xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">
-                {checkoutConfirmation ? `Start ${checkoutConfirmation.preview.plan}?` : planChangeConfirmation ? previewIsIntervalChange ? t("manage.planUsage.billing.changeBillingCycleDialogTitle", { interval: planChangeConfirmation.preview.interval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly") }) : t("manage.planUsage.billing.changePlanDialogTitle", { plan: planChangeConfirmation.preview.plan }) : t("manage.planUsage.billing.cancelDialogTitle")}
+                {checkoutConfirmation ? t("manage.planUsage.billing.checkoutConfirmTitle", { plan: checkoutConfirmation.preview.plan }) : planChangeConfirmation ? previewIsIntervalChange ? t("manage.planUsage.billing.changeBillingCycleDialogTitle", { interval: planChangeConfirmation.preview.interval === "year" ? t("manage.planUsage.billing.annual") : t("manage.planUsage.billing.monthly") }) : t("manage.planUsage.billing.changePlanDialogTitle", { plan: planChangeConfirmation.preview.plan }) : t("manage.planUsage.billing.cancelDialogTitle")}
               </AlertDialogTitle>
               <AlertDialogDescription className="mt-1.5 text-sm leading-5 text-slate-600 dark:text-slate-300 sm:leading-6">
                 {checkoutConfirmation
-                  ? "Review the exact amount charged now and the configured recurring billing cycle before opening secure checkout."
+                  ? t("manage.planUsage.billing.checkoutConfirmDescription")
                   : planChangeConfirmation
                   ? t(previewIsIntervalChange && previewIsPeriodEnd ? "manage.planUsage.billing.changeBillingCyclePeriodEnd" : previewIsIntervalChange ? "manage.planUsage.billing.changeBillingCycleDialogDescription" : previewIsDowngrade ? "manage.planUsage.billing.changePlanDowngradeDescription" : "manage.planUsage.billing.changePlanDialogDescription")
                   : t("manage.planUsage.billing.cancelDialogDescription")}
@@ -933,8 +912,8 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
             <div className="space-y-3 sm:space-y-4">
             {checkoutConfirmation ? (
               <div className="space-y-2.5 rounded-xl border border-violet-200 bg-violet-50/80 p-3 dark:border-violet-400/20 dark:bg-violet-500/10 sm:space-y-3 sm:rounded-2xl sm:p-4">
-                <div className="flex items-center justify-between gap-3"><span className="text-xs font-bold uppercase tracking-[0.12em] text-violet-700 dark:text-violet-200">{checkoutConfirmation.preview.plan}</span><span className="text-sm font-bold text-violet-900 dark:text-white">{formatPaddleAmount(checkoutConfirmation.preview.amount, checkoutConfirmation.preview.currency) || "—"}</span></div>
-                <div className="grid grid-cols-2 gap-2 text-xs text-violet-900 dark:text-violet-100"><div><p className="text-[9px] uppercase tracking-[0.1em] opacity-60">Charged today</p><p className="mt-0.5 font-bold">{formatPaddleAmount(checkoutConfirmation.preview.amount, checkoutConfirmation.preview.currency) || "—"}</p></div><div><p className="text-[9px] uppercase tracking-[0.1em] opacity-60">Recurring</p><p className="mt-0.5 font-bold">{formatPaddleAmount(checkoutConfirmation.preview.nextRecurringAmount, checkoutConfirmation.preview.currency) || "—"} / {checkoutConfirmation.preview.interval}</p></div></div>
+                <div className="flex items-center justify-between gap-3"><span className="text-xs font-bold uppercase tracking-[0.12em] text-violet-700 dark:text-violet-200">{checkoutConfirmation.preview.plan}</span><span className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 dark:text-violet-200"><ShieldCheck className="h-3.5 w-3.5" />{t("manage.planUsage.billing.secureCheckout")}</span></div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-violet-900 dark:text-violet-100"><div><p className="text-[9px] uppercase tracking-[0.1em] opacity-60">{t("manage.planUsage.billing.checkoutDueToday")}</p><p className="mt-0.5 font-bold">{formatMinorAmount(checkoutConfirmation.preview.amount, checkoutConfirmation.preview.currency) || "—"}</p></div><div><p className="text-[9px] uppercase tracking-[0.1em] opacity-60">{t("manage.planUsage.billing.checkoutRecurring")}</p><p className="mt-0.5 font-bold">{formatMinorAmount(checkoutConfirmation.preview.nextRecurringAmount, checkoutConfirmation.preview.currency) || "—"} / {t(checkoutConfirmation.preview.interval === "year" ? "manage.planUsage.billing.annual" : "manage.planUsage.billing.monthly")}</p></div></div>
               </div>
             ) : planChangeConfirmation ? (
               <>
@@ -963,18 +942,19 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
                   {previewAmount && <p className={`shrink-0 text-base font-bold tabular-nums ${previewIsCredit ? "text-emerald-700 dark:text-emerald-200" : "text-violet-700 dark:text-violet-200"}`}>{previewAmount}</p>}
                 </div>
                 {previewCreditToBalance && <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] leading-4 text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-200">{t("manage.planUsage.billing.changePlanCreditRemaining", { amount: previewCreditToBalance })}</p>}
-                <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-xs dark:border-white/10 dark:bg-white/[0.03]"><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">New recurring price</p><p className="mt-0.5 font-bold text-slate-900 dark:text-white">{formatPaddleAmount(planChangeConfirmation.preview.recurringAmount, planChangeConfirmation.preview.recurringCurrency || planChangeConfirmation.preview.currency) || "—"} / {planChangeConfirmation.preview.interval}</p></div><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">{previewIsDowngrade || previewIsPeriodEnd ? "Effective date" : "Next billing date"}</p><p className="mt-0.5 font-bold text-slate-900 dark:text-white">{dateLabel(previewIsDowngrade || previewIsPeriodEnd ? planChangeConfirmation.preview.effectiveAt : (planChangeConfirmation.preview.nextBilledAt || planChangeConfirmation.preview.effectiveAt)) || "—"}</p></div></div>
+                <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-2.5 text-xs dark:border-white/10 dark:bg-white/[0.03]"><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">{t("manage.planUsage.billing.newRecurringPrice")}</p><p className="mt-0.5 font-bold text-slate-900 dark:text-white">{formatMinorAmount(planChangeConfirmation.preview.recurringAmount, planChangeConfirmation.preview.recurringCurrency || planChangeConfirmation.preview.currency) || "—"} / {t(planChangeConfirmation.preview.interval === "year" ? "manage.planUsage.billing.annual" : "manage.planUsage.billing.monthly")}</p></div><div><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">{t(previewIsDowngrade || previewIsPeriodEnd ? "manage.planUsage.billing.effectiveDate" : "manage.planUsage.billing.nextBillingDate")}</p><p className="mt-0.5 font-bold text-slate-900 dark:text-white">{dateLabel(previewIsDowngrade || previewIsPeriodEnd ? planChangeConfirmation.preview.effectiveAt : (planChangeConfirmation.preview.nextBilledAt || planChangeConfirmation.preview.effectiveAt)) || "—"}</p></div></div>
               </>
             ) : (
               <div className="space-y-2.5 rounded-xl border border-rose-200 bg-rose-50/80 p-3 dark:border-rose-400/20 dark:bg-rose-500/10 sm:space-y-3 sm:rounded-2xl sm:p-4">
                 <p className="text-sm font-bold text-rose-900 dark:text-rose-100">{t("manage.planUsage.billing.cancelAtPeriodEnd")}</p>
                 <p className="mt-1 text-[11px] leading-5 text-rose-800/75 dark:text-rose-200/75">{t("manage.planUsage.billing.cancellationConfirm")}</p>
-                <label className="block text-xs font-semibold text-rose-950 dark:text-rose-100">Why are you leaving?
+                {scheduledPlanName && <p className="rounded-lg border border-rose-200 bg-white/70 px-2.5 py-1.5 text-[11px] leading-4 text-rose-800 dark:border-rose-300/20 dark:bg-white/[0.04] dark:text-rose-200">{t("manage.planUsage.billing.cancelReplacesScheduledPlan", { plan: scheduledPlanName })}</p>}
+                <label className="block text-xs font-semibold text-rose-950 dark:text-rose-100">{t("manage.planUsage.billing.cancellationReasonPrompt")}
                   <select value={cancellationReason} onChange={(event) => { setCancellationReason(event.target.value); setBillingConfirmation((current) => current?.type === "cancel" ? { ...current, reason: event.target.value } : current) }} className="mt-1.5 h-10 w-full rounded-lg border border-rose-200 bg-white px-2 text-xs text-slate-900 dark:border-rose-300/20 dark:bg-white/10 dark:text-white">
-                    <option value="too_expensive">Too expensive</option><option value="not_using">Not using the workspace enough</option><option value="seasonal">Seasonal or temporary pause</option><option value="missing_feature">Missing a feature</option><option value="technical_problem">Technical problems</option><option value="switching_solution">Switching to another solution</option><option value="other">Other</option>
+                    <option value="too_expensive">{t("manage.planUsage.billing.cancellationReasonTooExpensive")}</option><option value="not_using">{t("manage.planUsage.billing.cancellationReasonNotUsing")}</option><option value="seasonal">{t("manage.planUsage.billing.cancellationReasonSeasonal")}</option><option value="missing_feature">{t("manage.planUsage.billing.cancellationReasonMissingFeature")}</option><option value="technical_problem">{t("manage.planUsage.billing.cancellationReasonTechnical")}</option><option value="switching_solution">{t("manage.planUsage.billing.cancellationReasonSwitching")}</option><option value="other">{t("manage.planUsage.billing.cancellationReasonOther")}</option>
                   </select>
                 </label>
-                <textarea value={cancellationFeedback} onChange={(event) => { setCancellationFeedback(event.target.value); setBillingConfirmation((current) => current?.type === "cancel" ? { ...current, feedback: event.target.value } : current) }} maxLength={1000} rows={2} placeholder="Optional feedback" className="w-full rounded-lg border border-rose-200 bg-white px-2.5 py-2 text-xs text-slate-900 placeholder:text-slate-400 dark:border-rose-300/20 dark:bg-white/10 dark:text-white" />
+                <textarea value={cancellationFeedback} onChange={(event) => { setCancellationFeedback(event.target.value); setBillingConfirmation((current) => current?.type === "cancel" ? { ...current, feedback: event.target.value } : current) }} maxLength={1000} rows={2} placeholder={t("manage.planUsage.billing.cancellationFeedbackPlaceholder")} className="w-full rounded-lg border border-rose-200 bg-white px-2.5 py-2 text-xs text-slate-900 placeholder:text-slate-400 dark:border-rose-300/20 dark:bg-white/10 dark:text-white" />
               </div>
             )}
             </div>
@@ -982,12 +962,12 @@ export function PaddleBillingActions({ currentPlan, billing, plans, configuredPa
             <AlertDialogFooter className="mt-auto gap-1.5 pt-3 sm:space-x-0 sm:gap-2">
               <AlertDialogCancel asChild>
                 <Button type="button" variant="outline" className="min-h-10 flex-1 rounded-lg border-slate-200 bg-transparent text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-200 dark:hover:bg-white/10">
-                  {checkoutConfirmation ? "Cancel" : planChangeConfirmation ? t("manage.planUsage.billing.keepCurrentPlan") : t("manage.planUsage.billing.keepSubscription")}
+                  {checkoutConfirmation ? t("common.cancel") : planChangeConfirmation ? t("manage.planUsage.billing.keepCurrentPlan") : t("manage.planUsage.billing.keepSubscription")}
                 </Button>
               </AlertDialogCancel>
               <AlertDialogAction asChild>
-                <Button type="button" loading={activeAction === "confirm-billing"} onClick={confirmBillingAction} className={`min-h-10 flex-1 rounded-lg text-sm font-semibold text-white ${planChangeConfirmation ? "bg-violet-600 hover:bg-violet-700" : "bg-rose-600 hover:bg-rose-700"}`}>
-                  {checkoutConfirmation ? "Continue to secure checkout" : planChangeConfirmation ? t("manage.planUsage.billing.confirmPlanChange") : t("manage.planUsage.billing.scheduleCancellation")}
+                <Button type="button" loading={activeAction === "confirm-billing"} onClick={confirmBillingAction} className={`min-h-10 flex-1 rounded-lg text-sm font-semibold text-white ${checkoutConfirmation || planChangeConfirmation ? "bg-violet-600 hover:bg-violet-700" : "bg-rose-600 hover:bg-rose-700"}`}>
+                  {checkoutConfirmation ? t("manage.planUsage.billing.continueToSecureCheckout") : planChangeConfirmation ? t("manage.planUsage.billing.confirmPlanChange") : t("manage.planUsage.billing.scheduleCancellation")}
                 </Button>
               </AlertDialogAction>
             </AlertDialogFooter>

@@ -64,9 +64,9 @@ integration("transactional entitlement lock", () => {
     targetPlanPriceId = `pri_entitlement_lock_starter_${stamp}`
     thirdPriceId = `pri_entitlement_lock_third_${stamp}`
     const mapping = await service!.from("billing_provider_prices").upsert([
-      { provider: "paddle", environment: "sandbox", plan_key: "fixture_unlimited", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: fixturePriceId, billing_interval: "month", currency: "USD", active: true },
-      { provider: "paddle", environment: "sandbox", plan_key: "fixture_pro", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: currentPlanPriceId, billing_interval: "month", currency: "USD", active: true },
-      { provider: "paddle", environment: "sandbox", plan_key: "fixture_starter", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: targetPlanPriceId, billing_interval: "month", currency: "USD", active: true },
+      { provider: "stripe", environment: "sandbox", plan_key: "fixture_unlimited", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: fixturePriceId, billing_interval: "month", currency: "USD", active: true },
+      { provider: "stripe", environment: "sandbox", plan_key: "fixture_pro", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: currentPlanPriceId, billing_interval: "month", currency: "USD", active: true },
+      { provider: "stripe", environment: "sandbox", plan_key: "fixture_starter", provider_product_id: `prod_entitlement_lock_${stamp}`, provider_price_id: targetPlanPriceId, billing_interval: "month", currency: "USD", active: true },
     ], { onConflict: "provider,environment,provider_price_id" })
     if (mapping.error) throw mapping.error
     const bootstrap = await ownerClient.rpc("bootstrap_initial_workspace", { target_workspace_name: `Entitlement Lock ${stamp}`, target_workspace_slug: `entitlement-lock-${stamp}` })
@@ -112,11 +112,11 @@ integration("transactional entitlement lock", () => {
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_unlimited", unlimited: true })
     if (override.data?.id) await service!.from("subscription_overrides").delete().eq("id", override.data.id)
 
-    const missingProviderSubscription = await service!.from("workspace_subscriptions").update({ status: "active", plan_key: "fixture_unlimited", source: "paddle", provider: "paddle", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: null, provider_price_id: fixturePriceId }).eq("workspace_id", workspaceId)
+    const missingProviderSubscription = await service!.from("workspace_subscriptions").update({ status: "active", plan_key: "fixture_unlimited", source: "provider", provider: "stripe", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: null, provider_price_id: fixturePriceId }).eq("workspace_id", workspaceId)
     expect(missingProviderSubscription.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
 
-    const unlimited = await service!.from("workspace_subscriptions").update({ status: "active", plan_key: "fixture_unlimited", source: "paddle", provider: "paddle", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: fixturePriceId }).eq("workspace_id", workspaceId)
+    const unlimited = await service!.from("workspace_subscriptions").update({ status: "active", plan_key: "fixture_unlimited", source: "provider", provider: "stripe", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: fixturePriceId }).eq("workspace_id", workspaceId)
     expect(unlimited.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_unlimited", capability_configured: true, limit_value: null, unlimited: true })
 
@@ -130,7 +130,7 @@ integration("transactional entitlement lock", () => {
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_unlimited", unlimited: true })
 
     const futureSchedule = { scheduled_plan_key: "fixture_starter", scheduled_plan_at: future.toISOString().slice(0, 10), scheduled_effective_at: future.toISOString(), scheduled_provider_price_id: targetPlanPriceId, scheduled_change_action: null, cancel_at_period_end: false, current_period_end: future.toISOString().slice(0, 10), current_period_end_at: future.toISOString() }
-    const currentPriceFuture = await service!.from("workspace_subscriptions").update({ plan_key: "fixture_pro", source: "paddle", provider: "paddle", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: currentPlanPriceId, ...futureSchedule }).eq("workspace_id", workspaceId)
+    const currentPriceFuture = await service!.from("workspace_subscriptions").update({ plan_key: "fixture_pro", source: "provider", provider: "stripe", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: currentPlanPriceId, ...futureSchedule }).eq("workspace_id", workspaceId)
     expect(currentPriceFuture.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 1, unlimited: false })
 
@@ -254,8 +254,8 @@ integration("transactional entitlement lock", () => {
 
     const restoredUnlimited = await service!.from("workspace_subscriptions").update({
       plan_key: "fixture_unlimited",
-      source: "paddle",
-      provider: "paddle",
+      source: "provider",
+      provider: "stripe",
       provider_environment: "sandbox",
       provider_customer_id: "cus_fixture",
       provider_subscription_id: "sub_fixture",
@@ -289,8 +289,8 @@ integration("transactional entitlement lock", () => {
       workspace_id: workspaceId,
       plan_key: "fixture_unlimited",
       status: "active",
-      source: "paddle",
-      provider: "paddle",
+      source: "provider",
+      provider: "stripe",
       provider_environment: "sandbox",
       provider_customer_id: "cus_fixture",
       provider_subscription_id: "sub_fixture",
@@ -335,8 +335,8 @@ integration("transactional entitlement lock", () => {
       workspace_id: workspaceId,
       plan_key: "fixture_unlimited",
       status: "active",
-      source: "paddle",
-      provider: "paddle",
+      source: "provider",
+      provider: "stripe",
       provider_environment: "sandbox",
       provider_customer_id: "cus_fixture",
       provider_subscription_id: "sub_fixture",

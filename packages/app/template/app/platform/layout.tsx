@@ -4,7 +4,7 @@ import { redirect } from "next/navigation"
 import { AuthorizationError } from "@/lib/authorization"
 import { requirePlatformRole } from "@/lib/platform-authorization"
 import { ManageLayoutClient } from "@/app/manage/manage-layout-client"
-import { getManagementLayoutData } from "@/app/manage/layout"
+import { getManagementLayoutData } from "@/lib/management-layout-data"
 import { getPwaIconAssetUrl } from "@/lib/pwa"
 import { toInitialContext } from "@/lib/management-layout-data"
 

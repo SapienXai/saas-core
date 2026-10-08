@@ -70,10 +70,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "@sapienx/saas-core": "workspace:*",
     "@hookform/resolvers": "^3.9.1",
-    "@paddle/paddle-js": "1.6.4",
-    "@paddle/paddle-node-sdk": "3.10.0",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
     "@radix-ui/react-aspect-ratio": "1.1.1",
@@ -102,6 +99,7 @@
     "@radix-ui/react-toggle-group": "1.1.1",
     "@radix-ui/react-tooltip": "1.1.6",
     "@react-email/render": "1.2.0",
+    "@sapienx/saas-core": "workspace:*",
     "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "2.112.3",
     "@types/web-push": "^3.6.4",
@@ -127,6 +125,7 @@
     "server-only": "0.0.1",
     "sharp": "0.35.3",
     "sonner": "^1.7.4",
+    "stripe": "23.0.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "thinking-orbs": "^0.2.0",

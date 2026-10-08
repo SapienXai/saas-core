@@ -76,9 +76,9 @@ export function translateMessage(
     return translate(language, "manage.common.workspaceCreatedWithAdjustedSlug", { slug: adjustedSlug[1] })
   }
 
-  const paddleMapping = message.match(/^Paddle (sandbox|production) price mapping is not configured for (.+)\.$/)
-  if (paddleMapping) {
-    return translate(language, "manage.planUsage.billing.priceMappingMissing", { environment: paddleMapping[1], plan: paddleMapping[2] })
+  const priceMapping = message.match(/^(?:The )?(sandbox|live) price mapping is not configured for (.+)\.$/)
+  if (priceMapping) {
+    return translate(language, "manage.planUsage.billing.priceMappingMissing", { environment: priceMapping[1], plan: priceMapping[2] })
   }
 
   return message

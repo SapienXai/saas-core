@@ -315,7 +315,8 @@ function hasTrustedProviderProjection(input: EffectiveEntitlementPlanInput) {
   // complete local provider identity written by the verified billing boundary.
   if (input.source === "manual") return true
   if (input.source === "system") return false
-  if (input.source !== undefined && input.source !== "paddle") return false
+  const providerProjection = input.source === "provider" && typeof input.provider === "string" && /^[a-z][a-z0-9_-]{0,79}$/.test(input.provider)
+  if (input.source !== undefined && !providerProjection) return false
 
   const providerFieldsWereSupplied = [
     input.provider,
@@ -328,7 +329,7 @@ function hasTrustedProviderProjection(input: EffectiveEntitlementPlanInput) {
   // server-backed resolver always supplies source and provider fields.
   if (!providerFieldsWereSupplied && input.source === undefined) return true
 
-  return input.provider === "paddle"
+  return providerProjection
     && (input.providerEnvironment === "sandbox" || input.providerEnvironment === "live")
     && textValue(input.providerCustomerId) !== null
     && textValue(input.providerSubscriptionId) !== null

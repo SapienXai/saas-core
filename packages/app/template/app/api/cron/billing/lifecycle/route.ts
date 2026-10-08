@@ -1,7 +1,8 @@
-import { expirePaymentGracePeriods } from "@/lib/billing/lifecycle"
+import { expirePaymentGracePeriods, processDueStripeBillingWebhookEvents } from "@/lib/billing/lifecycle"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+export const maxDuration = 300
 
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET
@@ -13,8 +14,11 @@ export async function GET(request: Request) {
   }
 
   try {
-    const result = await expirePaymentGracePeriods()
-    return Response.json({ ok: true, ...result })
+    const [gracePeriods, webhooks] = await Promise.all([
+      expirePaymentGracePeriods(),
+      processDueStripeBillingWebhookEvents(),
+    ])
+    return Response.json({ ok: true, ...gracePeriods, webhooks })
   } catch (error) {
     console.error("Billing lifecycle cron failed", { error: error instanceof Error ? error.message : String(error) })
     return Response.json({ error: "Billing lifecycle could not be completed." }, { status: 500 })

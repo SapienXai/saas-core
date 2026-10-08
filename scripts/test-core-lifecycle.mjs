@@ -19,6 +19,7 @@ const billingMigrations = [
   "supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql",
   "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql",
   "supabase/migrations/20260916120000_saas_core_domain_foundation_v1.sql",
+  "supabase/migrations/20261008000523_stripe_billing_provider.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
@@ -72,21 +73,23 @@ try {
   ]
   const billingManagedFiles = [
     ...billingMigrations,
-    "app/api/billing/paddle/webhook/route.ts",
+    "app/api/billing/stripe/webhook/route.ts",
     "app/api/cron/billing/lifecycle/route.ts",
     "app/manage/plan/actions.ts",
     "app/manage/plan/page.tsx",
     "app/platform/billing/page.tsx",
     "components/manage/billing-success-experience.tsx",
-    "components/manage/paddle-billing-actions.tsx",
+    "components/manage/billing-actions.tsx",
     "components/manage/plan-feature-preview.tsx",
     "components/manage/scheduled-plan-change-banner.tsx",
+    "lib/billing/config.ts",
     "lib/billing/lifecycle.ts",
-    "lib/billing/paddle-client.ts",
     "lib/billing/persistence.ts",
     "lib/billing/price-mapping.ts",
+    "lib/billing/provider.ts",
+    "lib/billing/providers/stripe.ts",
     "lib/billing/reconciliation.ts",
-    "lib/billing/webhook.ts",
+    "lib/billing/stripe-webhook.ts",
     "lib/entitlements.ts",
   ]
   for (const relative of [...agentSurfaceFiles, ...billingManagedFiles]) await rm(path.join(coreA, relative), { force: true })

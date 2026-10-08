@@ -1,18 +1,23 @@
 "use server"
 
+import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { AuthorizationError, getCurrentWorkspace, requireUser, requireWorkspaceRole } from "@/lib/authorization"
-import { BillingConfigurationError, getBillingEnvironment, getPaddleServerClient, getPublicPaddleConfig, isBillingDeferred, isPaddleBillingConfigured } from "@/lib/billing/paddle-client"
-import { getActivePaddlePrice, getPaddlePriceByProviderId, isBillingInterval, isPaidPlanKey, type BillingInterval, type PaidPlanKey, type ProviderPriceMapping } from "@/lib/billing/price-mapping"
+import { BillingConfigurationError, isBillingDeferred } from "@/lib/billing/config"
+import { getActiveProviderPrice, getProviderPriceByProviderId, isBillingInterval, isPaidPlanKey, type BillingInterval, type PaidPlanKey, type ProviderPriceMapping } from "@/lib/billing/price-mapping"
+import { canResumePendingCheckout } from "@/lib/billing/checkout-resumption"
+import { getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured } from "@/lib/billing/providers"
 import { getWorkspaceEntitlements, getWorkspaceUsage, validatePlanChangeEligibility } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import type { Json } from "@/types/supabase"
-import { applyPaddleSubscriptionEvent } from "@/lib/billing/webhook"
 import { getConfiguredDefaultPlanKey, getConfiguredFallbackPlanKey, isTerminalBillingSubscription } from "@/lib/billing/reconciliation"
 import { consumeBillingTransition, recordBillingMutationTransition, updateBillingMutationTransition } from "@/lib/billing/persistence"
 import type { BillingTransitionKind, PlanChangeEligibility } from "@sapienx/saas-core"
 import { getProductUsageResolvers } from "@/src/product/usage"
 import { resolveBillingIntervalChangePolicy } from "@/lib/billing/interval-policy"
+import { getBillingReturnUrl } from "@/lib/platform-urls"
+import { reconcileBillingCheckoutSession, reconcileBillingSubscription } from "@/lib/billing/reconciliation-service"
+import type { BillingProviderAdapter, ProviderSubscriptionSnapshot } from "@/lib/billing/provider"
 
 const CANCELLATION_REASONS = new Set(["too_expensive", "not_using", "seasonal", "missing_feature", "technical_problem", "switching_solution", "other"])
 
@@ -48,11 +53,35 @@ type SubscriptionRow = {
   payment_grace_ends_at: string | null
 }
 
-type BillingMutation = { id: string; status: string; result: Json; error_code: string | null; fingerprint?: string | null; created: boolean }
+type BillingMutation = {
+  id: string
+  status: string
+  result: Json
+  error_code: string | null
+  fingerprint?: string | null
+  created: boolean
+}
 
-type AuthoritativePaddleState = {
-  subscription: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["get"]>>
-  mapping: ProviderPriceMapping | null
+type AuthoritativeBillingState = {
+  subscription: ProviderSubscriptionSnapshot
+  mapping: ProviderPriceMapping
+}
+
+type PlanChangeContext = {
+  membership: NonNullable<Awaited<ReturnType<typeof getCurrentWorkspace>>>
+  subscription: SubscriptionRow
+  state: AuthoritativeBillingState
+  mapping: ProviderPriceMapping
+  interval: BillingInterval
+  currentInterval: BillingInterval
+  currentPriceId: string
+  targetPrice: Awaited<ReturnType<BillingProviderAdapter["retrievePrice"]>>
+  intervalPolicy: ReturnType<typeof resolveBillingIntervalChangePolicy>
+  currentPeriodEndAt: string | null
+  isDowngrade: boolean
+  changeTiming: "immediate" | "period_end"
+  resetBillingCycle: boolean
+  prorationDate: number
 }
 
 async function requireCurrentWorkspaceOwner() {
@@ -76,129 +105,129 @@ async function getCurrentBillingSubscription(workspaceId: string): Promise<Subsc
   }
   if (error) throw new Error(error.message)
   if (!data) {
-    // The baseline trigger normally creates this row. Keep an old or partially
-    // migrated workspace on the configured fallback instead of treating a
-    // missing subscription as a paid or unrestricted state.
     const fallbackPlanKey = await getConfiguredFallbackPlanKey(supabase)
     return {
-      workspace_id: workspaceId,
-      plan_key: fallbackPlanKey,
-      status: "active",
-      source: "system",
-      current_period_start: null,
-      current_period_end: null,
-      current_period_start_at: null,
-      current_period_end_at: null,
-      cancel_at_period_end: false,
-      provider: null,
-      provider_environment: null,
-      provider_customer_id: null,
-      provider_subscription_id: null,
-      provider_price_id: null,
-      provider_status: null,
-      billing_interval: null,
-      billing_currency: null,
-      last_provider_event_at: null,
-      next_billed_at: null,
-      scheduled_change_at: null,
-      scheduled_change_action: null,
-      scheduled_effective_at: null,
-      scheduled_plan_key: null,
-      scheduled_plan_at: null,
-      scheduled_plan_interval: null,
-      scheduled_provider_price_id: null,
-      billing_issue_code: null,
-      payment_failure_started_at: null,
-      payment_grace_ends_at: null,
+      workspace_id: workspaceId, plan_key: fallbackPlanKey, status: "active", source: "system",
+      current_period_start: null, current_period_end: null, current_period_start_at: null, current_period_end_at: null,
+      cancel_at_period_end: false, provider: null, provider_environment: null, provider_customer_id: null,
+      provider_subscription_id: null, provider_price_id: null, provider_status: null, billing_interval: null,
+      billing_currency: null, last_provider_event_at: null, next_billed_at: null, scheduled_change_at: null,
+      scheduled_change_action: null, scheduled_effective_at: null, scheduled_plan_key: null, scheduled_plan_at: null,
+      scheduled_plan_interval: null, scheduled_provider_price_id: null, billing_issue_code: null,
+      payment_failure_started_at: null, payment_grace_ends_at: null,
     }
   }
   return data
 }
 
-async function getAuthoritativePaddleState(subscription: SubscriptionRow): Promise<AuthoritativePaddleState> {
-  if (subscription.provider !== "paddle" || !subscription.provider_subscription_id) {
-    throw new Error("No active Paddle subscription is available.")
+async function getAuthoritativeBillingState(subscription: SubscriptionRow): Promise<AuthoritativeBillingState> {
+  const provider = getBillingProviderName()
+  const environment = getBillingProviderEnvironment()
+  if (subscription.provider !== provider || !subscription.provider_subscription_id) {
+    throw new Error("No active billing subscription is available.")
   }
+  if (subscription.provider_environment !== environment) throw new Error("Billing environment does not match the current subscription.")
 
-  const environment = getBillingEnvironment()
-  if (subscription.provider_environment !== environment) {
-    throw new Error("Billing environment does not match the current subscription.")
+  const adapter = getBillingProviderAdapter()
+  const providerSubscription = await adapter.retrieveSubscription(subscription.provider_subscription_id)
+  if (providerSubscription.issueCode === "unmanaged_subscription_schedule" || providerSubscription.issueCode === "unsupported_subscription_schedule") {
+    throw new Error("The Stripe schedule is not in a supported PlaceDJ state; resolve it before changing this subscription.")
   }
-
-  const providerSubscription = await getPaddleServerClient().subscriptions.get(subscription.provider_subscription_id)
-  const providerPriceId = providerSubscription.items?.[0]?.price?.id || subscription.provider_price_id
-  const mapping = providerPriceId ? await getPaddlePriceByProviderId(providerPriceId, environment, false) : null
+  const workspaceMetadata = providerSubscription.customData.workspace_id || providerSubscription.customData.saas_core_workspace_id
+  if (workspaceMetadata && workspaceMetadata !== subscription.workspace_id) throw new Error("Billing subscription belongs to another Workspace.")
+  if (providerSubscription.customData.billing_environment && providerSubscription.customData.billing_environment !== environment) {
+    throw new Error("Billing subscription belongs to another environment.")
+  }
+  if (providerSubscription.customData.billing_provider && providerSubscription.customData.billing_provider !== provider) {
+    throw new Error("Billing subscription belongs to another provider.")
+  }
+  if (providerSubscription.livemode !== (environment === "live")) throw new Error("Billing subscription mode does not match this environment.")
+  const item = providerSubscription.items.length === 1 ? providerSubscription.items[0] : null
+  if (!item?.priceId || item.quantity !== 1) throw new Error("Billing subscription has an unsupported item configuration.")
+  const mapping = await getProviderPriceByProviderId(provider, item.priceId, environment, false)
+  if (!mapping || !isPaidPlanKey(mapping.plan_key)) throw new Error("The current subscription Price is not registered.")
+  const price = await adapter.retrievePrice(item.priceId)
+  assertMappedPrice(mapping, price, environment)
   return { subscription: providerSubscription, mapping }
 }
 
-function paddleSubscriptionEventData(subscription: AuthoritativePaddleState["subscription"]): Record<string, unknown> {
-  return {
-    id: subscription.id,
-    status: subscription.status,
-    customerId: subscription.customerId,
-    nextBilledAt: subscription.nextBilledAt,
-    currentBillingPeriod: subscription.currentBillingPeriod
-      ? { startsAt: subscription.currentBillingPeriod.startsAt, endsAt: subscription.currentBillingPeriod.endsAt }
-      : null,
-    scheduledChange: subscription.scheduledChange
-      ? { action: subscription.scheduledChange.action, effectiveAt: subscription.scheduledChange.effectiveAt, resumeAt: subscription.scheduledChange.resumeAt }
-      : null,
-    customData: subscription.customData,
-    items: subscription.items.map((item) => ({ priceId: item.price?.id || null, productId: item.price?.productId || null, quantity: item.quantity })),
+function assertMappedPrice(mapping: ProviderPriceMapping, price: Awaited<ReturnType<BillingProviderAdapter["retrievePrice"]>>, environment: "sandbox" | "live") {
+  if (price.livemode !== (environment === "live") ||
+    price.productId !== mapping.provider_product_id ||
+    price.currency !== mapping.currency ||
+    price.interval !== mapping.billing_interval ||
+    price.intervalCount !== 1 ||
+    price.amount === null || price.amount <= 0) {
+    throw new Error("Billing Price details do not match the registered Workspace plan mapping.")
   }
-}
-
-async function reconcilePaddleSubscriptionProjection(subscription: SubscriptionRow) {
-  const authoritative = await getAuthoritativePaddleState(subscription)
-  const occurredAt = authoritative.subscription.updatedAt || new Date().toISOString()
-  const result = await applyPaddleSubscriptionEvent({
-    eventId: `reconcile_${authoritative.subscription.id}_${occurredAt}`,
-    eventType: "subscription.updated",
-    occurredAt,
-    data: paddleSubscriptionEventData(authoritative.subscription),
-  })
-  return { authoritative, result }
-}
-
-async function ensureCheckoutEligibility(subscription: SubscriptionRow) {
-  if (subscription.provider_subscription_id && !isTerminalBillingSubscription(subscription.provider_status || subscription.status)) {
-    throw new Error("This workspace already has a Paddle subscription. Use Manage plan instead.")
-  }
-  if (subscription.provider_subscription_id && isTerminalBillingSubscription(subscription.provider_status || subscription.status)) {
-    // A replacement checkout is safe only after the old provider object has
-    // been observed as terminal through the canonical projection path.
-    await reconcilePaddleSubscriptionProjection(subscription)
-    const reconciled = await getCurrentBillingSubscription(subscription.workspace_id)
-    if (reconciled.provider_status !== "canceled") throw new Error("The previous Paddle subscription is still being reconciled.")
-    return reconciled
-  }
-  if (subscription.source !== "system") throw new Error("This workspace is not eligible for a new paid checkout.")
-  return subscription
-}
-
-function providerPeriodEnd(state: AuthoritativePaddleState | null, fallback: SubscriptionRow) {
-  return state?.subscription.currentBillingPeriod?.endsAt || fallback.current_period_end_at || fallback.current_period_end
 }
 
 function normalizeRequestKey(value: string | undefined) {
-  const candidate = value?.trim() || crypto.randomUUID()
+  const candidate = value?.trim() || randomUUID()
   if (!/^[a-zA-Z0-9_-]{16,100}$/.test(candidate)) throw new Error("Invalid billing request key.")
   return candidate
 }
 
-function asJson(value: unknown): Json { return JSON.parse(JSON.stringify(value)) as Json }
+function asJson(value: unknown): Json {
+  return JSON.parse(JSON.stringify(value)) as Json
+}
 
-function planChangeFingerprint(subscription: Pick<SubscriptionRow, "provider_subscription_id" | "last_provider_event_at">, currentProviderPriceId: string | null, targetProviderPriceId: string) {
-  return `${subscription.provider_subscription_id || ""}:${currentProviderPriceId || ""}:${targetProviderPriceId}:${subscription.last_provider_event_at || "none"}`
+function resultRecord(value: Json): Record<string, Json> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Json> : {}
 }
 
 function friendlyBillingError(error: unknown) {
   if (error instanceof AuthorizationError) return error.message
-  if (error instanceof BillingConfigurationError && error.code === "BILLING_DEFERRED") return "Billing is coming soon. Stripe migration is pending."
-  if (error instanceof Error && error.message.includes("not configured")) return "Billing is not configured for this environment."
-  const providerUnavailable = error instanceof Error && /past_due|30 minutes|cannot change|not change/i.test(error.message)
+  if (error instanceof BillingConfigurationError && error.code === "BILLING_DEFERRED") return "Billing changes are temporarily unavailable."
+  if (error instanceof Error && /not configured|must be set|invalid format/i.test(error.message)) return "Billing is not configured for this environment."
+  const providerUnavailable = error instanceof Error && /past_due|cannot change|not change|temporarily unavailable/i.test(error.message)
   console.error("Billing action failed", { code: providerUnavailable ? "PROVIDER_CHANGE_UNAVAILABLE" : "BILLING_UNAVAILABLE" })
   return providerUnavailable ? "This billing change is temporarily unavailable. Refresh the page and try again." : "Billing service is temporarily unavailable. Please try again."
+}
+
+function isProjectionBusyError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "PROJECTION_BUSY"
+}
+
+async function reconcileAfterProviderMutation(subscriptionId: string, workspaceId: string) {
+  try {
+    await reconcileBillingSubscription(subscriptionId, workspaceId)
+    return true
+  } catch (error) {
+    if (isProjectionBusyError(error)) return false
+    throw error
+  }
+}
+
+async function reconcileUnknownBillingMutation(workspaceId: string) {
+  const supabase = createServiceRoleClient()
+  const { data: unknown, error: mutationError } = await supabase.from("billing_mutations")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "unknown")
+    .limit(1)
+    .maybeSingle()
+  if (mutationError) throw new Error(mutationError.message)
+  if (!unknown) return
+
+  const { data: subscription, error: subscriptionError } = await supabase.from("workspace_subscriptions")
+    .select("provider, provider_environment, provider_subscription_id")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle()
+  if (subscriptionError) throw new Error(subscriptionError.message)
+  if (!subscription?.provider_subscription_id) return
+
+  let provider: string
+  let environment: "sandbox" | "live"
+  try {
+    provider = getBillingProviderName()
+    environment = getBillingProviderEnvironment()
+  } catch {
+    return
+  }
+  if (subscription.provider !== provider || subscription.provider_environment !== environment) return
+
+  await reconcileAfterProviderMutation(subscription.provider_subscription_id, workspaceId)
 }
 
 function downgradeEligibilityFailure(targetPlan: string, eligibility: PlanChangeEligibility) {
@@ -211,19 +240,37 @@ function downgradeEligibilityFailure(targetPlan: string, eligibility: PlanChange
 
 function getBillingPresentation() {
   try {
-    const environment = getBillingEnvironment()
-    return { paddleConfigured: isPaddleBillingConfigured() && Boolean(getPublicPaddleConfig()), environment, billingDeferred: isBillingDeferred() }
-  } catch { return { paddleConfigured: false, environment: null, billingDeferred: isBillingDeferred() } }
+    return {
+      billingConfigured: isBillingProviderConfigured(),
+      environment: getBillingProviderEnvironment(),
+      billingDeferred: isBillingDeferred(),
+    }
+  } catch {
+    return { billingConfigured: false, environment: null, billingDeferred: isBillingDeferred() }
+  }
 }
 
 async function beginBillingMutation(workspaceId: string, requestKey: string, operation: string): Promise<BillingMutation> {
   const supabase = createServiceRoleClient()
   const existingRequest = await supabase.from("billing_mutations").select("id, status, result, error_code").eq("workspace_id", workspaceId).eq("request_key", requestKey).maybeSingle()
   if (existingRequest.error) throw new Error(existingRequest.error.message)
-  if (existingRequest.data) return { ...existingRequest.data, created: false }
-  const pending = await supabase.from("billing_mutations").select("id, status, result, error_code").eq("workspace_id", workspaceId).in("status", ["pending", "unknown"]).limit(1).maybeSingle()
+  if (existingRequest.data) {
+    if (existingRequest.data.status === "unknown") {
+      await reconcileUnknownBillingMutation(workspaceId)
+      const refreshed = await supabase.from("billing_mutations").select("id, status, result, error_code").eq("id", existingRequest.data.id).maybeSingle()
+      if (refreshed.error) throw new Error(refreshed.error.message)
+      if (!refreshed.data) throw new Error("Billing request could not be reloaded after reconciliation.")
+      return { ...refreshed.data, created: false }
+    }
+    return { ...existingRequest.data, created: false }
+  }
+  const pending = await supabase.from("billing_mutations").select("id").eq("workspace_id", workspaceId).eq("status", "pending").limit(1).maybeSingle()
   if (pending.error) throw new Error(pending.error.message)
   if (pending.data) throw new Error("Another billing change is already being processed.")
+  await reconcileUnknownBillingMutation(workspaceId)
+  const unresolved = await supabase.from("billing_mutations").select("id").eq("workspace_id", workspaceId).in("status", ["pending", "unknown"]).limit(1).maybeSingle()
+  if (unresolved.error) throw new Error(unresolved.error.message)
+  if (unresolved.data) throw new Error("Another billing change is already being processed.")
   const created = await supabase.from("billing_mutations").insert({ workspace_id: workspaceId, request_key: requestKey, operation, status: "pending" }).select("id, status, result, error_code").single()
   if (!created.error && created.data) return { ...created.data, created: true }
   if (created.error?.code === "23505") {
@@ -234,31 +281,20 @@ async function beginBillingMutation(workspaceId: string, requestKey: string, ope
   throw new Error(created.error?.message || "Could not start billing request.")
 }
 
-async function finishBillingMutation(id: string, status: "succeeded" | "failed" | "unknown", result: unknown = {}, errorCode: string | null = null) {
-  const { error } = await createServiceRoleClient().from("billing_mutations").update({ status, result: asJson(result), error_code: errorCode }).eq("id", id)
-  if (error) console.error("Could not persist billing mutation state", { code: "MUTATION_STATE_WRITE_FAILED" })
+async function saveBillingMutationResult(id: string, result: unknown) {
+  const { error } = await createServiceRoleClient().from("billing_mutations").update({ result: asJson(result) }).eq("id", id)
+  if (error) throw new Error(error.message)
 }
 
-async function beginCanonicalTransition(
-  mutation: BillingMutation,
-  workspaceId: string,
-  environment: "sandbox" | "live",
-  kind: BillingTransitionKind,
-  fromPlanKey?: string | null,
-  toPlanKey?: string | null,
-  effectiveAt?: string | null,
-) {
+async function finishBillingMutation(id: string, status: "succeeded" | "failed" | "unknown", result: unknown = {}, errorCode: string | null = null) {
+  const { error } = await createServiceRoleClient().from("billing_mutations").update({ status, result: asJson(result), error_code: errorCode }).eq("id", id)
+  if (error) throw new Error(error.message)
+}
+
+async function beginCanonicalTransition(mutation: BillingMutation, workspaceId: string, environment: "sandbox" | "live", kind: BillingTransitionKind, fromPlanKey?: string | null, toPlanKey?: string | null, effectiveAt?: string | null) {
   return recordBillingMutationTransition({
-    mutationId: mutation.id,
-    workspaceId,
-    provider: "paddle",
-    environment,
-    transitionKey: `${kind}:${mutation.id}`,
-    kind,
-    fromPlanKey,
-    toPlanKey,
-    effectiveAt,
-    state: "pending",
+    mutationId: mutation.id, workspaceId, provider: getBillingProviderName(), environment,
+    transitionKey: kind + ":" + mutation.id, kind, fromPlanKey, toPlanKey, effectiveAt, state: "pending",
   })
 }
 
@@ -270,62 +306,96 @@ async function getCanonicalTransitionId(mutationId: string, kind?: BillingTransi
   return typeof data?.id === "string" ? data.id : null
 }
 
+async function resumePendingCheckoutSession(input: {
+  supabase: ReturnType<typeof createServiceRoleClient>
+  adapter: BillingProviderAdapter
+  workspaceId: string
+  provider: string
+  environment: "sandbox" | "live"
+  planKey: string
+  interval: BillingInterval
+  priceId: string
+}) {
+  const { data: checkout, error } = await input.supabase.from("billing_checkout_sessions")
+    .select("workspace_id, provider, environment, target_plan_key, provider_price_id, provider_transaction_id, idempotency_key, status")
+    .eq("provider", input.provider)
+    .eq("environment", input.environment)
+    .eq("workspace_id", input.workspaceId)
+    .eq("target_plan_key", input.planKey)
+    .eq("provider_price_id", input.priceId)
+    .eq("status", "created")
+    .not("provider_transaction_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!checkout) return null
+
+  const { data: mutation, error: mutationError } = await input.supabase.from("billing_mutations")
+    .select("id, operation, status")
+    .eq("workspace_id", input.workspaceId)
+    .eq("id", checkout.idempotency_key)
+    .maybeSingle()
+  if (mutationError) throw new Error(mutationError.message)
+  if (!mutation || !canResumePendingCheckout({
+    checkout,
+    mutation,
+    workspaceId: input.workspaceId,
+    provider: input.provider,
+    environment: input.environment,
+    planKey: input.planKey,
+    priceId: input.priceId,
+  })) return null
+
+  const session = await input.adapter.retrieveCheckoutSession(checkout.provider_transaction_id!)
+  if (session.id !== checkout.provider_transaction_id ||
+    session.workspaceId !== input.workspaceId ||
+    session.mutationId !== mutation.id ||
+    session.livemode !== (input.environment === "live")) {
+    throw new Error("The pending Checkout session does not match this Workspace request.")
+  }
+  if (session.status !== "open" || !session.url) {
+    return { success: false as const, message: "The previous checkout is already being processed. Refresh the page and try again." }
+  }
+
+  const transitionId = await getCanonicalTransitionId(mutation.id, "checkout")
+  await saveBillingMutationResult(mutation.id, { sessionId: session.id, transitionId, planKey: input.planKey, interval: input.interval })
+  return { success: true as const, data: { url: session.url, sessionId: session.id, transitionId } }
+}
+
 async function finishCanonicalTransition(transitionId: string, state: "succeeded" | "failed" | "unknown", outcome: Record<string, unknown> = {}, errorCode?: string) {
-  await updateBillingMutationTransition({
-    transitionId,
-    state,
-    outcome,
-    errorCode: state === "failed" ? errorCode || null : null,
-  })
+  await updateBillingMutationTransition({ transitionId, state, outcome, errorCode: state === "failed" ? errorCode || null : null })
 }
 
 async function persistUnknownProviderOutcome(mutation: BillingMutation, transitionId: string | null, error: unknown, operation: string) {
-  const message = error instanceof Error ? error.message : String(error)
-  if (transitionId) await finishCanonicalTransition(transitionId, "unknown", { status: "unknown", operation, reason: message.slice(0, 500) })
-  await finishBillingMutation(mutation.id, "unknown", { status: "unknown", operation, reason: message.slice(0, 500) }, "PROVIDER_OUTCOME_UNKNOWN")
-}
-
-function resultRecord(value: Json): Record<string, Json> { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, Json> : {} }
-function moneyAmount(value: string | null | undefined) { return value && /^\d+$/.test(value) ? value : null }
-function positiveMoneyAmount(value: string | null | undefined) {
-  const amount = moneyAmount(value)
-  return amount && !/^0+$/.test(amount) ? amount : null
-}
-
-async function subscriptionPreviewData(
-  preview: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["previewUpdate"]>>,
-  targetPlan: PaidPlanKey,
-  targetInterval: BillingInterval,
-  mode: string,
-  isDowngrade: boolean,
-  changeTiming: "immediate" | "period_end",
-  effectiveAt: string | null,
-  targetPrice: ProviderPriceMapping,
-) {
-  const result = preview.updateSummary?.result
-  const immediate = preview.immediateTransaction?.details?.totals
-  const next = preview.nextTransaction?.details?.totals
-  const authoritativePrice = await getPaddleServerClient().prices.get(targetPrice.provider_price_id)
-  const recurringAmount = positiveMoneyAmount(authoritativePrice.unitPrice.amount)
-  if (!recurringAmount) throw new Error("The target Paddle price is unavailable.")
-  const targetPlanName = await getPlanName(targetPlan)
-  return {
-    planKey: targetPlan,
-    plan: targetPlanName,
-    interval: targetInterval,
-    isDowngrade,
-    changeTiming,
-    prorationBillingMode: mode,
-    action: result?.action || null,
-    amount: moneyAmount(result?.amount),
-    currency: result?.currencyCode || preview.currencyCode || null,
-    recurringAmount,
-    recurringCurrency: authoritativePrice.unitPrice.currencyCode || targetPrice.currency,
-    immediateAmount: moneyAmount(immediate?.grandTotal || immediate?.total),
-    creditToBalance: positiveMoneyAmount(immediate?.creditToBalance || next?.creditToBalance),
-    nextBilledAt: preview.nextBilledAt || null,
-    effectiveAt,
+  const reason = error instanceof Error ? error.message : String(error)
+  if (transitionId) await finishCanonicalTransition(transitionId, "unknown", { status: "unknown", operation, reason: reason.slice(0, 500) })
+  try {
+    await finishBillingMutation(mutation.id, "unknown", { status: "unknown", operation, reason: reason.slice(0, 500) }, "PROVIDER_OUTCOME_UNKNOWN")
+  } catch {
+    console.error("Could not persist unknown billing mutation outcome", { code: "MUTATION_STATE_WRITE_FAILED" })
   }
+}
+
+async function ensureCheckoutEligibility(subscription: SubscriptionRow) {
+  if (subscription.provider_subscription_id) {
+    const observedStatus = subscription.provider_status || subscription.status
+    if (!isTerminalBillingSubscription(observedStatus)) throw new Error("This workspace already has a billing subscription. Use Manage plan instead.")
+    if (subscription.provider === getBillingProviderName()) {
+      await reconcileBillingSubscription(subscription.provider_subscription_id, subscription.workspace_id)
+      const reconciled = await getCurrentBillingSubscription(subscription.workspace_id)
+      if (!isTerminalBillingSubscription(reconciled.provider_status || reconciled.status)) {
+        throw new Error("The previous subscription is still being reconciled.")
+      }
+      return reconciled
+    }
+  }
+  if (subscription.source !== "system" && subscription.source !== "provider") throw new Error("This workspace is not eligible for a new paid checkout.")
+  return subscription
+}
+
+function planChangeFingerprint(subscription: Pick<SubscriptionRow, "provider_subscription_id" | "last_provider_event_at">, currentPriceId: string, targetPriceId: string) {
+  return (subscription.provider_subscription_id || "") + ":" + currentPriceId + ":" + targetPriceId + ":" + (subscription.last_provider_event_at || "none")
 }
 
 async function getPlanName(planKey: string) {
@@ -340,26 +410,87 @@ async function getPlanSortOrder(planKey: string) {
   return data.sort_order
 }
 
-async function getPaddlePlanChangeContext(targetPlan: PaidPlanKey, targetInterval?: BillingInterval) {
+async function getPlanChangeContext(targetPlan: PaidPlanKey, targetInterval?: BillingInterval, prorationDate = Math.floor(Date.now() / 1000)): Promise<PlanChangeContext> {
   const membership = await requireCurrentWorkspaceOwner()
   const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-  const providerState = await getAuthoritativePaddleState(subscription)
-  const environment = getBillingEnvironment()
-  const hasPendingPlanProjection = Boolean(subscription.scheduled_plan_key && (subscription.scheduled_effective_at || subscription.scheduled_plan_at))
-  const currentInterval = hasPendingPlanProjection && isBillingInterval(subscription.billing_interval || "")
+  const state = await getAuthoritativeBillingState(subscription)
+  const environment = getBillingProviderEnvironment()
+  const hasPendingPlan = Boolean(subscription.scheduled_plan_key && (subscription.scheduled_effective_at || subscription.scheduled_plan_at))
+  const currentInterval = hasPendingPlan && isBillingInterval(subscription.billing_interval || "")
     ? subscription.billing_interval as BillingInterval
-    : providerState.mapping?.billing_interval || (isBillingInterval(subscription.billing_interval || "") ? subscription.billing_interval as BillingInterval : null)
-  if (subscription.plan_key === targetPlan && !currentInterval) throw new Error("The current billing cycle is unavailable.")
-  const interval = targetInterval || currentInterval || "month"
-  const mapping = await getActivePaddlePrice(targetPlan, environment, interval, providerState.mapping?.currency || subscription.billing_currency || "USD")
-  if (!mapping) throw new Error(`Paddle ${environment} ${interval} price mapping is not configured for plan ${targetPlan}.`)
-  if (providerState.subscription.scheduledChange?.action === "cancel" || subscription.cancel_at_period_end) throw new Error("Reactivate the subscription before changing its plan.")
+    : state.mapping.billing_interval
+  const interval = targetInterval || currentInterval
+  const currency = state.mapping.currency || subscription.billing_currency || "USD"
+  const mapping = await getActiveProviderPrice(targetPlan, getBillingProviderName(), environment, interval, currency)
+  if (!mapping) throw new Error("The " + environment + " price mapping is not configured for " + targetPlan + ".")
+  const adapter = getBillingProviderAdapter()
+  const targetPrice = await adapter.retrievePrice(mapping.provider_price_id)
+  assertMappedPrice(mapping, targetPrice, environment)
+  if (state.subscription.cancelAtPeriodEnd || subscription.cancel_at_period_end) throw new Error("Reactivate the subscription before changing its plan.")
+  if (state.subscription.status !== "active" && state.subscription.status !== "trialing") throw new Error("This subscription cannot be changed while its payment status is " + state.subscription.status + ".")
   if (subscription.plan_key === targetPlan && currentInterval === interval) throw new Error("The workspace is already on that plan and billing cycle.")
-  const currentProviderPriceId = providerState.subscription.items?.[0]?.price?.id || subscription.provider_price_id
+  if (state.subscription.scheduledPlan?.priceId === mapping.provider_price_id) {
+    throw new Error("That plan and billing cycle are already scheduled for the end of this billing period.")
+  }
+
+  const currentPriceId = state.subscription.items[0]?.priceId
+  if (!currentPriceId) throw new Error("The current billing Price is unavailable.")
   const intervalPolicy = targetPlan === subscription.plan_key
     ? resolveBillingIntervalChangePolicy(currentInterval, interval)
     : resolveBillingIntervalChangePolicy(null, null)
-  return { membership, subscription, environment, mapping, interval, currentInterval, currentProviderPriceId, providerState, intervalPolicy, currentPeriodEndAt: providerPeriodEnd(providerState, subscription) }
+  const currentOrder = await getPlanSortOrder(subscription.plan_key)
+  const targetOrder = await getPlanSortOrder(targetPlan)
+  const isDowngrade = targetOrder < currentOrder
+  const currentPeriodEndAt = state.subscription.currentBillingPeriod?.endsAt || subscription.current_period_end_at || subscription.current_period_end
+  const replacesScheduledPlan = Boolean(state.subscription.scheduleId && state.subscription.scheduledPlan?.priceId !== mapping.provider_price_id)
+  const replacesScheduledCycle = Boolean(state.subscription.scheduleId && targetPlan === subscription.plan_key && intervalPolicy.kind === "interval_change")
+  const changeTiming = isDowngrade || intervalPolicy.timing === "period_end" || replacesScheduledPlan || replacesScheduledCycle ? "period_end" : "immediate"
+  if (changeTiming === "period_end" && !currentPeriodEndAt) throw new Error("The current billing period end is unavailable.")
+  return {
+    membership, subscription, state, mapping, interval, currentInterval, currentPriceId, targetPrice,
+    intervalPolicy, currentPeriodEndAt, isDowngrade, changeTiming,
+    resetBillingCycle: intervalPolicy.kind === "interval_change" && intervalPolicy.timing === "immediate",
+    prorationDate,
+  }
+}
+
+async function calculatePlanChangePreview(context: PlanChangeContext) {
+  const adapter = getBillingProviderAdapter()
+  const targetPlan = context.mapping.plan_key
+  let providerPreview = null as Awaited<ReturnType<BillingProviderAdapter["previewSubscriptionChange"]>> | null
+  if (context.changeTiming === "immediate") {
+    const itemId = context.state.subscription.items[0]?.id
+    if (!itemId || !context.state.subscription.customerId || !context.subscription.provider_subscription_id) throw new Error("The current subscription item is unavailable.")
+    providerPreview = await adapter.previewSubscriptionChange({
+      subscriptionId: context.subscription.provider_subscription_id,
+      customerId: context.state.subscription.customerId,
+      itemId,
+      priceId: context.mapping.provider_price_id,
+      prorationDate: context.prorationDate,
+      ...(context.resetBillingCycle ? { resetBillingCycle: true } : {}),
+    })
+  }
+  const previewAmount = providerPreview?.amount ?? 0
+  const action = providerPreview?.action ?? "none"
+  const effectiveAt = context.changeTiming === "period_end" ? context.currentPeriodEndAt : context.state.subscription.nextBilledAt
+  return {
+    planKey: targetPlan,
+    plan: await getPlanName(targetPlan),
+    interval: context.interval,
+    isDowngrade: context.isDowngrade,
+    changeTiming: context.changeTiming,
+    prorationPolicy: context.changeTiming === "period_end" ? "none" : "immediate",
+    action,
+    amount: String(previewAmount),
+    currency: providerPreview?.currency || context.mapping.currency,
+    recurringAmount: context.targetPrice.amount === null ? null : String(context.targetPrice.amount),
+    recurringCurrency: context.targetPrice.currency,
+    creditToBalance: String(providerPreview?.creditToBalance || 0),
+    nextBilledAt: context.state.subscription.nextBilledAt,
+    effectiveAt,
+    prorationDate: context.prorationDate,
+    fingerprint: planChangeFingerprint(context.subscription, context.currentPriceId, context.mapping.provider_price_id),
+  }
 }
 
 export async function getPlanUsage() {
@@ -377,101 +508,86 @@ export async function getPlanUsage() {
     ])
     if (workspaceError || !workspace) return { success: false, message: "Workspace could not be loaded." }
     if (plans.error) throw new Error(plans.error.message)
+
+    const presentation = getBillingPresentation()
+    const environment = presentation.environment
+    const provider = getBillingProviderName()
+    const adapter = presentation.billingConfigured ? getBillingProviderAdapter() : null
     let configuredPrices: Array<{ planKey: string; interval: string; currency: string; providerPriceId: string; amount: string | null }> = []
-    try {
-      const environment = getBillingEnvironment()
-      const mappings = await supabase.from("billing_provider_prices").select("plan_key, billing_interval, currency, provider_price_id").eq("provider", "paddle").eq("environment", environment).eq("active", true)
+    if (environment && adapter) {
+      const mappings = await supabase.from("billing_provider_prices")
+        .select("plan_key, billing_interval, currency, provider_price_id")
+        .eq("provider", provider).eq("environment", environment).eq("active", true)
       if (mappings.error) throw new Error(mappings.error.message)
-      const paddle = getPaddleServerClient()
       configuredPrices = await Promise.all((mappings.data || []).map(async (row) => {
         try {
-          const price = await paddle.prices.get(row.provider_price_id)
-          return { planKey: row.plan_key, interval: row.billing_interval, currency: row.currency, providerPriceId: row.provider_price_id, amount: price.unitPrice.amount }
+          const price = await adapter.retrievePrice(row.provider_price_id)
+          return { planKey: row.plan_key, interval: row.billing_interval, currency: row.currency, providerPriceId: row.provider_price_id, amount: price.amount === null ? null : String(price.amount) }
         } catch {
           return { planKey: row.plan_key, interval: row.billing_interval, currency: row.currency, providerPriceId: row.provider_price_id, amount: null }
         }
       }))
-    } catch { configuredPrices = [] }
-    const billingPresentation = getBillingPresentation()
-    let authoritativeState: AuthoritativePaddleState | null = null
-    if (subscription.provider === "paddle" && subscription.provider_subscription_id && billingPresentation.paddleConfigured) {
-      try { authoritativeState = await getAuthoritativePaddleState(subscription) } catch { authoritativeState = null }
     }
-    const authoritativePriceId = authoritativeState?.subscription.items?.[0]?.price?.id || subscription.provider_price_id
-    const authoritativeMapping = authoritativeState?.mapping
-    const hasPendingPlanChange = Boolean(subscription.scheduled_plan_key && (subscription.scheduled_effective_at || subscription.scheduled_plan_at))
-    let currentPriceId = authoritativePriceId
-    let currentPriceMapping = authoritativeMapping
-    if (hasPendingPlanChange) {
-      const currentInterval = subscription.billing_interval || (authoritativeMapping?.plan_key === subscription.plan_key ? authoritativeMapping.billing_interval : null)
-      currentPriceMapping = null
-      if (isPaidPlanKey(subscription.plan_key) && currentInterval && isBillingInterval(currentInterval)) {
-        try { currentPriceMapping = await getActivePaddlePrice(subscription.plan_key, getBillingEnvironment(), currentInterval, subscription.billing_currency || "USD") } catch { currentPriceMapping = null }
-        currentPriceId = currentPriceMapping?.provider_price_id || null
-      }
-      if (!currentPriceMapping && authoritativeMapping?.plan_key === subscription.plan_key) {
-        currentPriceMapping = authoritativeMapping
-        currentPriceId = authoritativePriceId
-      }
+
+    let authoritative: AuthoritativeBillingState | null = null
+    if (subscription.provider === provider && subscription.provider_subscription_id && adapter) {
+      try { authoritative = await getAuthoritativeBillingState(subscription) } catch { authoritative = null }
     }
-    const resolvedBillingInterval = currentPriceMapping?.billing_interval || (hasPendingPlanChange ? subscription.billing_interval : authoritativeMapping?.billing_interval || subscription.billing_interval)
-    const resolvedBillingCurrency = currentPriceMapping?.currency || (hasPendingPlanChange ? subscription.billing_currency : authoritativeMapping?.currency || subscription.billing_currency) || "USD"
-    let currentProviderPriceAmount: string | null = null
-    if (currentPriceId && billingPresentation.paddleConfigured) {
+    const hasPendingPlan = Boolean(subscription.scheduled_plan_key && (subscription.scheduled_effective_at || subscription.scheduled_plan_at))
+    const currentPriceId = authoritative?.subscription.items[0]?.priceId || subscription.provider_price_id
+    const currentMapping = authoritative?.mapping || (currentPriceId && environment
+      ? await getProviderPriceByProviderId(provider, currentPriceId, environment, false).catch(() => null)
+      : null)
+    const resolvedInterval = currentMapping?.billing_interval || subscription.billing_interval
+    const resolvedCurrency = currentMapping?.currency || subscription.billing_currency || "USD"
+    let currentPriceAmount: string | null = null
+    if (currentPriceId && adapter && authoritative) {
       try {
-        const currentPaddlePrice = await getPaddleServerClient().prices.get(currentPriceId)
-        currentProviderPriceAmount = currentPaddlePrice.unitPrice.amount
-      } catch { currentProviderPriceAmount = null }
+        const price = await adapter.retrievePrice(currentPriceId)
+        currentPriceAmount = price.amount === null ? null : String(price.amount)
+      } catch { currentPriceAmount = null }
     }
-    const resolvedStatus = authoritativeState?.subscription.status || subscription.provider_status
-    const resolvedCurrentPeriodStart = authoritativeState?.subscription.currentBillingPeriod?.startsAt || subscription.current_period_start_at || subscription.current_period_start
-    const resolvedCurrentPeriodEnd = authoritativeState?.subscription.currentBillingPeriod?.endsAt || subscription.current_period_end_at || subscription.current_period_end
-    const resolvedNextBilledAt = authoritativeState?.subscription.nextBilledAt || subscription.next_billed_at
-    const resolvedScheduledChange = authoritativeState?.subscription.scheduledChange
     let paymentMethod: { type: string; last4: string | null; expiryMonth: number | null; expiryYear: number | null } | null = null
-    if (subscription.provider === "paddle" && subscription.provider_customer_id && billingPresentation.paddleConfigured) {
-      try {
-        const methods = getPaddleServerClient().paymentMethods.list(subscription.provider_customer_id)
-        for await (const method of methods) {
-          paymentMethod = { type: method.type, last4: method.card?.last4 || null, expiryMonth: method.card?.expiryMonth || null, expiryYear: method.card?.expiryYear || null }
-          break
-        }
-      } catch {
-        paymentMethod = null
-      }
+    if (subscription.provider === provider && subscription.provider_customer_id && adapter) {
+      try { paymentMethod = await adapter.getCustomerPaymentMethod(subscription.provider_customer_id) } catch { paymentMethod = null }
     }
+    const resolvedStatus = authoritative?.subscription.providerStatus || subscription.provider_status
+    const currentPeriodStart = authoritative?.subscription.currentBillingPeriod?.startsAt || subscription.current_period_start_at || subscription.current_period_start
+    const currentPeriodEnd = authoritative?.subscription.currentBillingPeriod?.endsAt || subscription.current_period_end_at || subscription.current_period_end
+    const nextBilledAt = authoritative?.subscription.nextBilledAt || subscription.next_billed_at
     return {
       success: true,
       data: {
-        workspace,
-        entitlements,
-        usage,
+        workspace, entitlements, usage,
         billing: {
           canManage: membership.role === "owner",
-          paddleConfigured: billingPresentation.paddleConfigured,
-          billingDeferred: billingPresentation.billingDeferred,
-          environment: subscription.provider_environment || billingPresentation.environment,
-          provider: subscription.provider,
+          isProviderBacked: subscription.provider === provider && Boolean(subscription.provider_subscription_id),
+          canManageProvider: membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id) && presentation.billingConfigured && !presentation.billingDeferred,
+          canUsePortal: membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id && subscription.provider_customer_id) && presentation.billingConfigured && !presentation.billingDeferred,
+          billingConfigured: presentation.billingConfigured,
+          billingDeferred: presentation.billingDeferred,
+          environment: subscription.provider_environment || environment,
           customerId: subscription.provider_customer_id,
           subscriptionId: subscription.provider_subscription_id,
           providerStatus: resolvedStatus,
-          currentPeriodStart: resolvedCurrentPeriodStart,
-          currentPeriodEnd: resolvedCurrentPeriodEnd,
-          nextBilledAt: resolvedNextBilledAt,
-          cancelAtPeriodEnd: resolvedScheduledChange?.action === "cancel" || subscription.cancel_at_period_end,
-          scheduledChangeAt: resolvedScheduledChange?.effectiveAt || subscription.scheduled_effective_at || subscription.scheduled_change_at || resolvedCurrentPeriodEnd,
-          scheduledChangeAction: resolvedScheduledChange?.action || subscription.scheduled_change_action,
+          currentPeriodStart,
+          currentPeriodEnd,
+          nextBilledAt,
+          cancelAtPeriodEnd: authoritative?.subscription.cancelAtPeriodEnd || subscription.cancel_at_period_end,
+          scheduledChangeAt: authoritative?.subscription.cancelEffectiveAt || subscription.scheduled_effective_at || subscription.scheduled_change_at || currentPeriodEnd,
+          scheduledChangeAction: authoritative?.subscription.cancelAtPeriodEnd ? "cancel" : subscription.scheduled_change_action,
           scheduledPlanKey: subscription.scheduled_plan_key,
           scheduledPlanAt: subscription.scheduled_effective_at || subscription.scheduled_plan_at,
           scheduledPlanInterval: subscription.scheduled_plan_interval,
-          billingInterval: resolvedBillingInterval,
-          billingCurrency: resolvedBillingCurrency,
+          billingInterval: resolvedInterval,
+          billingCurrency: resolvedCurrency,
           currentProviderPriceId: currentPriceId,
-          currentProviderPriceAmount,
+          currentProviderPriceAmount: currentPriceAmount,
           billingIssueCode: subscription.billing_issue_code || (resolvedStatus === "past_due" ? "past_due" : null),
           paymentFailureStartedAt: subscription.payment_failure_started_at,
           paymentGraceEndsAt: subscription.payment_grace_ends_at,
           paymentMethod,
+          hasPendingPlan,
         },
         plans: plans.data || [],
         configuredPaidPlans: Array.from(new Set(configuredPrices.map((row) => row.planKey))),
@@ -484,151 +600,44 @@ export async function getPlanUsage() {
   }
 }
 
-export async function reconcilePaddleSubscription() {
+export async function reconcileSubscription() {
   try {
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== "paddle" || !subscription.provider_subscription_id) return { success: false, message: "No active Paddle subscription is available." }
-    const { authoritative, result } = await reconcilePaddleSubscriptionProjection(subscription)
+    if (subscription.provider !== getBillingProviderName() || !subscription.provider_subscription_id) return { success: false, message: "No active billing subscription is available." }
+    const result = await reconcileBillingSubscription(subscription.provider_subscription_id, membership.workspace_id)
     revalidatePath("/manage/plan")
-    return {
-      success: true,
-      data: {
-        status: authoritative.subscription.status,
-        priceId: authoritative.subscription.items[0]?.price?.id || null,
-        syncStatus: result.status,
-      },
-    }
+    return { success: true, data: result }
   } catch (error) {
     return { success: false, message: friendlyBillingError(error) }
   }
-}
-
-const COMPLETED_PADDLE_TRANSACTION_STATUSES = new Set(["billed", "paid", "completed"])
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
 
 function checkoutVerificationFailure(message: string) {
   return { success: false as const, message, data: { pending: false as const } }
 }
 
-/**
- * Local development can receive Paddle's browser callback before a public
- * webhook destination is reachable. Re-read the checkout and its recurring
- * subscription server-side, then pass the provider observation through the
- * same projection used by signed webhooks. The browser never grants access.
- */
-export async function reconcilePaddleCheckoutTransaction(transactionId: string) {
+export async function reconcileCheckoutSession(checkoutSessionId: string) {
   try {
     const membership = await requireCurrentWorkspaceOwner()
-    const requestedTransactionId = transactionId?.trim() || ""
-    if (!/^txn_[A-Za-z0-9_-]{8,200}$/.test(requestedTransactionId)) return checkoutVerificationFailure("Checkout could not be verified.")
-
-    const environment = getBillingEnvironment()
-    const supabase = createServiceRoleClient()
-    const checkout = await supabase
-      .from("billing_checkout_sessions")
-      .select("workspace_id, environment, target_plan_key, provider_price_id, provider_transaction_id, status")
-      .eq("workspace_id", membership.workspace_id)
-      .eq("environment", environment)
-      .eq("provider_transaction_id", requestedTransactionId)
-      .maybeSingle()
-    if (checkout.error) throw new Error(checkout.error.message)
-    if (!checkout.data) return checkoutVerificationFailure("Checkout could not be verified.")
-
-    const paddle = getPaddleServerClient()
-    const transaction = await paddle.transactions.get(requestedTransactionId)
-    if (transaction.status === "canceled") return checkoutVerificationFailure("Your payment was canceled. Start checkout again.")
-    if (!COMPLETED_PADDLE_TRANSACTION_STATUSES.has(transaction.status)) {
-      return { success: false as const, message: "Payment is still being confirmed.", data: { pending: true as const } }
-    }
-    if (!transaction.subscriptionId) {
-      return { success: false as const, message: "Payment is still being confirmed.", data: { pending: true as const } }
-    }
-
-    const transactionCustomData = recordValue(transaction.customData)
-    if (
-      transactionCustomData.saas_core_workspace_id !== membership.workspace_id ||
-      transactionCustomData.saas_core_target_plan !== checkout.data.target_plan_key ||
-      transactionCustomData.saas_core_billing_environment !== environment
-    ) return checkoutVerificationFailure("Checkout details could not be verified.")
-
-    const transactionItem = transaction.items?.[0]
-    if (transaction.items?.length !== 1 || transactionItem?.quantity !== 1 || transactionItem.price?.id !== checkout.data.provider_price_id) {
-      return checkoutVerificationFailure("Checkout details could not be verified.")
-    }
-
-    const providerSubscription = await paddle.subscriptions.get(transaction.subscriptionId)
-    if (providerSubscription.status !== "active" && providerSubscription.status !== "trialing") {
-      return checkoutVerificationFailure("Paddle did not activate the subscription. Check the payment method and try again.")
-    }
-
-    const subscriptionCustomData = recordValue(providerSubscription.customData)
-    if (
-      subscriptionCustomData.saas_core_workspace_id !== membership.workspace_id ||
-      subscriptionCustomData.saas_core_target_plan !== checkout.data.target_plan_key ||
-      subscriptionCustomData.saas_core_billing_environment !== environment
-    ) return checkoutVerificationFailure("Subscription details could not be verified.")
-
-    const subscriptionItem = providerSubscription.items?.[0]
-    if (providerSubscription.items?.length !== 1 || subscriptionItem?.quantity !== 1 || subscriptionItem.price?.id !== checkout.data.provider_price_id) {
-      return checkoutVerificationFailure("Subscription details could not be verified.")
-    }
-
-    const transactionOccurredAt = transaction.updatedAt || transaction.createdAt
-    const transactionResult = await applyPaddleSubscriptionEvent({
-      eventId: `checkout_reconcile_transaction_${transaction.id}`,
-      eventType: "transaction.completed",
-      occurredAt: transactionOccurredAt,
-      data: {
-        id: transaction.id,
-        customerId: transaction.customerId,
-        customData: transaction.customData,
-      },
-    })
-    const occurredAt = providerSubscription.updatedAt || transactionOccurredAt
-    const subscriptionResult = await applyPaddleSubscriptionEvent({
-      eventId: `checkout_reconcile_subscription_${providerSubscription.id}_${occurredAt}`,
-      eventType: "subscription.updated",
-      occurredAt,
-      data: paddleSubscriptionEventData(providerSubscription),
-    })
+    const id = checkoutSessionId?.trim() || ""
+    if (id.length < 1 || id.length > 255 || /\s/.test(id)) return checkoutVerificationFailure("Checkout could not be verified.")
+    const result = await reconcileBillingCheckoutSession(id, membership.workspace_id)
+    if (result.status === "pending") return { success: false as const, message: "Payment is still being confirmed.", data: { pending: true as const } }
+    if (result.status === "failed") return checkoutVerificationFailure("Checkout could not be verified.")
     revalidatePath("/manage/plan")
-    return {
-      success: true as const,
-      data: {
-        pending: false as const,
-        status: providerSubscription.status,
-        planKey: checkout.data.target_plan_key,
-        checkoutStatus: transactionResult.status,
-        subscriptionStatus: subscriptionResult.status,
-      },
-    }
+    return { success: true as const, data: { pending: false as const, ...result } }
   } catch (error) {
-    if (error instanceof Error && error.message.includes("DUPLICATE_PROVIDER_SUBSCRIPTION")) {
-      return checkoutVerificationFailure("This workspace has another active Paddle subscription. Billing needs attention before this checkout can be activated.")
-    }
-    return { success: false as const, message: friendlyBillingError(error) }
+    return { success: false as const, message: friendlyBillingError(error), data: { pending: true as const } }
   }
 }
 
-/**
- * A success surface may only be shown after the current user has consumed a
- * succeeded, server-recorded transition. The database function is atomic and
- * returns consumed=false for a duplicate tab, reload, or Strict Mode replay.
- */
 export async function consumeBillingTransitionForCurrentUser(transitionId: string) {
   try {
     const access = await requireUser()
     const membership = await getCurrentWorkspace()
     if (!membership) return { success: false, message: "No active workspace is available." }
-    const result = await consumeBillingTransition({
-      workspaceId: membership.workspace_id,
-      userId: access.userId,
-      transitionId: transitionId?.trim() || "",
-    })
+    const result = await consumeBillingTransition({ workspaceId: membership.workspace_id, userId: access.userId, transitionId: transitionId?.trim() || "" })
     if (result.state !== "succeeded") return { success: false, message: "This billing transition is still being confirmed.", data: result }
     return { success: true, data: result }
   } catch (error) {
@@ -636,407 +645,497 @@ export async function consumeBillingTransitionForCurrentUser(transitionId: strin
   }
 }
 
-export async function previewPaddleCheckout(targetPlan: string, billingInterval: string = "month") {
+export async function previewCheckout(targetPlan: string, billingInterval = "month") {
   try {
     const membership = await requireCurrentWorkspaceOwner()
-    const resolvedTargetPlan = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
-    if (!isPaidPlanKey(resolvedTargetPlan) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
-    const environment = getBillingEnvironment()
-    const mapping = await getActivePaddlePrice(resolvedTargetPlan, environment, billingInterval)
-    if (!mapping) return { success: false, message: `Paddle ${environment} ${billingInterval} price mapping is not configured for plan ${resolvedTargetPlan}.` }
+    const planKey = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
+    if (!isPaidPlanKey(planKey) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
+    const environment = getBillingProviderEnvironment()
+    const provider = getBillingProviderName()
+    const mapping = await getActiveProviderPrice(planKey, provider, environment, billingInterval, "USD")
+    if (!mapping) return { success: false, message: "The " + environment + " price mapping is not configured for " + planKey + "." }
+    const adapter = getBillingProviderAdapter()
+    const price = await adapter.retrievePrice(mapping.provider_price_id)
+    assertMappedPrice(mapping, price, environment)
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider === "paddle" && subscription.provider_subscription_id && subscription.provider_status !== "canceled") return { success: false, message: "This workspace already has a Paddle subscription. Use Manage plan instead." }
     if (subscription.provider_subscription_id || subscription.source !== "system") await ensureCheckoutEligibility(subscription)
-    const preview = await getPaddleServerClient().transactions.preview({ items: [{ priceId: mapping.provider_price_id, quantity: 1 }], ...(subscription.provider_customer_id ? { customerId: subscription.provider_customer_id } : {}) })
-    const totals = preview.details.totals
-    return { success: true, data: { planKey: resolvedTargetPlan, plan: await getPlanName(resolvedTargetPlan), interval: billingInterval, amount: totals.grandTotal || totals.total, currency: totals.currencyCode, nextRecurringAmount: totals.grandTotal || totals.total, previewedAt: new Date().toISOString() } }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+    if (subscription.provider === provider && subscription.provider_subscription_id && !isTerminalBillingSubscription(subscription.provider_status)) {
+      return { success: false, message: "This workspace already has a billing subscription. Use Manage plan instead." }
+    }
+    return {
+      success: true,
+      data: {
+        planKey, plan: await getPlanName(planKey), interval: billingInterval,
+        amount: String(price.amount), currency: price.currency, nextRecurringAmount: String(price.amount),
+      },
+    }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
 }
 
-export async function startPaddleCheckout(targetPlan: string, intervalOrRequestKey?: string, requestKey?: string) {
+function checkoutReturnUrl(sessionPlaceholder = true, planKey?: string, interval?: string) {
+  const url = getBillingReturnUrl("/manage/plan")
+  const suffix = "?checkout_session_id=" + (sessionPlaceholder ? "{CHECKOUT_SESSION_ID}" : "")
+  const plan = planKey ? "&plan=" + encodeURIComponent(planKey) : ""
+  const billingInterval = interval ? "&interval=" + encodeURIComponent(interval) : ""
+  return url + suffix + plan + billingInterval
+}
+
+export async function startCheckout(targetPlan: string, billingInterval = "month", requestKey?: string) {
+  let mutation: BillingMutation | null = null
+  let transitionId: string | null = null
   try {
     const membership = await requireCurrentWorkspaceOwner()
-    const resolvedTargetPlan = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
-    const billingInterval = isBillingInterval(intervalOrRequestKey || "") ? intervalOrRequestKey as BillingInterval : "month"
-    const actualRequestKey = isBillingInterval(intervalOrRequestKey || "") ? requestKey : intervalOrRequestKey
-    if (!isPaidPlanKey(resolvedTargetPlan)) return { success: false, message: "That plan is not available." }
-    const environment = getBillingEnvironment()
-    const mapping = await getActivePaddlePrice(resolvedTargetPlan, environment, billingInterval)
-    const publicConfig = getPublicPaddleConfig()
-    if (!mapping || !publicConfig) return { success: false, message: `Paddle ${environment} price mapping is not configured for plan ${resolvedTargetPlan}.` }
-    const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider === "paddle" && subscription.provider_subscription_id && subscription.provider_status !== "canceled") return { success: false, message: "This workspace already has a Paddle subscription. Use Change plan instead." }
-    if (subscription.provider_subscription_id || subscription.source !== "system") await ensureCheckoutEligibility(subscription)
-    const idempotencyKey = normalizeRequestKey(actualRequestKey)
-    const mutation = await beginBillingMutation(membership.workspace_id, idempotencyKey, "checkout")
+    const planKey = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
+    if (!isPaidPlanKey(planKey) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
+    const environment = getBillingProviderEnvironment()
+    const provider = getBillingProviderName()
+    const mapping = await getActiveProviderPrice(planKey, provider, environment, billingInterval, "USD")
+    if (!mapping) return { success: false, message: "The " + environment + " price mapping is not configured for " + planKey + "." }
+    const adapter = getBillingProviderAdapter()
+    const price = await adapter.retrievePrice(mapping.provider_price_id)
+    assertMappedPrice(mapping, price, environment)
+
+    let subscription = await getCurrentBillingSubscription(membership.workspace_id)
+    if (subscription.provider_subscription_id || subscription.source !== "system") subscription = await ensureCheckoutEligibility(subscription)
+    if (subscription.provider === provider && subscription.provider_subscription_id && !isTerminalBillingSubscription(subscription.provider_status)) {
+      return { success: false, message: "This workspace already has a billing subscription. Use Manage plan instead." }
+    }
+
+    const supabase = createServiceRoleClient()
+    const resumedCheckout = await resumePendingCheckoutSession({
+      supabase,
+      adapter,
+      workspaceId: membership.workspace_id,
+      provider,
+      environment,
+      planKey,
+      interval: billingInterval,
+      priceId: mapping.provider_price_id,
+    })
+    if (resumedCheckout) return resumedCheckout
+
+    mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "checkout")
+    transitionId = await getCanonicalTransitionId(mutation.id, "checkout")
     if (mutation.status === "succeeded") {
-      const saved = resultRecord(mutation.result)
-      const transitionId = typeof saved.transitionId === "string" ? saved.transitionId : await getCanonicalTransitionId(mutation.id, "checkout")
-      if (typeof saved.transactionId === "string") return { success: true, data: { transactionId: saved.transactionId, transitionId, ...publicConfig } }
+      const stored = resultRecord(mutation.result)
+      const savedSession = typeof stored.sessionId === "string" ? stored.sessionId : null
+      if (savedSession) {
+        const session = await adapter.retrieveCheckoutSession(savedSession)
+        if (session.url) return { success: true, data: { url: session.url, sessionId: session.id, transitionId } }
+      }
+      return { success: true, data: { transitionId, sessionId: savedSession } }
     }
-    const existing = await createServiceRoleClient().from("billing_checkout_sessions").select("provider_transaction_id, status").eq("workspace_id", membership.workspace_id).eq("idempotency_key", idempotencyKey).maybeSingle()
+
+    const transition = transitionId
+      ? { transition_id: transitionId }
+      : await beginCanonicalTransition(mutation, membership.workspace_id, environment, "checkout", subscription.plan_key, planKey)
+    transitionId = transition.transition_id
+    const existing = await supabase.from("billing_checkout_sessions")
+      .select("provider_transaction_id, status")
+      .eq("provider", provider).eq("environment", environment)
+      .eq("workspace_id", membership.workspace_id).eq("idempotency_key", mutation.id).maybeSingle()
+    if (existing.error) throw new Error(existing.error.message)
     if (existing.data?.provider_transaction_id) {
-      const transitionId = await getCanonicalTransitionId(mutation.id, "checkout")
-      return { success: true, data: { transactionId: existing.data.provider_transaction_id, transitionId, ...publicConfig } }
+      const session = await adapter.retrieveCheckoutSession(existing.data.provider_transaction_id)
+      await saveBillingMutationResult(mutation.id, { sessionId: session.id, transitionId, planKey, interval: billingInterval })
+      if (session.url) return { success: true, data: { url: session.url, sessionId: session.id, transitionId } }
+      return { success: false, message: "Checkout is already being confirmed. Refresh in a moment to continue." }
     }
-    if (!mutation.created && mutation.status === "pending") return { success: false, message: "Checkout is already being created. Refresh in a moment to continue." }
-    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, environment, "checkout", null, resolvedTargetPlan)
-    let transaction: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["transactions"]["create"]>>
+
     try {
-      transaction = await getPaddleServerClient(idempotencyKey).transactions.create({
-        items: [{ priceId: mapping.provider_price_id, quantity: 1 }],
-        ...(subscription.provider_customer_id ? { customerId: subscription.provider_customer_id } : {}),
-        customData: { saas_core_workspace_id: membership.workspace_id, saas_core_target_plan: resolvedTargetPlan, saas_core_billing_interval: billingInterval, saas_core_billing_environment: environment },
+      const session = await adapter.createCheckoutSession({
+        mutationId: mutation.id,
+        workspaceId: membership.workspace_id,
+        planKey,
+        interval: billingInterval,
+        priceId: mapping.provider_price_id,
+        customerId: subscription.provider_customer_id,
+        successUrl: checkoutReturnUrl(true, planKey, billingInterval),
+        cancelUrl: getBillingReturnUrl("/manage/plan?checkout=cancelled&plan=" + encodeURIComponent(planKey) + "&interval=" + encodeURIComponent(billingInterval)),
       })
-    } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "checkout")
-      throw error
-    }
-    try {
-      const supabase = createServiceRoleClient()
-      const checkoutError = await supabase.from("billing_checkout_sessions").insert({ workspace_id: membership.workspace_id, environment, target_plan_key: resolvedTargetPlan, provider_price_id: mapping.provider_price_id, provider_transaction_id: transaction.id, idempotency_key: idempotencyKey, status: "created" }).then((result) => result.error)
+      if (!session.id || !session.url || session.workspaceId !== membership.workspace_id || session.mutationId !== mutation.id || session.livemode !== (environment === "live")) {
+        throw new Error("The billing provider did not return a verified hosted session.")
+      }
+      const checkoutError = await supabase.from("billing_checkout_sessions").insert({
+        workspace_id: membership.workspace_id,
+        provider,
+        environment,
+        target_plan_key: planKey,
+        provider_price_id: mapping.provider_price_id,
+        provider_transaction_id: session.id,
+        idempotency_key: mutation.id,
+        status: "created",
+      }).then((result) => result.error)
       if (checkoutError && checkoutError.code !== "23505") throw new Error(checkoutError.message)
-      await finishCanonicalTransition(transition.transition_id, "succeeded", { providerReference: transaction.id, transactionId: transaction.id })
-      await finishBillingMutation(mutation.id, "succeeded", { transactionId: transaction.id, transitionId: transition.transition_id, planKey: resolvedTargetPlan, interval: billingInterval })
+      await saveBillingMutationResult(mutation.id, { sessionId: session.id, transitionId, planKey, interval: billingInterval })
+      return { success: true, data: { url: session.url, sessionId: session.id, transitionId } }
     } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "checkout_persistence")
+      await persistUnknownProviderOutcome(mutation, transitionId, error, "checkout")
       throw error
     }
-    return { success: true, data: { transactionId: transaction.id, transitionId: transition.transition_id, ...publicConfig } }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
 }
 
-export async function createPaddlePortalSession(kind: "overview" | "payment_method" | "cancel" = "overview") {
+export async function createBillingPortalSession() {
   try {
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== "paddle" || !subscription.provider_customer_id || !subscription.provider_subscription_id) return { success: false, message: "No active Paddle billing account is available." }
-    const portal = await getPaddleServerClient().customerPortalSessions.create(subscription.provider_customer_id, [subscription.provider_subscription_id])
-    if (kind === "overview") return { success: true, url: portal.urls.general.overview }
-    const subscriptionUrl = portal.urls.subscriptions.find((item) => item.id === subscription.provider_subscription_id)
-    return { success: true, url: (kind === "payment_method" ? subscriptionUrl?.updateSubscriptionPaymentMethod : subscriptionUrl?.cancelSubscription) || portal.urls.general.overview }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id) {
+      return { success: false, message: "No active billing account is available." }
+    }
+    const portal = await getBillingProviderAdapter().createPortalSession({
+      customerId: subscription.provider_customer_id,
+      returnUrl: getBillingReturnUrl("/manage/plan"),
+    })
+    return { success: true, url: portal.url }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
 }
 
-export async function previewPaddlePlanChange(targetPlan: string, targetInterval?: string) {
+export async function previewPlanChange(targetPlan: string, targetInterval?: string) {
   try {
     if (!isPaidPlanKey(targetPlan)) return { success: false, message: "That plan is not available." }
     if (targetInterval && !isBillingInterval(targetInterval)) return { success: false, message: "That billing cycle is not available." }
-    const { subscription, mapping, interval, currentProviderPriceId, providerState, intervalPolicy } = await getPaddlePlanChangeContext(targetPlan as PaidPlanKey, targetInterval as BillingInterval | undefined)
-    const currentOrder = await getPlanSortOrder(subscription.plan_key)
-    const targetOrder = await getPlanSortOrder(targetPlan)
-    const isDowngrade = targetOrder < currentOrder
-    if (isDowngrade) {
-      const eligibility = await validatePlanChangeEligibility(subscription.workspace_id, targetPlan)
+    const context = await getPlanChangeContext(targetPlan as PaidPlanKey, targetInterval as BillingInterval | undefined)
+    if (context.isDowngrade) {
+      const eligibility = await validatePlanChangeEligibility(context.subscription.workspace_id, targetPlan)
       if (!eligibility.allowed) return downgradeEligibilityFailure(targetPlan, eligibility)
     }
-    const changeTiming = isDowngrade || intervalPolicy.timing === "period_end" ? "period_end" : "immediate"
-    if (changeTiming === "period_end" && !providerPeriodEnd(providerState, subscription)) throw new Error("The current billing period end is unavailable.")
-    const prorationBillingMode = intervalPolicy.kind === "interval_change"
-      ? intervalPolicy.providerProrationBillingMode || "do_not_bill"
-      : isDowngrade ? "do_not_bill" : "prorated_immediately"
-    const preview = await getPaddleServerClient().subscriptions.previewUpdate(subscription.provider_subscription_id as string, { items: [{ priceId: mapping.provider_price_id, quantity: 1 }], prorationBillingMode })
-    const effectiveAt = changeTiming === "period_end" ? providerPeriodEnd(providerState, subscription) : preview.nextBilledAt
-    const data = await subscriptionPreviewData(preview, targetPlan as PaidPlanKey, interval, prorationBillingMode, isDowngrade, changeTiming, effectiveAt, mapping)
-    const previewToken = crypto.randomUUID()
-    const { error } = await createServiceRoleClient().from("billing_mutations").insert({ workspace_id: subscription.workspace_id, request_key: previewToken, operation: "plan_change", status: "succeeded", fingerprint: planChangeFingerprint(subscription, currentProviderPriceId, mapping.provider_price_id), result: asJson({ ...data, previewToken, expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() }) })
+    const data = await calculatePlanChangePreview(context)
+    const previewToken = randomUUID()
+    const { error } = await createServiceRoleClient().from("billing_mutations").insert({
+      workspace_id: context.subscription.workspace_id,
+      request_key: previewToken,
+      operation: "plan_change",
+      status: "succeeded",
+      fingerprint: data.fingerprint,
+      result: asJson({ ...data, previewToken, expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() }),
+    })
     if (error) throw new Error(error.message)
     return { success: true, data: { ...data, previewToken } }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
 }
 
-export async function changePaddlePlan(targetPlan: string, previewToken?: string, requestKey?: string, targetInterval?: string) {
+export async function changePlan(targetPlan: string, previewToken?: string, requestKey?: string, targetInterval?: string) {
+  let mutation: BillingMutation | null = null
+  let transitionId: string | null = null
   try {
     if (!isPaidPlanKey(targetPlan)) return { success: false, message: "That plan is not available." }
     const membership = await requireCurrentWorkspaceOwner()
-    let preview = previewToken ? await createServiceRoleClient().from("billing_mutations").select("id, status, result, error_code, fingerprint").eq("workspace_id", membership.workspace_id).eq("request_key", previewToken).eq("operation", "plan_change").maybeSingle() : null
-    if (!previewToken || preview?.error || !preview?.data) {
-      const generated = await previewPaddlePlanChange(targetPlan, targetInterval)
+    let token = previewToken
+    let preview = token
+      ? await createServiceRoleClient().from("billing_mutations").select("id, status, result, error_code, fingerprint").eq("workspace_id", membership.workspace_id).eq("request_key", token).eq("operation", "plan_change").maybeSingle()
+      : null
+    if (!token || preview?.error || !preview?.data) {
+      const generated = await previewPlanChange(targetPlan, targetInterval)
       if (!generated.success || !generated.data) return generated
-      previewToken = generated.data.previewToken
-      preview = await createServiceRoleClient().from("billing_mutations").select("id, status, result, error_code, fingerprint").eq("workspace_id", membership.workspace_id).eq("request_key", previewToken).eq("operation", "plan_change").maybeSingle()
+      token = generated.data.previewToken
+      preview = await createServiceRoleClient().from("billing_mutations").select("id, status, result, error_code, fingerprint").eq("workspace_id", membership.workspace_id).eq("request_key", token).eq("operation", "plan_change").maybeSingle()
     }
     const stored = preview?.data
     const saved = stored ? resultRecord(stored.result) : {}
     const expiresAt = typeof saved.expiresAt === "string" ? saved.expiresAt : ""
-    if (!stored || stored.status !== "succeeded" || !expiresAt || expiresAt <= new Date().toISOString() || saved.planKey !== targetPlan) return { success: false, message: "This billing preview has expired. Review the current amount again." }
+    if (!stored || stored.status !== "succeeded" || !expiresAt || expiresAt <= new Date().toISOString() || saved.planKey !== targetPlan) {
+      return { success: false, message: "This billing preview has expired. Review the current amount again." }
+    }
+
     const operationKey = normalizeRequestKey(requestKey)
-    const mutation = await beginBillingMutation(membership.workspace_id, operationKey, "plan_change")
+    mutation = await beginBillingMutation(membership.workspace_id, operationKey, "plan_change")
+    transitionId = await getCanonicalTransitionId(mutation.id)
     if (mutation.status === "succeeded") {
-      const saved = resultRecord(mutation.result)
-      const transitionId = typeof saved.transitionId === "string" ? saved.transitionId : await getCanonicalTransitionId(mutation.id)
-      return { success: true, message: "Your billing change is already being synchronized.", data: transitionId ? { transitionId } : undefined }
+      const result = resultRecord(mutation.result)
+      return { success: true, message: "Your billing change is already synchronized.", data: { transitionId: result.transitionId || transitionId } }
     }
     if (!mutation.created) return { success: false, message: "Another billing change is already being processed. Refresh in a moment to see its result." }
-    const interval = typeof saved.interval === "string" && isBillingInterval(saved.interval) ? saved.interval : (targetInterval && isBillingInterval(targetInterval) ? targetInterval : undefined)
-    const context = await getPaddlePlanChangeContext(targetPlan as PaidPlanKey, interval)
-    const currentFingerprint = planChangeFingerprint(context.subscription, context.currentProviderPriceId, context.mapping.provider_price_id)
+
+    const interval = typeof saved.interval === "string" && isBillingInterval(saved.interval)
+      ? saved.interval
+      : targetInterval && isBillingInterval(targetInterval) ? targetInterval : undefined
+    const savedProrationDate = typeof saved.prorationDate === "number" ? saved.prorationDate : Math.floor(Date.now() / 1000)
+    const context = await getPlanChangeContext(targetPlan as PaidPlanKey, interval, savedProrationDate)
+    const currentFingerprint = planChangeFingerprint(context.subscription, context.currentPriceId, context.mapping.provider_price_id)
     if (typeof stored.fingerprint !== "string" || stored.fingerprint !== currentFingerprint) {
       await finishBillingMutation(mutation.id, "failed", {}, "PREVIEW_CHANGED")
       return { success: false, message: "The billing state changed. Review the new preview before confirming." }
     }
-    const currentOrder = await getPlanSortOrder(context.subscription.plan_key)
-    const targetOrder = await getPlanSortOrder(targetPlan)
-    const isDowngrade = targetOrder < currentOrder
-    const isIntervalChange = context.intervalPolicy.kind === "interval_change"
-    const changeTiming = isDowngrade || context.intervalPolicy.timing === "period_end" ? "period_end" : "immediate"
-    if (changeTiming === "period_end" && !context.currentPeriodEndAt) throw new Error("The current billing period end is unavailable.")
-    const mode = isIntervalChange
-      ? context.intervalPolicy.providerProrationBillingMode || "do_not_bill"
-      : isDowngrade ? "do_not_bill" : "prorated_immediately"
-    const transitionKind = isIntervalChange ? "interval_change" : isDowngrade ? "downgrade" : "upgrade"
-    const scheduledEffectiveAt = changeTiming === "period_end" ? context.currentPeriodEndAt : null
-    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, context.environment, transitionKind, context.subscription.plan_key, targetPlan, scheduledEffectiveAt)
-    let freshPreview: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["previewUpdate"]>>
-    try {
-      freshPreview = await getPaddleServerClient().subscriptions.previewUpdate(context.subscription.provider_subscription_id as string, { items: [{ priceId: context.mapping.provider_price_id, quantity: 1 }], prorationBillingMode: mode })
-    } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "plan_change_preview")
-      throw error
-    }
-    const fresh = await subscriptionPreviewData(freshPreview, targetPlan as PaidPlanKey, context.interval, mode, isDowngrade, changeTiming, changeTiming === "period_end" ? scheduledEffectiveAt : freshPreview.nextBilledAt, context.mapping)
-    if (fresh.amount !== saved.amount || fresh.action !== saved.action || fresh.interval !== saved.interval || fresh.isDowngrade !== saved.isDowngrade || fresh.recurringAmount !== saved.recurringAmount || fresh.creditToBalance !== saved.creditToBalance || fresh.currency !== saved.currency || fresh.nextBilledAt !== saved.nextBilledAt || fresh.effectiveAt !== saved.effectiveAt || fresh.changeTiming !== saved.changeTiming || fresh.prorationBillingMode !== saved.prorationBillingMode) {
+
+    const currentPreview = await calculatePlanChangePreview(context)
+    const fieldsToMatch = ["amount", "action", "interval", "isDowngrade", "recurringAmount", "creditToBalance", "currency", "nextBilledAt", "effectiveAt", "changeTiming", "prorationPolicy", "prorationDate"]
+    if (fieldsToMatch.some((field) => currentPreview[field as keyof typeof currentPreview] !== saved[field])) {
       await finishBillingMutation(mutation.id, "failed", {}, "PREVIEW_CHANGED")
-      await finishCanonicalTransition(transition.transition_id, "failed", { reason: "PREVIEW_CHANGED" }, "PREVIEW_CHANGED")
       return { success: false, message: "The billing amount changed. Review the new preview before confirming." }
     }
-    // Re-read authoritative usage immediately before persisting a scheduled
-    // downgrade or making the provider mutation. The initial preview is only
-    // advisory; this closes the confirmation-time race with product writes.
-    if (isDowngrade) {
+
+    if (context.isDowngrade) {
       const eligibility = await validatePlanChangeEligibility(membership.workspace_id, targetPlan)
       if (!eligibility.allowed) {
-        await finishCanonicalTransition(transition.transition_id, "failed", { reason: "PLAN_CHANGE_NOT_ELIGIBLE", eligibility }, "PLAN_CHANGE_NOT_ELIGIBLE")
         await finishBillingMutation(mutation.id, "failed", { targetPlan, eligibility }, "PLAN_CHANGE_NOT_ELIGIBLE")
         return downgradeEligibilityFailure(targetPlan, eligibility)
       }
     }
-    const shouldPersistScheduledProjection = isDowngrade || changeTiming === "period_end"
-    // Persist the entitlement guard before calling Paddle. A webhook can arrive
-    // before this request returns, and must not revoke access early.
-    if (shouldPersistScheduledProjection) {
-      const { error: scheduleError } = await createServiceRoleClient().from("workspace_subscriptions").update({
-        scheduled_plan_key: targetPlan,
-        scheduled_plan_at: scheduledEffectiveAt?.slice(0, 10) || null,
-        scheduled_effective_at: scheduledEffectiveAt,
-        scheduled_plan_interval: context.interval,
-        scheduled_provider_price_id: context.mapping.provider_price_id,
-      }).eq("workspace_id", membership.workspace_id)
-      if (scheduleError) throw new Error(scheduleError.message)
-    }
-    let providerResult: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["update"]>>
-    try {
-      providerResult = await getPaddleServerClient(operationKey).subscriptions.update(context.subscription.provider_subscription_id as string, { items: [{ priceId: context.mapping.provider_price_id, quantity: 1 }], prorationBillingMode: mode, onPaymentFailure: "prevent_change" })
-    } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "plan_change")
-      throw error
-    }
-    const effectiveAt = scheduledEffectiveAt || providerResult.nextBilledAt
-    try {
-      const { error: projectionError } = await createServiceRoleClient().from("workspace_subscriptions").update({
-        scheduled_plan_key: shouldPersistScheduledProjection ? targetPlan : null,
-        scheduled_plan_at: shouldPersistScheduledProjection ? (effectiveAt || context.subscription.current_period_end)?.slice(0, 10) || null : null,
-        scheduled_effective_at: shouldPersistScheduledProjection ? effectiveAt : null,
-        scheduled_plan_interval: shouldPersistScheduledProjection ? context.interval : null,
-        scheduled_provider_price_id: shouldPersistScheduledProjection ? context.mapping.provider_price_id : null,
-      }).eq("workspace_id", membership.workspace_id)
-      if (projectionError) throw new Error(projectionError.message)
-    } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "plan_change_persistence")
-      throw error
-    }
-    try {
-      await reconcilePaddleSubscriptionProjection(context.subscription)
-    } catch {
-      // Paddle remains authoritative; the polling reconciliation path will retry
-      // the local projection without turning a successful provider mutation into
-      // a false billing failure.
-    }
-    await finishCanonicalTransition(transition.transition_id, "succeeded", { targetPlan, interval: context.interval, changeTiming, effectiveAt, providerReference: providerResult.id || null })
-    await finishBillingMutation(mutation.id, "succeeded", { targetPlan, interval: context.interval, changeTiming, effectiveAt, transitionId: transition.transition_id })
-    revalidatePath("/manage/plan")
-    return { success: true, message: isDowngrade ? "Your downgrade is scheduled for the end of the current billing period." : isIntervalChange && changeTiming === "period_end" ? "Your billing cycle change is scheduled for the end of the current billing period." : isIntervalChange ? "Your billing cycle change was submitted and will be confirmed by Paddle." : "Your plan change was submitted and will unlock after Paddle confirmation.", data: { transitionId: transition.transition_id, effectiveAt, targetPlan, interval: context.interval, changeTiming } }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
-}
+    const kind: BillingTransitionKind = context.intervalPolicy.kind === "interval_change" ? "interval_change" : context.isDowngrade ? "downgrade" : "upgrade"
+    const effectiveAt = context.changeTiming === "period_end" ? context.currentPeriodEndAt : null
+    const transition = transitionId
+      ? { transition_id: transitionId }
+      : await beginCanonicalTransition(mutation, membership.workspace_id, getBillingProviderEnvironment(), kind, context.subscription.plan_key, targetPlan, effectiveAt)
+    transitionId = transition.transition_id
 
-export async function undoPaddlePlanChange(requestKey?: string) {
-  try {
-    const membership = await requireCurrentWorkspaceOwner()
-    const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (!subscription.scheduled_plan_key || !isPaidPlanKey(subscription.plan_key)) return { success: false, message: "There is no pending plan change to undo." }
-    const environment = getBillingEnvironment()
-    const providerState = await getAuthoritativePaddleState(subscription)
-    const hasPendingPlanProjection = Boolean(subscription.scheduled_plan_key && (subscription.scheduled_effective_at || subscription.scheduled_plan_at))
-    const interval = hasPendingPlanProjection && isBillingInterval(subscription.billing_interval || "")
-      ? subscription.billing_interval as BillingInterval
-      : providerState.mapping?.billing_interval || (isBillingInterval(subscription.billing_interval || "") ? subscription.billing_interval as BillingInterval : "month")
-    const mapping = await getActivePaddlePrice(subscription.plan_key as PaidPlanKey, environment, interval, subscription.billing_currency || providerState.mapping?.currency || "USD")
-    if (!mapping || !subscription.provider_subscription_id) return { success: false, message: "The current plan price mapping is not configured." }
-    const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "plan_change")
-    if (mutation.status === "succeeded") {
-      const saved = resultRecord(mutation.result)
-      const transitionId = typeof saved.transitionId === "string" ? saved.transitionId : await getCanonicalTransitionId(mutation.id)
-      return { success: true, message: "The pending change is already being undone.", data: transitionId ? { transitionId } : undefined }
-    }
-    if (!mutation.created) return { success: false, message: "Another billing change is already being processed. Refresh in a moment to see its result." }
-    const isIntervalChange = subscription.scheduled_plan_key === subscription.plan_key && isBillingInterval(subscription.scheduled_plan_interval || "") && subscription.scheduled_plan_interval !== interval
-    const transitionKind = isIntervalChange ? "interval_change" : "downgrade"
-    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, environment, transitionKind, subscription.scheduled_plan_key, subscription.plan_key, null)
-    const paddle = getPaddleServerClient()
-    let preview: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["previewUpdate"]>>
     try {
-      preview = await paddle.subscriptions.previewUpdate(subscription.provider_subscription_id, { items: [{ priceId: mapping.provider_price_id, quantity: 1 }], prorationBillingMode: "do_not_bill" })
-      await paddle.subscriptions.update(subscription.provider_subscription_id, { items: [{ priceId: mapping.provider_price_id, quantity: 1 }], prorationBillingMode: "do_not_bill", onPaymentFailure: "prevent_change" })
+      if (context.changeTiming === "period_end") {
+        const periodEnd = context.currentPeriodEndAt
+        if (!periodEnd || !context.subscription.provider_subscription_id) throw new Error("The current billing period end is unavailable.")
+        const scheduled = await getBillingProviderAdapter().schedulePlanChange({
+          subscriptionId: context.subscription.provider_subscription_id,
+          currentPriceId: context.currentPriceId,
+          targetPriceId: context.mapping.provider_price_id,
+          targetPlanKey: targetPlan,
+          targetInterval: context.interval,
+          periodEnd: Math.floor(new Date(periodEnd).getTime() / 1000),
+          intervalCount: context.interval === "year" ? 1 : 1,
+          mutationId: mutation.id,
+          idempotencyKey: mutation.id,
+        })
+        const adapter = getBillingProviderAdapter()
+        const providerState = await adapter.retrieveSubscription(context.subscription.provider_subscription_id)
+        if (providerState.scheduleId !== scheduled.scheduleId || providerState.scheduledPlan?.priceId !== context.mapping.provider_price_id ||
+          Math.abs(new Date(providerState.scheduledPlan.effectiveAt).getTime() - new Date(scheduled.effectiveAt).getTime()) > 1000) {
+          throw new Error("The scheduled billing change could not be verified with Stripe.")
+        }
+        const reconciled = await reconcileAfterProviderMutation(context.subscription.provider_subscription_id, membership.workspace_id)
+        if (reconciled) {
+          const projected = await getCurrentBillingSubscription(membership.workspace_id)
+          if (projected.scheduled_plan_key !== targetPlan || projected.scheduled_provider_price_id !== context.mapping.provider_price_id) {
+            throw new Error("The scheduled billing change could not be verified in the Workspace projection.")
+          }
+        }
+        await finishCanonicalTransition(transitionId, "succeeded", { targetPlan, interval: context.interval, effectiveAt: scheduled.effectiveAt, scheduleId: scheduled.scheduleId })
+        await finishBillingMutation(mutation.id, "succeeded", { targetPlan, interval: context.interval, changeTiming: "period_end", effectiveAt: scheduled.effectiveAt, transitionId })
+        revalidatePath("/manage/plan")
+        return { success: true, message: context.isDowngrade ? "Your downgrade is scheduled for the end of the current billing period." : "Your billing cycle change is scheduled for the end of the current billing period.", data: { transitionId, effectiveAt: scheduled.effectiveAt, targetPlan, interval: context.interval, changeTiming: "period_end" } }
+      }
+
+      const itemId = context.state.subscription.items[0]?.id
+      if (!itemId || !context.subscription.provider_subscription_id) throw new Error("The current subscription item is unavailable.")
+      const providerUpdate = await getBillingProviderAdapter().updateSubscriptionPrice({
+        subscriptionId: context.subscription.provider_subscription_id,
+        itemId,
+        priceId: context.mapping.provider_price_id,
+        prorationDate: context.prorationDate,
+        ...(context.resetBillingCycle ? { resetBillingCycle: true } : {}),
+        idempotencyKey: mutation.id,
+        metadata: {
+          workspace_id: membership.workspace_id,
+          billing_mutation_id: mutation.id,
+          billing_mutation_kind: "plan_change",
+          plan_key: targetPlan,
+          billing_interval: context.interval,
+          billing_environment: getBillingProviderEnvironment(),
+          billing_provider: getBillingProviderName(),
+        },
+      })
+      const reconciled = await reconcileAfterProviderMutation(context.subscription.provider_subscription_id, membership.workspace_id)
+      const projected = reconciled ? await getCurrentBillingSubscription(membership.workspace_id) : null
+      const projectedConfirmed = (projected?.provider_status === "active" || projected?.provider_status === "trialing")
+        ? projected.plan_key === targetPlan && projected.provider_price_id === context.mapping.provider_price_id
+        : false
+      const providerConfirmed = (providerUpdate.status === "active" || providerUpdate.status === "trialing") &&
+        providerUpdate.items[0]?.priceId === context.mapping.provider_price_id && !providerUpdate.hasPendingUpdate
+      const isConfirmed = projectedConfirmed || providerConfirmed
+      if (isConfirmed) {
+        await finishCanonicalTransition(transitionId, "succeeded", { targetPlan, interval: context.interval, changeTiming: "immediate", providerReference: context.subscription.provider_subscription_id })
+        await finishBillingMutation(mutation.id, "succeeded", { targetPlan, interval: context.interval, changeTiming: "immediate", transitionId })
+      } else {
+        await saveBillingMutationResult(mutation.id, { targetPlan, interval: context.interval, changeTiming: "immediate", transitionId })
+      }
+      revalidatePath("/manage/plan")
+      return {
+        success: true,
+        message: isConfirmed ? "Your plan change is confirmed." : "Your plan change was submitted and is waiting for provider confirmation.",
+        data: { transitionId, targetPlan, interval: context.interval, changeTiming: "immediate" },
+      }
     } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "undo_plan_change")
+      await persistUnknownProviderOutcome(mutation, transitionId, error, "plan_change")
       throw error
     }
-    try {
-      const { error: projectionError } = await createServiceRoleClient().from("workspace_subscriptions").update({ scheduled_plan_key: null, scheduled_plan_at: null, scheduled_effective_at: null, scheduled_plan_interval: null, scheduled_provider_price_id: null }).eq("workspace_id", membership.workspace_id)
-      if (projectionError) throw new Error(projectionError.message)
-      await reconcilePaddleSubscriptionProjection(subscription)
-      await finishCanonicalTransition(transition.transition_id, "succeeded", { amount: preview.updateSummary?.result.amount || null })
-      await finishBillingMutation(mutation.id, "succeeded", { amount: preview.updateSummary?.result.amount || null, transitionId: transition.transition_id })
-    } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "undo_plan_change_persistence")
-      throw error
+  } catch (error) {
+    if (mutation && mutation.status === "pending") {
+      // Provider calls are idempotent; uncertain outcomes remain recoverable by reconciliation.
     }
-    revalidatePath("/manage/plan")
-    return { success: true, message: isIntervalChange ? "The pending billing cycle change was undone." : "The pending plan change was undone.", data: { transitionId: transition.transition_id } }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) }
+    return { success: false, message: friendlyBillingError(error) }
   }
 }
 
-export async function cancelPaddleSubscription(reasonCode = "other", feedback = "", requestKey?: string) {
+export async function undoPlanChange(requestKey?: string) {
+  let transitionId: string | null = null
+  try {
+    const membership = await requireCurrentWorkspaceOwner()
+    const subscription = await getCurrentBillingSubscription(membership.workspace_id)
+    if (!subscription.scheduled_plan_key || !isPaidPlanKey(subscription.plan_key) || !subscription.provider_subscription_id) {
+      return { success: false, message: "There is no pending plan change to undo." }
+    }
+    const state = await getAuthoritativeBillingState(subscription)
+    if (!state.subscription.scheduleId) return { success: false, message: "The scheduled billing change could not be found." }
+    const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "plan_change")
+    if (mutation.status === "succeeded") {
+      const result = resultRecord(mutation.result)
+      return { success: true, message: "The pending change is already being undone.", data: { transitionId: result.transitionId || await getCanonicalTransitionId(mutation.id) } }
+    }
+    if (!mutation.created) return { success: false, message: "Another billing change is already being processed. Refresh in a moment to see its result." }
+    const intervalChange = subscription.scheduled_plan_key === subscription.plan_key &&
+      isBillingInterval(subscription.scheduled_plan_interval || "") &&
+      subscription.scheduled_plan_interval !== subscription.billing_interval
+    const kind: BillingTransitionKind = intervalChange ? "interval_change" : "downgrade"
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, getBillingProviderEnvironment(), kind, subscription.scheduled_plan_key, subscription.plan_key)
+    transitionId = transition.transition_id
+    try {
+      await getBillingProviderAdapter().releaseSchedule(subscription.provider_subscription_id, state.subscription.scheduleId, mutation.id)
+      const providerState = await getBillingProviderAdapter().retrieveSubscription(subscription.provider_subscription_id)
+      if (providerState.scheduleId || providerState.scheduledPlan) throw new Error("The scheduled billing change is still active in Stripe.")
+      const reconciled = await reconcileAfterProviderMutation(subscription.provider_subscription_id, membership.workspace_id)
+      if (reconciled) {
+        const updated = await getCurrentBillingSubscription(membership.workspace_id)
+        if (updated.scheduled_plan_key) throw new Error("The scheduled billing change is still active in the Workspace projection.")
+      }
+      await finishCanonicalTransition(transitionId, "succeeded", { scheduleReleased: true })
+      await finishBillingMutation(mutation.id, "succeeded", { transitionId })
+      revalidatePath("/manage/plan")
+      return { success: true, message: intervalChange ? "The pending billing cycle change was undone." : "The pending plan change was undone.", data: { transitionId } }
+    } catch (error) {
+      await persistUnknownProviderOutcome(mutation, transitionId, error, "undo_plan_change")
+      throw error
+    }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
+}
+
+export async function cancelSubscription(reasonCode = "other", feedback = "", requestKey?: string) {
+  let transitionId: string | null = null
   try {
     const membership = await requireCurrentWorkspaceOwner()
     if (!CANCELLATION_REASONS.has(reasonCode)) return { success: false, message: "Please choose a cancellation reason." }
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== "paddle" || !subscription.provider_subscription_id) return { success: false, message: "No active Paddle subscription is available." }
-    const providerState = await getAuthoritativePaddleState(subscription)
-    if (subscription.scheduled_plan_key || (providerState.subscription.scheduledChange && providerState.subscription.scheduledChange.action !== "cancel")) return { success: false, message: "Undo the pending plan change before scheduling cancellation." }
+    if (subscription.provider !== getBillingProviderName() || !subscription.provider_subscription_id) return { success: false, message: "No active billing subscription is available." }
+    const state = await getAuthoritativeBillingState(subscription)
+    if ((subscription.scheduled_plan_key || state.subscription.scheduledPlan) && !state.subscription.scheduleId) {
+      return { success: false, message: "The pending plan change could not be found in Stripe. Refresh the page and try again." }
+    }
     const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "cancel")
     if (mutation.status === "succeeded") {
-      const saved = resultRecord(mutation.result)
-      const transitionId = typeof saved.transitionId === "string" ? saved.transitionId : await getCanonicalTransitionId(mutation.id, "cancel")
-      return { success: true, message: "Cancellation is already scheduled.", data: transitionId ? { transitionId } : undefined }
+      const result = resultRecord(mutation.result)
+      return { success: true, message: "Cancellation is already scheduled.", data: { transitionId: result.transitionId || await getCanonicalTransitionId(mutation.id, "cancel") } }
     }
     if (!mutation.created) return { success: false, message: "Another billing change is already being processed. Refresh in a moment to see its result." }
-    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, getBillingEnvironment(), "cancel", subscription.plan_key, subscription.plan_key, providerPeriodEnd(providerState, subscription))
-    await createServiceRoleClient().from("billing_cancellation_feedback").insert({ workspace_id: membership.workspace_id, provider_subscription_id: subscription.provider_subscription_id, reason_code: reasonCode, feedback: feedback.trim().slice(0, 1000) || null })
-    let result: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["cancel"]>>
+    const effectiveAt = state.subscription.currentBillingPeriod?.endsAt || subscription.current_period_end_at || subscription.current_period_end
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, getBillingProviderEnvironment(), "cancel", subscription.plan_key, subscription.plan_key, effectiveAt)
+    transitionId = transition.transition_id
     try {
-      result = await getPaddleServerClient().subscriptions.cancel(subscription.provider_subscription_id, { effectiveFrom: "next_billing_period" })
+      const feedbackInsert = await createServiceRoleClient().from("billing_cancellation_feedback").insert({
+        workspace_id: membership.workspace_id,
+        provider_subscription_id: subscription.provider_subscription_id,
+        reason_code: reasonCode,
+        feedback: feedback.trim().slice(0, 1000) || null,
+      })
+      if (feedbackInsert.error) throw new Error(feedbackInsert.error.message)
+      const adapter = getBillingProviderAdapter()
+      if (state.subscription.scheduleId) {
+        await adapter.releaseSchedule(subscription.provider_subscription_id, state.subscription.scheduleId, mutation.id, "cancel")
+      }
+      const updated = await adapter.scheduleCancellation(subscription.provider_subscription_id, mutation.id)
+      if (!updated.cancelAtPeriodEnd) throw new Error("Stripe did not schedule cancellation at the end of the billing period.")
+      await reconcileAfterProviderMutation(subscription.provider_subscription_id, membership.workspace_id)
+      const effective = updated.cancelEffectiveAt || effectiveAt
+      await finishCanonicalTransition(transitionId, "succeeded", { effectiveAt: effective, providerReference: subscription.provider_subscription_id })
+      await finishBillingMutation(mutation.id, "succeeded", { effectiveAt: effective, transitionId })
+      revalidatePath("/manage/plan")
+      return { success: true, message: "Cancellation scheduled for the end of the current billing period.", data: { transitionId, effectiveAt: effective } }
     } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "cancel")
+      await persistUnknownProviderOutcome(mutation, transitionId, error, "cancel")
       throw error
     }
-    await finishCanonicalTransition(transition.transition_id, "succeeded", { effectiveAt: result.scheduledChange?.effectiveAt || providerPeriodEnd(providerState, subscription) })
-    await finishBillingMutation(mutation.id, "succeeded", { effectiveAt: result.scheduledChange?.effectiveAt || providerPeriodEnd(providerState, subscription), transitionId: transition.transition_id })
-    revalidatePath("/manage/plan")
-    return { success: true, message: "Cancellation scheduled for the end of the current billing period.", data: { transitionId: transition.transition_id, effectiveAt: result.scheduledChange?.effectiveAt || providerPeriodEnd(providerState, subscription) } }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
 }
 
-export async function resumePaddleSubscription(requestKey?: string) {
+export async function resumeSubscription(requestKey?: string) {
+  let transitionId: string | null = null
   try {
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== "paddle" || !subscription.provider_subscription_id) return { success: false, message: "No active Paddle subscription is available." }
-    await getAuthoritativePaddleState(subscription)
+    if (subscription.provider !== getBillingProviderName() || !subscription.provider_subscription_id) return { success: false, message: "No active billing subscription is available." }
+    await getAuthoritativeBillingState(subscription)
     const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "resume")
     if (mutation.status === "succeeded") {
-      const saved = resultRecord(mutation.result)
-      const transitionId = typeof saved.transitionId === "string" ? saved.transitionId : await getCanonicalTransitionId(mutation.id, "resume")
-      return { success: true, message: "Your subscription is already being reactivated.", data: transitionId ? { transitionId } : undefined }
+      const result = resultRecord(mutation.result)
+      return { success: true, message: "Your subscription is already being reactivated.", data: { transitionId: result.transitionId || await getCanonicalTransitionId(mutation.id, "resume") } }
     }
     if (!mutation.created) return { success: false, message: "Another billing change is already being processed. Refresh in a moment to see its result." }
-    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, getBillingEnvironment(), "resume", subscription.plan_key, subscription.plan_key, null)
-    // Paddle's resume endpoint is for paused subscriptions only. A cancellation
-    // scheduled for the next billing period is removed by explicitly clearing
-    // scheduled_change, which does not create a new charge.
+    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, getBillingProviderEnvironment(), "resume", subscription.plan_key, subscription.plan_key)
+    transitionId = transition.transition_id
     try {
-      await getPaddleServerClient().subscriptions.update(subscription.provider_subscription_id, {
-        scheduledChange: null,
-      })
-      const { error: clearError } = await createServiceRoleClient().from("workspace_subscriptions").update({
-        cancel_at_period_end: false,
-        scheduled_change_at: null,
-        scheduled_change_action: null,
-        scheduled_effective_at: null,
-      }).eq("workspace_id", membership.workspace_id)
-      if (clearError) throw new Error(clearError.message)
+      const updated = await getBillingProviderAdapter().undoScheduledCancellation(subscription.provider_subscription_id, mutation.id)
+      if (updated.cancelAtPeriodEnd) throw new Error("The subscription cancellation remains scheduled.")
+      await reconcileAfterProviderMutation(subscription.provider_subscription_id, membership.workspace_id)
+      await finishCanonicalTransition(transitionId, "succeeded", { cancellationUndone: true })
+      await finishBillingMutation(mutation.id, "succeeded", { transitionId })
+      revalidatePath("/manage/plan")
+      return { success: true, message: "Your subscription has been reactivated.", data: { transitionId } }
     } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "resume")
+      await persistUnknownProviderOutcome(mutation, transitionId, error, "resume")
       throw error
     }
-    await finishCanonicalTransition(transition.transition_id, "succeeded", {})
-    await finishBillingMutation(mutation.id, "succeeded", { transitionId: transition.transition_id })
-    revalidatePath("/manage/plan")
-    return { success: true, message: "Your subscription has been reactivated.", data: { transitionId: transition.transition_id } }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
 }
 
-export async function startPaymentMethodRecovery(requestKey?: string) {
-  try {
-    const membership = await requireCurrentWorkspaceOwner()
-    const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== "paddle" || !subscription.provider_subscription_id) return { success: false, message: "No active Paddle subscription is available." }
-    const config = getPublicPaddleConfig()
-    if (!config) return { success: false, message: "Billing checkout is not configured." }
-    const environment = getBillingEnvironment()
-    const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "payment_recovery")
-    if (mutation.status === "succeeded") {
-      const saved = resultRecord(mutation.result)
-      if (typeof saved.transactionId === "string") {
-        const transitionId = typeof saved.transitionId === "string" ? saved.transitionId : await getCanonicalTransitionId(mutation.id, "recovery")
-        return { success: true, data: { transactionId: saved.transactionId, transitionId, ...config } }
-      }
-    }
-    if (!mutation.created) return { success: false, message: "Payment recovery is already being started. Refresh in a moment to continue." }
-    const transition = await beginCanonicalTransition(mutation, membership.workspace_id, environment, "recovery", subscription.plan_key, subscription.plan_key, null)
-    let transaction: Awaited<ReturnType<ReturnType<typeof getPaddleServerClient>["subscriptions"]["getPaymentMethodChangeTransaction"]>>
-    try {
-      transaction = await getPaddleServerClient().subscriptions.getPaymentMethodChangeTransaction(subscription.provider_subscription_id)
-    } catch (error) {
-      await persistUnknownProviderOutcome(mutation, transition.transition_id, error, "payment_recovery")
-      throw error
-    }
-    await finishCanonicalTransition(transition.transition_id, "succeeded", { providerReference: transaction.id, transactionId: transaction.id })
-    await finishBillingMutation(mutation.id, "succeeded", { transactionId: transaction.id, transitionId: transition.transition_id })
-    return { success: true, data: { transactionId: transaction.id, transitionId: transition.transition_id, ...config } }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+export async function startPaymentMethodRecovery() {
+  return createBillingPortalSession()
 }
 
 export async function getBillingTransactions() {
   try {
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== "paddle" || !subscription.provider_customer_id) return { success: true, data: [] }
-    const collection = getPaddleServerClient().transactions.list({ customerId: [subscription.provider_customer_id], ...(subscription.provider_subscription_id ? { subscriptionId: [subscription.provider_subscription_id] } : {}), perPage: 50 })
-    const rows: Array<Record<string, string | null>> = []
-    for await (const transaction of collection) rows.push({ id: transaction.id, date: transaction.billedAt || transaction.createdAt, status: transaction.status, amount: transaction.details?.totals?.grandTotal || transaction.details?.totals?.total || null, currency: transaction.currencyCode, invoiceNumber: transaction.invoiceNumber, invoiceId: transaction.invoiceId })
-    return { success: true, data: rows }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id) return { success: true, data: [] }
+    const invoices = await getBillingProviderAdapter().listInvoices(subscription.provider_customer_id, subscription.provider_subscription_id)
+    return {
+      success: true,
+      data: invoices.map((invoice) => ({
+        id: invoice.id,
+        date: invoice.createdAt,
+        status: invoice.status,
+        amount: String(invoice.amountPaid || invoice.amountDue),
+        currency: invoice.currency,
+        invoiceNumber: invoice.number,
+        invoiceId: invoice.id,
+      })),
+    }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
 }
 
-export async function getBillingInvoiceUrl(transactionId: string) {
+export async function getBillingInvoiceUrl(invoiceId: string) {
   try {
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== "paddle" || !subscription.provider_customer_id || !transactionId.trim()) return { success: false, message: "Invoice is not available." }
-    const paddle = getPaddleServerClient()
-    const transaction = await paddle.transactions.get(transactionId.trim())
-    if (transaction.customerId !== subscription.provider_customer_id || (subscription.provider_subscription_id && transaction.subscriptionId && transaction.subscriptionId !== subscription.provider_subscription_id)) return { success: false, message: "Invoice is not available." }
-    try {
-      const invoice = await paddle.transactions.getInvoicePDF(transaction.id, { disposition: "inline" })
-      if (invoice.url) return { success: true, url: invoice.url }
-    } catch {
-      // Some Sandbox transactions do not expose a PDF immediately. Keep the
-      // customer in Paddle's authenticated portal instead of opening a blank
-      // or fabricated invoice URL.
+    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id || !invoiceId.trim()) {
+      return { success: false, message: "Invoice is not available." }
     }
-    const portal = await paddle.customerPortalSessions.create(subscription.provider_customer_id, [subscription.provider_subscription_id as string])
-    return { success: true, url: portal.urls.general.overview }
-  } catch (error) { return { success: false, message: friendlyBillingError(error) } }
+    const invoice = await getBillingProviderAdapter().retrieveInvoice(invoiceId.trim(), subscription.provider_customer_id, subscription.provider_subscription_id)
+    if (invoice.hostedInvoiceUrl) return { success: true, url: invoice.hostedInvoiceUrl }
+    if (invoice.pdfUrl) return { success: true, url: invoice.pdfUrl }
+    return { success: false, message: "Invoice is not available." }
+  } catch (error) {
+    return { success: false, message: friendlyBillingError(error) }
+  }
 }

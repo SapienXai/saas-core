@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/context/language-context"
 import { formatDate as formatLocalizedDate } from "@/i18n/format"
 import { useRouter } from "next/navigation"
-import { undoPaddlePlanChange } from "@/app/manage/plan/actions"
+import { undoPlanChange } from "@/app/manage/plan/actions"
 
 type ScheduledPlanChangeBannerProps = {
   currentPlanName: string
@@ -27,7 +27,7 @@ export function ScheduledPlanChangeBanner({ currentPlanName, targetPlanName, eff
   const undo = () => {
     startTransition(async () => {
       setMessage(null)
-      const result = await undoPaddlePlanChange(`undo-${crypto.randomUUID()}`)
+      const result = await undoPlanChange(`undo-${crypto.randomUUID()}`)
       if (!result.success) {
         setMessage(translateMessage(result.message || t("manage.planUsage.billing.actionFailed")))
         return

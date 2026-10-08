@@ -43,6 +43,15 @@ export function getApplicationUrl(path = "/", options: PlatformUrlOptions = {}) 
   return new URL(path, `${getApplicationOrigin(options)}/`).toString()
 }
 
+/** Keep local billing returns on the browser's public site origin. */
+export function getBillingReturnUrl(path = "/", options: PlatformUrlOptions = {}) {
+  if ((options.nodeEnv || process.env.NODE_ENV) !== "production") {
+    return new URL(path, `${getLocalOrigin(options.siteUrl ?? process.env.NEXT_PUBLIC_SITE_URL)}/`).toString()
+  }
+
+  return getApplicationUrl(path, options)
+}
+
 export function getApplicationLink(path = "/", options: PlatformUrlOptions = {}) {
   if ((options.nodeEnv || process.env.NODE_ENV) !== "production") return path
   return getApplicationUrl(path, options)

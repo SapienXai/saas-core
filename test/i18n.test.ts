@@ -68,7 +68,7 @@ describe("translations", () => {
   it("translates dynamic action messages and guest validation messages", () => {
     expect(translateMessage("es", "Workspace created successfully. The public address was already in use, so we used “nuevo-workspace”."))
       .toContain("nuevo-workspace")
-    expect(translateMessage("es", "Paddle sandbox price mapping is not configured for Scale."))
+    expect(translateMessage("es", "The sandbox price mapping is not configured for Scale."))
       .toContain("no está configurada")
     expect(translateMessage("es", "Please enter a valid email address.")).toBe("Introduce una dirección de correo electrónico válida.")
   })
@@ -102,7 +102,7 @@ describe("translations", () => {
       "../lib/privacy-notice.ts",
       "../app/invite/accept/actions.ts",
       "../app/manage/team/actions.ts",
-      "../components/manage/paddle-billing-actions.tsx",
+      "../components/manage/billing-actions.tsx",
     ]
 
     for (const file of protectedFiles) {

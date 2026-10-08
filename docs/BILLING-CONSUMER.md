@@ -51,7 +51,7 @@ silently become unrestricted.
 the managed plan cards. Presentation labels, comparison rows, and plan order
 are validated against the same keys.
 
-## 2. Map Paddle prices on the server
+## 2. Map Stripe Prices on the server
 
 Register each environment/interval mapping in Core's
 `billing_provider_prices` boundary using the existing server-only billing
@@ -61,7 +61,7 @@ Checkout and plan-change actions resolve the mapping from the requested plan
 key, interval, and active environment on the server. Do not invent or commit
 provider identifiers in Core.
 
-Paddle events are verified from the raw request body, deduplicated, ordered by
+Stripe events are verified from the raw request body, deduplicated, ordered by
 provider time/event ID, and projected into `workspace_subscriptions`.
 Checkout success or a browser callback alone never activates paid access.
 
@@ -294,7 +294,7 @@ restricted mutations are rejected. Nothing is silently deleted.
 Paused, canceled, expired-period, unknown, malformed, or unmapped billing state uses
 the configured fallback plan or returns a restrictive verification error. A
 missing customer or local subscription is not premium access. Only an explicit
-server-controlled manual plan state may bypass provider identity checks. Paddle
+server-controlled manual plan state may bypass provider identity checks. Stripe
 is not called synchronously for normal entitlement reads.
 
 ## 9. Ownership and verification checklist

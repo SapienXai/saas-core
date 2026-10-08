@@ -6,7 +6,7 @@ describe("billing interval change policy", () => {
     expect(resolveBillingIntervalChangePolicy("month", "year")).toEqual({
       kind: "interval_change",
       timing: "immediate",
-      providerProrationBillingMode: "prorated_immediately",
+      prorationPolicy: "immediate",
     })
   })
 
@@ -14,14 +14,14 @@ describe("billing interval change policy", () => {
     expect(resolveBillingIntervalChangePolicy("year", "month")).toEqual({
       kind: "interval_change",
       timing: "period_end",
-      providerProrationBillingMode: "do_not_bill",
+      prorationPolicy: "none",
     })
   })
 
   it("rejects same-interval and incomplete transitions before provider work", () => {
-    expect(resolveBillingIntervalChangePolicy("month", "month")).toEqual({ kind: "none", timing: "none", providerProrationBillingMode: null })
-    expect(resolveBillingIntervalChangePolicy("year", "year")).toEqual({ kind: "none", timing: "none", providerProrationBillingMode: null })
-    expect(resolveBillingIntervalChangePolicy(null, "year")).toEqual({ kind: "none", timing: "none", providerProrationBillingMode: null })
-    expect(resolveBillingIntervalChangePolicy("quarter" as never, "month")).toEqual({ kind: "none", timing: "none", providerProrationBillingMode: null })
+    expect(resolveBillingIntervalChangePolicy("month", "month")).toEqual({ kind: "none", timing: "none", prorationPolicy: null })
+    expect(resolveBillingIntervalChangePolicy("year", "year")).toEqual({ kind: "none", timing: "none", prorationPolicy: null })
+    expect(resolveBillingIntervalChangePolicy(null, "year")).toEqual({ kind: "none", timing: "none", prorationPolicy: null })
+    expect(resolveBillingIntervalChangePolicy("quarter" as never, "month")).toEqual({ kind: "none", timing: "none", prorationPolicy: null })
   })
 })

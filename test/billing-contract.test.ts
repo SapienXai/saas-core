@@ -105,11 +105,18 @@ describe("provider-neutral billing contract", () => {
     expect(graceEndsAt).toBe("2026-09-15T00:00:00.000Z")
     expect(resolveEffectiveBillingPlan({ status: "active", purchasedPlanKey: "paid", fallbackPlanKey: "starter_2" })).toBe("paid")
     expect(resolveEffectiveBillingPlan({ status: "paused", purchasedPlanKey: "paid", fallbackPlanKey: "starter_2" })).toBe("starter_2")
+    for (const status of ["pending", "expired", "unpaid"]) {
+      expect(resolveEffectiveBillingPlan({ status, purchasedPlanKey: "paid", fallbackPlanKey: "starter_2" })).toBe("starter_2")
+    }
     expect(resolveEffectiveBillingPlan({ status: "past_due", purchasedPlanKey: "paid", fallbackPlanKey: "starter_2", paymentGraceEndsAt: graceEndsAt!, now: new Date("2026-09-14T23:59:59.999Z") })).toBe("paid")
     expect(resolveEffectiveBillingPlan({ status: "past_due", purchasedPlanKey: "paid", fallbackPlanKey: "starter_2", paymentGraceEndsAt: graceEndsAt!, now: new Date("2026-09-15T00:00:00.000Z") })).toBe("starter_2")
     expect(resolveEffectiveBillingPlan({ status: "provider_unknown", purchasedPlanKey: "paid", fallbackPlanKey: "starter_2" })).toBe("starter_2")
 
     expect(isBillingTransitionAllowed("active", "past_due")).toBe(true)
+    expect(isBillingTransitionAllowed("pending", "active")).toBe(true)
+    expect(isBillingTransitionAllowed("active", "unpaid")).toBe(true)
+    expect(isBillingTransitionAllowed("unpaid", "active")).toBe(true)
+    expect(isBillingTransitionAllowed("expired", "active")).toBe(false)
     expect(isBillingTransitionAllowed("canceled", "past_due")).toBe(false)
     expect(resolveBillingTransition({ from: "active", to: "active", effectiveAt: "2099-01-01T00:00:00.000Z", now: new Date("2026-01-01T00:00:00.000Z") })).toBe("schedule")
     expect(resolveBillingTransition({ from: "active", to: "past_due" })).toBe("apply")

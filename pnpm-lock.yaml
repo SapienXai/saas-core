@@ -11,12 +11,6 @@ importers:
       '@hookform/resolvers':
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.85.0(react@19.2.8))
-      '@paddle/paddle-js':
-        specifier: 1.6.4
-        version: 1.6.4
-      '@paddle/paddle-node-sdk':
-        specifier: 3.10.0
-        version: 3.10.0
       '@radix-ui/react-accordion':
         specifier: 1.2.2
         version: 1.2.2(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -179,6 +173,9 @@ importers:
       sonner:
         specifier: ^1.7.4
         version: 1.7.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      stripe:
+        specifier: 23.0.0
+        version: 23.0.0(@types/node@24.13.3)
       tailwind-merge:
         specifier: ^2.6.0
         version: 2.6.1
@@ -848,13 +845,6 @@ packages:
 
   '@oxc-project/types@0.143.0':
     resolution: {integrity: sha512-u6JZdLBTLotrNC9Vd6vPssINdzcCzleKAH6EJKImQb7GtYvX5keN2dxkoK44stCc4tffE6QQRtZTXVSzsLUlWA==}
-
-  '@paddle/paddle-js@1.6.4':
-    resolution: {integrity: sha512-ncfnS6I8mCX6krZ3Sgz2iAYivGmhdI81yt9mT6prtPj4Ipd9J3M12LCJRUFL4FB7BYeeuV04c33RSEnbZUBCaA==}
-
-  '@paddle/paddle-node-sdk@3.10.0':
-    resolution: {integrity: sha512-njqp+L6e/2aR99EYh/Ulyu6B9sIyVERTFclGOznKmLZcy11pAwHoHyIgq1BUH1ybQH+YmJQmrrUQC/Rfg8JAAw==}
-    engines: {node: '>=20'}
 
   '@playwright/test@1.62.1':
     resolution: {integrity: sha512-DTcUc8qii+cpHvtOwggMtBRMjKZHXYWdw8syRYu2vtzuq4Wxphqq4NfCs5Zt44L6mA8rfDfj+PHnxFc/FeK6mQ==}
@@ -3857,6 +3847,15 @@ packages:
     resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
     engines: {node: '>=8'}
 
+  stripe@23.0.0:
+    resolution: {integrity: sha512-MDE2A5ZVVluYURORaZEVghSmnLJc3w6aHAlZSxDQMsOjOb3V0O6ro/CiaeFlJS4N7uIVmsg98ocRsPmUK6YfyA==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@types/node': '>=20'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
   styled-jsx@5.1.6:
     resolution: {integrity: sha512-qSVyDTeMotdvQYoHWLNGwRFJHC+i+ZvdBRYosOFgC+Wg1vx4frN2/RG/NA7SYqqvKNLf39P2LSRA2pu6n0XYZA==}
     engines: {node: '>= 12.0.0'}
@@ -4582,10 +4581,6 @@ snapshots:
   '@nolyfill/is-core-module@1.0.39': {}
 
   '@oxc-project/types@0.143.0': {}
-
-  '@paddle/paddle-js@1.6.4': {}
-
-  '@paddle/paddle-node-sdk@3.10.0': {}
 
   '@playwright/test@1.62.1':
     dependencies:
@@ -7757,6 +7752,10 @@ snapshots:
   strip-bom@3.0.0: {}
 
   strip-json-comments@3.1.1: {}
+
+  stripe@23.0.0(@types/node@24.13.3):
+    optionalDependencies:
+      '@types/node': 24.13.3
 
   styled-jsx@5.1.6(@babel/core@7.29.7(supports-color@7.2.0))(react@19.2.8):
     dependencies:

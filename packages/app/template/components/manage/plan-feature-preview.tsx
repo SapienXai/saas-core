@@ -2,7 +2,7 @@
 
 import { ArrowUpRight, Check, Sparkles } from "lucide-react"
 import { useLanguage } from "@/context/language-context"
-import type { BillingPresentationConfig, BillingUsageMetricConfig } from "@/components/manage/paddle-billing-actions"
+import type { BillingPresentationConfig, BillingUsageMetricConfig } from "@/components/manage/billing-actions"
 
 type PlanFeaturePreviewPlan = {
   key: string

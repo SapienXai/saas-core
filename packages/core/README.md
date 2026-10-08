@@ -36,7 +36,7 @@ Portable workspace, entitlement, catalog, public-domain, schema, manifest, and
 compatibility contracts for SaaS Core products. `CoreDomainService` describes
 the product-neutral `listDomains`, platform-subdomain mutation, and
 `resolveHost` boundary. This package contains no Next.js, Supabase
-service-role, Paddle, migration execution, or product-domain code. Its package
+service-role, provider SDK, migration execution, or product-domain code. Its package
 boundary does not own the template's migration files.
 
 Import it from Core runtime adapters and product tooling. Products define their

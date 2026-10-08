@@ -1,6 +1,6 @@
 import { Check, CreditCard, Sparkles } from "lucide-react"
 import { getPlanUsage } from "./actions"
-import { PaddleBillingActions, type BillingPresentationConfig, type BillingUsageMetricConfig } from "@/components/manage/paddle-billing-actions"
+import { BillingActions, type BillingPresentationConfig, type BillingUsageMetricConfig } from "@/components/manage/billing-actions"
 import { ScheduledPlanChangeBanner } from "@/components/manage/scheduled-plan-change-banner"
 import { getServerLanguage, translateServer, translateServerMessage } from "@/lib/server-i18n"
 import { formatDate } from "@/i18n/format"
@@ -63,7 +63,7 @@ export default async function PlanUsagePage() {
   const supportedIntervals = policy.supportedIntervals || ["month", "year"]
   const defaultInterval = policy.defaultInterval || supportedIntervals[0] || "month"
   const copyText = (key: string, fallback: string) => presentation?.copy?.[key]?.trim() || fallback
-  const providerBacked = billing.provider === "paddle"
+  const providerBacked = billing.isProviderBacked
   const currentSubscriptionPrice = resolveCurrentSubscriptionPrice({
     providerBacked,
     billingInterval: billing.billingInterval,
@@ -125,6 +125,6 @@ export default async function PlanUsagePage() {
     </ManageMetricGrid>
     <ManageSurface className="overflow-hidden"><div className="flex items-center gap-2 border-b border-slate-100 px-3.5 py-3 dark:border-white/10 sm:px-4"><Sparkles className="h-4 w-4 text-violet-600 dark:text-violet-300" /><h2 className="text-sm font-semibold text-slate-950 dark:text-white">{copyText("includedFeaturesTitle", "Included features")}</h2></div><div className="grid gap-2 p-3.5 sm:grid-cols-2 sm:p-4">{Object.entries(entitlements.features).filter(([, enabled]) => enabled).map(([key]) => <div key={key} className="flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-200"><Check className="h-3.5 w-3.5 text-emerald-600" />{displayKey(key, presentation)}</div>)}</div><div className={`grid border-t border-slate-100 dark:border-white/10 ${usageRows.length > 3 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}>{usageRows.map((row) => <ManageUsageMetric key={row.key} label={row.label} value={row.value} limit={row.limit} />)}</div></ManageSurface>
     {reachedRows.length > 0 && <section className="space-y-2" aria-label={copyText("limitReachedLabel", "Plan limits")}>{reachedRows.map((row) => <EntitlementLimitNotice key={row.key} capability={row.key} label={row.label} current={row.value} limit={row.limit} requiredPlan={nextPlanFor(row)?.name} />)}</section>}
-    <PaddleBillingActions currentPlan={entitlements.planKey} billing={billing} plans={plans} configuredPaidPlans={configuredPaidPlans} configuredPrices={configuredPrices} presentation={presentation} usageMetrics={usageMetrics} supportedIntervals={supportedIntervals} defaultInterval={defaultInterval} />
+    <BillingActions currentPlan={entitlements.planKey} billing={billing} plans={plans} configuredPaidPlans={configuredPaidPlans} configuredPrices={configuredPrices} presentation={presentation} usageMetrics={usageMetrics} supportedIntervals={supportedIntervals} defaultInterval={defaultInterval} />
   </ManagePage>
 }

@@ -1,26 +1,10 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
-import { cache } from "react"
-import { getManagementContext } from "@/lib/management-context"
-import { buildEffectivePwaBranding, getGenericPwaBranding, getPwaIconAssetUrl, getPwaIconVersion, PWA_FALLBACK_ICON } from "@/lib/pwa"
+import { getPwaIconAssetUrl, getPwaIconVersion, PWA_FALLBACK_ICON } from "@/lib/pwa"
 import { ManageLayoutClient } from "@/app/manage/manage-layout-client"
-import { toInitialContext } from "@/lib/management-layout-data"
+import { getManagementLayoutData, toInitialContext } from "@/lib/management-layout-data"
 
 export const dynamic = "force-dynamic"
-
-export const getManagementLayoutData = cache(async function getManagementLayoutData() {
-  const context = await getManagementContext()
-  if (!context?.currentWorkspace?.id) return { context, branding: getGenericPwaBranding() }
-
-  const { data: settings } = await (await import("@/lib/supabase")).createServiceRoleClient().from("workspace_pwa_settings").select("app_name, icon_url, theme_color, background_color").eq("workspace_id", context.currentWorkspace.id).maybeSingle()
-  const branding = buildEffectivePwaBranding({
-    workspaceId: context.currentWorkspace.id,
-    workspaceName: context.currentWorkspace.workspace?.name,
-    settings,
-    customBrandingEnabled: context.currentWorkspace.customPwaEnabled,
-  })
-  return { context, branding }
-})
 
 export async function generateMetadata(): Promise<Metadata> {
   const { branding } = await getManagementLayoutData()

@@ -14,7 +14,7 @@ export function isBillingInterval(value: unknown): value is BillingInterval {
   return typeof value === "string" && (BILLING_INTERVALS as readonly string[]).includes(value)
 }
 
-export const BILLING_STATUSES = ["active", "trialing", "past_due", "paused", "canceled"] as const
+export const BILLING_STATUSES = ["active", "trialing", "past_due", "paused", "canceled", "pending", "expired", "unpaid"] as const
 export type BillingStatus = (typeof BILLING_STATUSES)[number]
 export type BillingSubscriptionStatus = BillingStatus
 export type BillingLifecycleStatus = BillingStatus
@@ -308,11 +308,11 @@ export type EffectiveBillingPlanInput = {
   now?: Date
 }
 
-/** Paused/canceled/grace-expired access is projected to the configured fallback. */
+/** Non-entitled, terminal, and grace-expired states fail closed to the fallback. */
 export function resolveEffectiveBillingPlan(input: EffectiveBillingPlanInput): string {
   const now = input.now ?? new Date()
   if (!isBillingStatus(input.status)) return input.fallbackPlanKey
-  if (input.status === "paused" || input.status === "canceled") return input.fallbackPlanKey
+  if (["paused", "canceled", "pending", "expired", "unpaid"].includes(input.status)) return input.fallbackPlanKey
   if (input.status === "past_due" && isPaymentGraceExpired(input.paymentGraceEndsAt, now)) return input.fallbackPlanKey
   return input.purchasedPlanKey
 }
@@ -330,11 +330,14 @@ export function getSubscriptionPlanForStatus(
 }
 
 const ALLOWED_STATUS_TRANSITIONS: Readonly<Record<BillingStatus, readonly BillingStatus[]>> = {
-  active: ["active", "trialing", "past_due", "paused", "canceled"],
-  trialing: ["trialing", "active", "past_due", "paused", "canceled"],
-  past_due: ["past_due", "active", "paused", "canceled"],
+  active: ["active", "trialing", "past_due", "paused", "canceled", "unpaid"],
+  trialing: ["trialing", "active", "past_due", "paused", "canceled", "expired"],
+  past_due: ["past_due", "active", "paused", "canceled", "unpaid"],
   paused: ["paused", "active", "trialing", "canceled"],
   canceled: ["canceled", "active", "trialing"],
+  pending: ["pending", "active", "trialing", "past_due", "canceled", "expired"],
+  expired: ["expired"],
+  unpaid: ["unpaid", "active", "canceled"],
 }
 
 export function isBillingTransitionAllowed(from: BillingStatus | string, to: BillingStatus | string): boolean {

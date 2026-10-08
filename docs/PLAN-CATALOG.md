@@ -162,7 +162,7 @@ non-managed consumers. Its structured result is:
 exactly equal usage is eligible. `USAGE_UNAVAILABLE` and
 `CAPABILITY_NOT_CONFIGURED` are restrictive verification failures, not zero
 usage. `null` is explicit unlimited. The managed action revalidates the same
-contract immediately before writing scheduled state or calling Paddle, so a
+contract immediately before writing scheduled state or calling the provider, so a
 new product record created after preview cannot make an ineligible downgrade
 confirmable. Upgrades are unaffected.
 

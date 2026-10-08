@@ -90,7 +90,8 @@ development operator and never return secret values.
 
 ## Billing and providers
 
-Paddle webhook requests require signature validation. Provider events are
+Stripe webhook requests require signature validation against the exact raw
+request body. Provider events are
 idempotent and ordered before local subscription state changes. Entitlements
 come from the local subscription projection, not a browser callback. Live
 provider mutations and reconciliation require explicit environment guards.

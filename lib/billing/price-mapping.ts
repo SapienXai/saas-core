@@ -2,7 +2,7 @@ import "server-only"
 
 import type { PlanKey } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
-import type { BillingEnvironment } from "./paddle-client"
+import type { BillingProviderEnvironment, BillingProviderName } from "./provider"
 
 /** Provider-backed plan keys are product-owned and intentionally open-ended. */
 export type PaidPlanKey = PlanKey
@@ -19,8 +19,8 @@ export function isPaidPlanKey(value: string): value is PaidPlanKey {
 
 export type ProviderPriceMapping = {
   id: string
-  provider: string
-  environment: BillingEnvironment
+  provider: BillingProviderName
+  environment: BillingProviderEnvironment
   plan_key: PaidPlanKey
   provider_product_id: string
   provider_price_id: string
@@ -32,7 +32,7 @@ export type ProviderPriceMapping = {
 export function isProviderPriceMapping(value: unknown): value is ProviderPriceMapping {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false
   const row = value as Record<string, unknown>
-  return row.provider === "paddle" &&
+  return typeof row.provider === "string" && /^[a-z][a-z0-9_-]{0,79}$/.test(row.provider) &&
     (row.environment === "sandbox" || row.environment === "live") &&
     typeof row.id === "string" && row.id.length > 0 &&
     typeof row.plan_key === "string" && isPaidPlanKey(row.plan_key) &&
@@ -44,7 +44,7 @@ export function isProviderPriceMapping(value: unknown): value is ProviderPriceMa
 }
 
 export function assertProviderPriceMapping(value: unknown): asserts value is ProviderPriceMapping {
-  if (!isProviderPriceMapping(value)) throw new Error("Paddle price mapping is invalid.")
+  if (!isProviderPriceMapping(value)) throw new Error("Billing provider price mapping is invalid.")
 }
 
 async function isActivePlan(supabase: ReturnType<typeof createServiceRoleClient>, planKey: string) {
@@ -53,9 +53,10 @@ async function isActivePlan(supabase: ReturnType<typeof createServiceRoleClient>
   return data?.active === true
 }
 
-export async function getActivePaddlePrice(
+export async function getActiveProviderPrice(
   planKey: PaidPlanKey,
-  environment: BillingEnvironment,
+  provider: BillingProviderName,
+  environment: BillingProviderEnvironment,
   billingInterval: BillingInterval = "month",
   currency = "USD",
 ) {
@@ -64,7 +65,7 @@ export async function getActivePaddlePrice(
   const { data, error } = await supabase
     .from("billing_provider_prices")
     .select("id, provider, environment, plan_key, provider_product_id, provider_price_id, billing_interval, currency, active")
-    .eq("provider", "paddle")
+    .eq("provider", provider)
     .eq("environment", environment)
     .eq("plan_key", planKey)
     .eq("billing_interval", billingInterval)
@@ -74,16 +75,16 @@ export async function getActivePaddlePrice(
 
   if (error) throw new Error(error.message)
   if (!data) return null
-  if (!isProviderPriceMapping(data)) throw new Error("Paddle price mapping is invalid.")
+  if (!isProviderPriceMapping(data)) throw new Error("Billing provider price mapping is invalid.")
   return data
 }
 
-export async function getPaddlePriceByProviderId(providerPriceId: string, environment: BillingEnvironment, activeOnly = true) {
+export async function getProviderPriceByProviderId(provider: BillingProviderName, providerPriceId: string, environment: BillingProviderEnvironment, activeOnly = true) {
   const supabase = createServiceRoleClient()
   let query = supabase
     .from("billing_provider_prices")
     .select("id, provider, environment, plan_key, provider_product_id, provider_price_id, billing_interval, currency, active")
-    .eq("provider", "paddle")
+    .eq("provider", provider)
     .eq("environment", environment)
     .eq("provider_price_id", providerPriceId)
   if (activeOnly) query = query.eq("active", true)
@@ -95,8 +96,8 @@ export async function getPaddlePriceByProviderId(providerPriceId: string, enviro
   return data
 }
 
-export async function getActivePaddlePriceByProviderId(providerPriceId: string, environment: BillingEnvironment) {
-  return getPaddlePriceByProviderId(providerPriceId, environment, true)
+export async function getActiveProviderPriceByProviderId(provider: BillingProviderName, providerPriceId: string, environment: BillingProviderEnvironment) {
+  return getProviderPriceByProviderId(provider, providerPriceId, environment, true)
 }
 
 export function planIsPaid(planKey: PlanKey | string): planKey is PaidPlanKey {

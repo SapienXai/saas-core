@@ -5,6 +5,7 @@ import { getCurrentUserAccess, getPreferredWorkspaceId, getWorkspaceMemberships 
 import { getWorkspaceEntitlements } from "@/lib/entitlements"
 import { getDevMailpitUrl } from "@/lib/dev-mailpit"
 import { PRODUCT_CONFIG, type ProductPlanDefinition } from "@/lib/product-config"
+import { isBillingProviderConfigured } from "@/lib/billing/providers"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { createServiceRoleClient } from "@/lib/supabase"
 
@@ -97,7 +98,7 @@ export async function getSetupReadiness(): Promise<SetupReadiness | null> {
     delivery: {
       mailpitUrl: localMailpitUrl(),
       emailProviderConfigured: Boolean(process.env.RESEND_API_KEY),
-      billingProviderConfigured: Boolean(process.env.PADDLE_API_KEY),
+      billingProviderConfigured: isBillingProviderConfigured(),
       domainProviderConfigured: Boolean(process.env.VERCEL_API_TOKEN && process.env.VERCEL_PROJECT_ID),
       pushConfigured: Boolean(process.env.WEB_PUSH_PUBLIC_KEY && process.env.WEB_PUSH_PRIVATE_KEY),
     },

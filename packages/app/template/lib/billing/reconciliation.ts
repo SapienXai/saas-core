@@ -3,8 +3,6 @@ import "server-only"
 import type { ProviderPriceMapping } from "./price-mapping"
 import { createServiceRoleClient } from "@/lib/supabase"
 
-export const BILLING_PROVIDER = "paddle"
-
 export function isBillingEnvironmentMatch(expected: "sandbox" | "live", observed: unknown) {
   return observed === expected
 }
@@ -45,7 +43,7 @@ export function compareBillingEventOrder(
 }
 
 export function isTerminalBillingSubscription(status: string | null | undefined) {
-  return status === "canceled"
+  return status === "canceled" || status === "expired"
 }
 
 export type BillingSubscriptionProjectionRow = {
@@ -76,7 +74,7 @@ export type BillingSubscriptionProjectionRow = {
 
 export type CanonicalSubscription = {
   id: string
-  status: "active" | "trialing" | "past_due" | "paused" | "canceled"
+  status: "active" | "trialing" | "past_due" | "paused" | "canceled" | "pending" | "expired" | "unpaid"
   customerId: string | null
   nextBilledAt: string | null
   currentBillingPeriod: { startsAt: string; endsAt: string } | null
@@ -128,9 +126,9 @@ function currentScheduledAt(current: BillingSubscriptionProjectionRow) {
 }
 
 /**
- * Apply the same status, grace, and scheduled-plan policy to webhook and
- * reconciliation observations. This function is deliberately side-effect
- * free so fixtures can exercise it without Paddle or Supabase.
+ * Apply the same status, grace, and scheduled-plan policy to provider
+ * observations. This function is deliberately side-effect free. Adapters that
+ * fetched the authoritative current subscription can bypass event-time ordering.
  */
 export function projectCanonicalSubscription(input: {
   eventId: string
@@ -140,13 +138,15 @@ export function projectCanonicalSubscription(input: {
   fallbackPlanKey: string
   current: BillingSubscriptionProjectionRow
   now?: Date
+  authoritative?: boolean
+  scheduledPlan?: { mapping: ProviderPriceMapping; effectiveAt: string } | null
 }) : SubscriptionProjectionResult {
   const replacingTerminalSubscription = Boolean(
     input.current.provider_subscription_id &&
     input.current.provider_subscription_id !== input.subscription.id &&
     isTerminalBillingSubscription(input.current.provider_status || input.current.status),
   )
-  if (!replacingTerminalSubscription) {
+  if (!input.authoritative && !replacingTerminalSubscription) {
     const order = compareBillingEventOrder(
       input.occurredAt,
       input.eventId,
@@ -207,25 +207,34 @@ export function projectCanonicalSubscription(input: {
     ? input.current.payment_grace_ends_at || getPaymentGraceEndsAt(paymentFailureStartedAt)
     : null
   const graceExpired = input.subscription.status === "past_due" && isPaymentGraceExpired(paymentGraceEndsAt, now)
-  const pendingPlanAt = currentScheduledAt(input.current)
+  const explicitScheduledPlan = input.scheduledPlan !== undefined
+  const pendingPlanAt = explicitScheduledPlan ? input.scheduledPlan?.effectiveAt || null : currentScheduledAt(input.current)
   const pendingPlanIsFuture = Boolean(pendingPlanAt && new Date(pendingPlanAt).getTime() > now.getTime())
   const pendingPlanMatches = Boolean(
-    pendingPlanIsFuture &&
-    input.current.scheduled_plan_key === input.mapping.plan_key,
+    pendingPlanIsFuture && (explicitScheduledPlan
+      ? input.scheduledPlan?.mapping.plan_key
+      : input.current.scheduled_plan_key) === input.mapping.plan_key,
   )
-  const planKey = graceExpired || input.subscription.status === "paused" || input.subscription.status === "canceled"
+  const keepScheduledPlan = explicitScheduledPlan
+    ? Boolean(input.scheduledPlan && pendingPlanIsFuture)
+    : pendingPlanMatches && !planChangeReachedBoundary(input.current, pendingPlanAt, now) && input.subscription.status !== "canceled" && input.subscription.status !== "paused"
+  const planKey = graceExpired || ["paused", "canceled", "pending", "expired", "unpaid"].includes(input.subscription.status)
     ? input.fallbackPlanKey
-    : pendingPlanMatches
+    : explicitScheduledPlan
+      ? input.mapping.plan_key
+      : pendingPlanMatches
       ? input.current.plan_key
       : input.mapping.plan_key
-  const planChangeReachedBoundary = Boolean(
-    input.current.scheduled_plan_key === input.mapping.plan_key &&
-    pendingPlanAt &&
-    new Date(pendingPlanAt).getTime() <= now.getTime(),
-  )
-  const keepScheduledPlan = pendingPlanMatches && !planChangeReachedBoundary && input.subscription.status !== "canceled" && input.subscription.status !== "paused"
   const period = periodFor(input.subscription, input.current, input.occurredAt)
-  const issue = input.subscription.status === "past_due" ? (graceExpired ? "grace_expired" : "past_due") : null
+  const issue = input.subscription.status === "past_due"
+    ? (graceExpired ? "grace_expired" : "past_due")
+    : input.subscription.status === "pending"
+      ? "pending_payment"
+      : input.subscription.status === "unpaid"
+        ? "unpaid"
+        : input.subscription.status === "expired"
+          ? "expired"
+          : null
   return {
     applied: true,
     planKey,
@@ -239,12 +248,20 @@ export function projectCanonicalSubscription(input: {
     paymentFailureStartedAt,
     paymentGraceEndsAt,
     billingIssueCode: issue,
-    scheduledPlanKey: keepScheduledPlan ? input.current.scheduled_plan_key || null : null,
-    scheduledPlanAt: keepScheduledPlan ? input.current.scheduled_plan_at || null : null,
-    scheduledEffectiveAt: keepScheduledPlan ? input.current.scheduled_effective_at || null : null,
-    scheduledPlanInterval: keepScheduledPlan ? input.current.scheduled_plan_interval || null : null,
-    scheduledProviderPriceId: keepScheduledPlan ? input.current.scheduled_provider_price_id || null : null,
+    scheduledPlanKey: keepScheduledPlan ? explicitScheduledPlan ? input.scheduledPlan?.mapping.plan_key || null : input.current.scheduled_plan_key || null : null,
+    scheduledPlanAt: keepScheduledPlan ? explicitScheduledPlan ? input.scheduledPlan?.effectiveAt || null : input.current.scheduled_plan_at || null : null,
+    scheduledEffectiveAt: keepScheduledPlan ? explicitScheduledPlan ? input.scheduledPlan?.effectiveAt || null : input.current.scheduled_effective_at || null : null,
+    scheduledPlanInterval: keepScheduledPlan ? explicitScheduledPlan ? input.scheduledPlan?.mapping.billing_interval || null : input.current.scheduled_plan_interval || null : null,
+    scheduledProviderPriceId: keepScheduledPlan ? explicitScheduledPlan ? input.scheduledPlan?.mapping.provider_price_id || null : input.current.scheduled_provider_price_id || null : null,
   }
+}
+
+function planChangeReachedBoundary(current: BillingSubscriptionProjectionRow, pendingPlanAt: string | null, now: Date) {
+  return Boolean(
+    current.scheduled_plan_key &&
+    pendingPlanAt &&
+    new Date(pendingPlanAt).getTime() <= now.getTime(),
+  )
 }
 
 type BillingDb = ReturnType<typeof createServiceRoleClient>

@@ -158,8 +158,8 @@ describe("scheduled downgrade consumption ceiling", () => {
     installFixture({
       workspaceId,
       subscription: subscription({
-        source: "paddle",
-        provider: "paddle",
+        source: "provider",
+        provider: "stripe",
         provider_environment: "sandbox",
         provider_customer_id: "cus_fixture",
         provider_subscription_id: "sub_fixture",
@@ -188,8 +188,8 @@ describe("scheduled downgrade consumption ceiling", () => {
     installFixture({
       workspaceId,
       subscription: subscription({
-        source: "paddle",
-        provider: "paddle",
+        source: "provider",
+        provider: "stripe",
         provider_environment: "sandbox",
         provider_customer_id: "cus_fixture_boundary",
         provider_subscription_id: "sub_fixture_boundary",
@@ -291,8 +291,8 @@ describe("scheduled downgrade consumption ceiling", () => {
     const { now } = installFixture({
       workspaceId,
       subscription: subscription({
-        source: "paddle",
-        provider: "paddle",
+        source: "provider",
+        provider: "stripe",
         provider_environment: "sandbox",
         provider_customer_id: "cus_interval",
         provider_subscription_id: "sub_interval",
@@ -327,8 +327,8 @@ describe("scheduled downgrade consumption ceiling", () => {
     installFixture({
       workspaceId: boundaryId,
       subscription: subscription({
-        source: "paddle",
-        provider: "paddle",
+        source: "provider",
+        provider: "stripe",
         provider_environment: "sandbox",
         provider_customer_id: "cus_interval_boundary",
         provider_subscription_id: "sub_interval_boundary",

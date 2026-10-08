@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process"
 import { createClient } from "@supabase/supabase-js"
+import Stripe from "stripe"
 
 const [planKey, environment, productId, priceId, billingInterval = "month", currency = "USD"] = process.argv.slice(2)
 if (!/^[a-z][a-z0-9_-]{0,63}$/.test(planKey || "") || !["sandbox", "live"].includes(environment) || !productId || !priceId || !["month", "year"].includes(billingInterval) || !/^[A-Z]{3}$/.test(currency)) {
@@ -13,6 +14,38 @@ if (process.env.NODE_ENV === "production" && process.env.BILLING_ALLOW_LIVE_PRIC
 }
 if (environment === "live" && process.env.BILLING_ALLOW_LIVE_PRICE_REGISTRATION !== "true") {
   console.error("Refusing live provider mapping mutation without BILLING_ALLOW_LIVE_PRICE_REGISTRATION=true.")
+  process.exit(1)
+}
+
+const configuredEnvironment = process.env.STRIPE_ENVIRONMENT
+const apiKey = process.env.STRIPE_SECRET_KEY
+const accountId = process.env.STRIPE_ACCOUNT_ID
+if (configuredEnvironment !== environment || !apiKey || !accountId || !/^acct_[A-Za-z0-9]+$/.test(accountId)) {
+  console.error("Matching STRIPE_ENVIRONMENT, STRIPE_SECRET_KEY, and STRIPE_ACCOUNT_ID are required.")
+  process.exit(1)
+}
+if (!(environment === "sandbox" ? /^(sk|rk)_test_/.test(apiKey) : /^(sk|rk)_live_/.test(apiKey))) {
+  console.error("STRIPE_SECRET_KEY does not match the requested billing environment.")
+  process.exit(1)
+}
+
+const stripe = new Stripe(apiKey, { apiVersion: "2026-09-30.endive", maxNetworkRetries: 1 })
+let price
+try {
+  price = await stripe.prices.retrieve(priceId, { expand: ["product"] })
+} catch {
+  console.error("Could not retrieve the Stripe Price from the configured account.")
+  process.exit(1)
+}
+const actualProductId = typeof price.product === "string" ? price.product : price.product.id
+if (!price.active || actualProductId !== productId || price.livemode !== (environment === "live") ||
+  price.currency.toUpperCase() !== currency || price.recurring?.interval !== billingInterval || price.recurring.interval_count !== 1) {
+  console.error("The Stripe Price does not match the requested product, environment, currency, or billing interval.")
+  process.exit(1)
+}
+const product = typeof price.product === "string" ? await stripe.products.retrieve(actualProductId).catch(() => null) : price.product
+if (!product || ("deleted" in product && product.deleted) || !product.active) {
+  console.error("The Stripe Product is missing, deleted, or inactive.")
   process.exit(1)
 }
 
@@ -36,21 +69,21 @@ const supabase = createClient(status.API_URL, status.SERVICE_ROLE_KEY, {
 const { error: deactivateError } = await supabase
   .from("billing_provider_prices")
   .update({ active: false })
-  .eq("provider", "paddle")
+  .eq("provider", "stripe")
   .eq("environment", environment)
   .eq("plan_key", planKey)
   .eq("billing_interval", billingInterval)
   .eq("currency", currency)
   .eq("active", true)
 if (deactivateError) {
-  console.error("Could not retire the previous Paddle price mapping:", deactivateError.message)
+  console.error("Could not retire the previous Stripe price mapping:", deactivateError.message)
   process.exit(1)
 }
 
 const { error } = await supabase
   .from("billing_provider_prices")
   .upsert({
-    provider: "paddle",
+    provider: "stripe",
     environment,
     plan_key: planKey,
     provider_product_id: productId,
@@ -61,8 +94,8 @@ const { error } = await supabase
   }, { onConflict: "provider,environment,provider_price_id" })
 
 if (error) {
-  console.error("Could not register the Paddle price mapping:", error.message)
+  console.error("Could not register the Stripe price mapping:", error.message)
   process.exit(1)
 }
 
-console.log(`Registered Paddle ${environment} ${billingInterval} ${currency} price mapping for ${planKey}.`)
+console.log(`Registered Stripe ${environment} ${billingInterval} ${currency} Price mapping for ${planKey}.`)

@@ -53,8 +53,8 @@ describe("workspace entitlement policy", () => {
       subscriptionPlanKey: "paid",
       fallbackPlanKey: "default",
       status: "active",
-      source: "paddle",
-      provider: "paddle",
+      source: "provider",
+      provider: "stripe",
       providerEnvironment: "sandbox",
       providerCustomerId: "cus_fixture",
       providerSubscriptionId: null,
@@ -74,10 +74,30 @@ describe("workspace entitlement policy", () => {
     })).toBe("paid")
   })
 
+  it("accepts a complete provider-neutral Stripe projection and rejects incomplete or mismatched evidence", () => {
+    const stripe = {
+      subscriptionPlanKey: "paid",
+      fallbackPlanKey: "default",
+      status: "active",
+      source: "provider",
+      provider: "stripe",
+      providerEnvironment: "sandbox",
+      providerCustomerId: "cus_fixture",
+      providerSubscriptionId: "sub_fixture",
+      providerPriceId: "price_fixture",
+    } as const
+
+    expect(resolveEffectiveEntitlementPlan(stripe)).toBe("paid")
+    expect(resolveEffectiveEntitlementPlan({ ...stripe, providerPriceId: null })).toBe("default")
+    expect(resolveEffectiveEntitlementPlan({ ...stripe, provider: "Invalid Provider" })).toBe("default")
+    expect(resolveEffectiveEntitlementPlan({ ...stripe, provider: "other-provider" })).toBe("paid")
+    expect(resolveEffectiveEntitlementPlan({ ...stripe, source: "legacy" })).toBe("default")
+  })
+
   it("accepts only the current or an exact future target provider price", () => {
     const base = {
-      source: "paddle",
-      provider: "paddle",
+      source: "provider",
+      provider: "stripe",
       providerEnvironment: "sandbox",
       providerCustomerId: "cus_fixture",
       providerSubscriptionId: "sub_fixture",
@@ -116,8 +136,8 @@ describe("workspace entitlement policy", () => {
       subscriptionPlanKey: "paid",
       fallbackPlanKey: "default",
       status: "active",
-      source: "paddle",
-      provider: "paddle",
+      source: "provider",
+      provider: "stripe",
       providerEnvironment: "sandbox",
       providerCustomerId: "cus_fixture",
       providerSubscriptionId: "sub_fixture",
@@ -173,7 +193,7 @@ describe("workspace entitlement policy", () => {
       builder.limit = () => builder
       builder.maybeSingle = async () => {
         if (table === "workspaces") return { data: { id: "grace-workspace", status: "active", platform_status: "active" }, error: null }
-        if (table === "workspace_subscriptions") return { data: { workspace_id: "grace-workspace", plan_key: "paid", status: "past_due", source: "paddle", scheduled_plan_key: "next", scheduled_effective_at: "2026-09-20T00:00:00.000Z", payment_grace_ends_at: "2026-09-15T00:00:00.000Z" }, error: null }
+        if (table === "workspace_subscriptions") return { data: { workspace_id: "grace-workspace", plan_key: "paid", status: "past_due", source: "provider", scheduled_plan_key: "next", scheduled_effective_at: "2026-09-20T00:00:00.000Z", payment_grace_ends_at: "2026-09-15T00:00:00.000Z" }, error: null }
         if (table === "subscription_overrides") return { data: null, error: null }
         if (table === "plans" && builder.fields === "key") return { data: { key: "default" }, error: null }
         return { data: null, error: null }

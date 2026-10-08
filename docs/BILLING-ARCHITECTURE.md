@@ -37,13 +37,20 @@ types.
 ## Deferred provider mode
 
 Set `SAAS_CORE_BILLING_MODE=deferred` when a product intentionally pauses
-provider billing. Core then reports Paddle as unconfigured, returns no public
-Paddle client configuration, rejects Paddle server clients and webhook
-verification, and skips the provider checkout surface. The product keeps its
-local plan and entitlement projection. Unset the variable only for an
-environment that intentionally enables Paddle, such as a local Sandbox
-verification run. This flag does not implement or configure a replacement
-provider.
+customer-initiated billing changes. Core blocks Checkout, Portal, and plan
+mutation calls while continuing to verify webhooks and reconcile subscriptions.
+The product keeps its local plan and entitlement projection. Unset the variable
+only for an environment that intentionally enables Stripe Sandbox or Live
+billing; this flag does not change the configured environment.
+
+## Stripe Checkout tax controls
+
+Sandbox Checkout explicitly disables Stripe Managed Payments because test
+accounts can inherit an account-level setting that requires a Product tax
+classification. Live Checkout omits that override and follows the Stripe
+account configuration. Core does not infer Product tax codes or enable
+automatic tax; each consumer must establish its merchant registrations and
+Product classification before activating those Live settings.
 
 ## Product catalog and copy
 
@@ -147,6 +154,14 @@ durable state. An unknown operation result must be reconciled before another
 financial call is attempted, because an unavailable response does not prove
 that the provider did not apply the operation.
 
+Stripe idempotency keys are stable per provider step and endpoint. A mutation's
+subscription metadata marker, schedule release, and end-of-period cancellation
+use different keys while retaining the same mutation ID for journal
+correlation. Before a new financial action is blocked by an unknown mutation,
+Core re-reads a matching provider-linked subscription and reconciles its
+authoritative state. It closes the journal only when that state proves success
+or non-application; unresolved or uncorrelated outcomes remain blocked.
+
 Checkout confirmation has the same server-authoritative boundary. The
 provider's browser completion callback is only a wake-up signal for the UI.
 When signed webhook delivery is delayed or unreachable, the managed checkout
@@ -190,7 +205,7 @@ target plan
 Finite target limits require `current <= targetLimit`; `null` is explicitly
 unlimited; missing configuration or unavailable usage fails closed. The check
 runs during downgrade preview and is repeated at confirmation immediately
-before scheduling or calling Paddle. Upgrades do not require target-usage
+before scheduling or calling the provider. Upgrades do not require target-usage
 eligibility. Cancellation is a separate lifecycle operation and remains
 available even when a workspace is over fallback limits; existing data is
 never silently deleted.
@@ -233,7 +248,7 @@ The configured catalog fallback is used when a paid subscription is absent,
 past its local billing period, expired, paused, canceled, unknown, or mapped to an inactive plan. `null` is
 the only unlimited limit; an omitted or malformed capability is unavailable.
 Non-manual paid projections also require a complete local provider identity;
-normal entitlement reads never call Paddle synchronously.
+normal entitlement reads never call Stripe synchronously.
 
 The root migration and application template carry both durable billing
 persistence and the server-only entitlement lock boundary. The CLI delivers

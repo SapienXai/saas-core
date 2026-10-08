@@ -49,6 +49,9 @@ try {
   for (const phrase of ["pnpm db:start", "pnpm db:types", "billing:sync-catalog", "workspace_id", "source-only", "supabase/migrations/", "exact migration paths"]) assert(readme.includes(phrase), `generated README is missing ${phrase}`)
   for (const phrase of ["Product implementation rules", "Verification contract", "workspace_id", "server-only", "BEGIN:nextjs-agent-rules", "unknown flat migrations remain Product-owned"]) assert(agents.includes(phrase), `generated AGENTS.md is missing ${phrase}`)
   for (const phrase of [".next/", ".playwright-cli/", "supabase/.temp/", "*.tgz", "!.env.example"]) assert(gitignore.includes(phrase), `generated .gitignore is missing ${phrase}`)
+  const canonicalEnvironment = await readFile(path.join(template, ".env.example"), "utf8")
+  const cliEnvironment = await readFile(path.join(root, "packages/cli/templates/.env.example"), "utf8")
+  assert(cliEnvironment === canonicalEnvironment, "CLI fallback .env.example drifted from the canonical template")
 
   const packageJson = JSON.parse(await readFile(path.join(product, "package.json"), "utf8"))
   assert(packageJson.packageManager === "pnpm@11.21.0", "generated consumer did not inherit the supported package manager")
