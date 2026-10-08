@@ -326,7 +326,7 @@ export async function resolveHost(hostname: string): Promise<CoreHostResolution 
   }
   // A local hosted-workspace alias is a transport alias, not a second domain
   // record. Resolve its authoritative persisted platform hostname in Core so
-  // a generated `felix.127.0.0.1.nip.io:3000` URL is actually usable.
+  // a generated `workspace.127.0.0.1.nip.io:3000` URL is actually usable.
   const development = process.env.NODE_ENV !== "production" ? parseDevelopmentHostname(normalizedHostname) : null
   const resolverHostname = development?.kind === "HOSTED_WORKSPACE" && development.workspaceSlug
     ? buildPlatformHostname(development.workspaceSlug)
