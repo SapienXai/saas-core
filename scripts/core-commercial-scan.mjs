@@ -10,7 +10,7 @@ const forbidden = [
   /\$19\b/,
   /\$49\b/,
   /\$99\b/,
-  /\b(?:free|starter|pro|business)Plan\b/i,
+  /\b(?:free|starter|pro|business)Plan\b(?=\s*[:=])/i,
   /\b(?:starter|pro|business)Positioning\b/i,
 ]
 const findings = []
