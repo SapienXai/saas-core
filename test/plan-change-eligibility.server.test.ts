@@ -19,9 +19,10 @@ type QueryResult = { data: unknown; count?: number; error: null | { message: str
 
 function createService() {
   const plans = [
-    { key: "pro", name: "Pro", sort_order: 10, active: true, features: {}, limits: { "core.workspaces": 2, "core.members": 3, venues: 5 }, metadata: {} },
-    { key: "free", name: "Free", sort_order: 0, active: true, features: {}, limits: { "core.workspaces": 2, "core.members": 3, venues: 1 }, metadata: {} },
-    { key: "business", name: "Business", sort_order: 20, active: true, features: {}, limits: { "core.workspaces": null, "core.members": null, venues: null }, metadata: {} },
+    { key: "pro", name: "Pro", sort_order: 10, active: true, features: {}, limits: { "core.workspaces": 2, "core.members": 3, venues: 5, "offline.audio_bytes": 1073741824 }, metadata: {} },
+    { key: "free", name: "Free", sort_order: 0, active: true, features: {}, limits: { "core.workspaces": 2, "core.members": 3, venues: 1, "offline.audio_bytes": 1073741824 }, metadata: {} },
+    { key: "business", name: "Business", sort_order: 20, active: true, features: {}, limits: { "core.workspaces": null, "core.members": null, venues: null, "offline.audio_bytes": 1073741824 }, metadata: {} },
+    { key: "offline-small", name: "Offline Small", sort_order: 5, active: true, features: {}, limits: { "core.workspaces": 2, "core.members": 3, venues: 1, "offline.audio_bytes": 536870912 }, metadata: {} },
   ]
 
   return {
@@ -80,6 +81,29 @@ describe("server target-plan eligibility", () => {
     expect(result.violations).toEqual(expect.arrayContaining([
       { capability: "venues", reason: "LIMIT_EXCEEDED", current: 2, targetLimit: 1, excess: 1 },
     ]))
+  })
+
+  it("does not require usage for a finite capability whose target limit is unchanged", async () => {
+    productResolvers.venues = () => 1
+
+    await expect(validatePlanChangeEligibility("eligibility-workspace", "free")).resolves.toEqual({
+      targetPlanKey: "free",
+      allowed: true,
+      violations: [],
+    })
+  })
+
+  it("still fails closed when a finite target limit is reduced and its usage is unavailable", async () => {
+    productResolvers.venues = () => 1
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined)
+
+    await expect(validatePlanChangeEligibility("eligibility-workspace", "offline-small")).resolves.toMatchObject({
+      allowed: false,
+      violations: expect.arrayContaining([
+        { capability: "offline.audio_bytes", reason: "USAGE_UNAVAILABLE", targetLimit: 536870912 },
+      ]),
+    })
+    error.mockRestore()
   })
 
   it("does not require product usage for an explicit unlimited target", async () => {

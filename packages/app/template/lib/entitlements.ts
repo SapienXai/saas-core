@@ -1001,6 +1001,15 @@ export async function validatePlanChangeEligibility(
     // both cheaper and preserves the distinction between null and undefined.
     if (targetLimit === null) return { capability, targetLimit, usageAvailable: true } as const
 
+    const currentLimit = currentEntitlements.limits[capability]
+    // A finite target only needs an authoritative usage read when it tightens
+    // the current plan's limit. Requiring a product resolver for an unchanged
+    // or wider capability can block unrelated downgrades (for example, a
+    // per-device offline byte cap that is identical across every plan).
+    if (typeof currentLimit === "number" && typeof targetLimit === "number" && targetLimit >= currentLimit) {
+      return { capability, targetLimit, current: 0, usageAvailable: true } as const
+    }
+
     try {
       const current = await getUsage(workspaceId, capability, options)
       return { capability, targetLimit, current, usageAvailable: true } as const

@@ -127,8 +127,11 @@ const billing = createEntitlementService({
 
 ## Validate a target plan before downgrade
 
-The managed server helper resolves the active target catalog row, the current
-effective plan, and authoritative usage for every target/current limit key:
+The managed server helper resolves the active target catalog row and current
+effective plan. It reads authoritative usage for finite limits that are
+reduced or newly introduced by the target. Unchanged and wider limits do not
+need a usage resolver because they do not reduce the resources the Workspace
+can retain:
 
 ```ts
 import { validatePlanChangeEligibility } from "@/lib/entitlements"
@@ -158,8 +161,8 @@ non-managed consumers. Its structured result is:
 }
 ```
 
-`LIMIT_EXCEEDED` means current usage is greater than a finite target limit;
-exactly equal usage is eligible. `USAGE_UNAVAILABLE` and
+`LIMIT_EXCEEDED` means current usage is greater than a finite reduced target
+limit; exactly equal usage is eligible. `USAGE_UNAVAILABLE` and
 `CAPABILITY_NOT_CONFIGURED` are restrictive verification failures, not zero
 usage. `null` is explicit unlimited. The managed action revalidates the same
 contract immediately before writing scheduled state or calling the provider, so a
