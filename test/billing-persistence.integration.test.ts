@@ -93,14 +93,14 @@ integration("durable billing persistence against Supabase", () => {
     expect(anonymousRead.error).toBeTruthy()
     expect(authenticatedRead.error).toBeTruthy()
 
-    const account = await upsertBillingProviderAccount({ workspaceId, provider: "fixture", environment: "sandbox", providerAccountId: `account-${Date.now()}` }, service! as any)
-    const accountAgain = await upsertBillingProviderAccount({ workspaceId, provider: "fixture", environment: "sandbox", providerAccountId: account.provider_account_id, metadata: { retained: true } }, service! as any)
+    const account = await upsertBillingProviderAccount({ workspaceId, provider: "stripe", environment: "sandbox", providerAccountId: `account-${Date.now()}` }, service! as any)
+    const accountAgain = await upsertBillingProviderAccount({ workspaceId, provider: "stripe", environment: "sandbox", providerAccountId: account.provider_account_id, metadata: { retained: true } }, service! as any)
     expect(accountAgain.id).toBe(account.id)
-    const liveAccount = await upsertBillingProviderAccount({ workspaceId, provider: "fixture", environment: "live", providerAccountId: `account-live-${Date.now()}` }, service! as any)
+    const liveAccount = await upsertBillingProviderAccount({ workspaceId, provider: "stripe", environment: "live", providerAccountId: `account-live-${Date.now()}` }, service! as any)
     expect(liveAccount.id).not.toBe(account.id)
 
-    const event = await recordBillingWebhookEvent({ provider: "fixture", environment: "sandbox", providerEventId: `event-${Date.now()}`, eventType: "subscription.changed", occurredAt: new Date(), workspaceId, payload: { fixture: true } }, service! as any)
-    const duplicate = await recordBillingWebhookEvent({ provider: "fixture", environment: "sandbox", providerEventId: event.provider_event_id, eventType: "different.event", occurredAt: new Date(), workspaceId, payload: { overwritten: true } }, service! as any)
+    const event = await recordBillingWebhookEvent({ provider: "stripe", environment: "sandbox", providerEventId: `event-${Date.now()}`, eventType: "subscription.changed", occurredAt: new Date(), workspaceId, payload: { fixture: true } }, service! as any)
+    const duplicate = await recordBillingWebhookEvent({ provider: "stripe", environment: "sandbox", providerEventId: event.provider_event_id, eventType: "different.event", occurredAt: new Date(), workspaceId, payload: { overwritten: true } }, service! as any)
     expect(duplicate.id).toBe(event.id)
     expect(duplicate.event_type).toBe(event.event_type)
 
@@ -123,8 +123,8 @@ integration("durable billing persistence against Supabase", () => {
     const mutation = await service!.from("billing_mutations").insert({ workspace_id: workspaceId, request_key: `fixture-request-${Date.now()}-key`, operation: "plan_change", status: "pending" }).select("id").single()
     if (mutation.error || !mutation.data) throw mutation.error || new Error("Could not create mutation fixture.")
     const key = `transition-${Date.now()}`
-    const created = await recordBillingMutationTransition({ mutationId: mutation.data.id, workspaceId, provider: "fixture", environment: "sandbox", transitionKey: key, kind: "interval_change", toPlanKey: "fixture-plan", outcome: { status: "pending" } }, service! as any)
-    const duplicate = await recordBillingMutationTransition({ mutationId: mutation.data.id, workspaceId, provider: "fixture", environment: "sandbox", transitionKey: key, kind: "interval_change", state: "failed", outcome: { status: "failed" } }, service! as any)
+    const created = await recordBillingMutationTransition({ mutationId: mutation.data.id, workspaceId, provider: "stripe", environment: "sandbox", transitionKey: key, kind: "interval_change", toPlanKey: "fixture-plan", outcome: { status: "pending" } }, service! as any)
+    const duplicate = await recordBillingMutationTransition({ mutationId: mutation.data.id, workspaceId, provider: "stripe", environment: "sandbox", transitionKey: key, kind: "interval_change", state: "failed", outcome: { status: "failed" } }, service! as any)
     expect(created.inserted).toBe(true)
     expect(duplicate.inserted).toBe(false)
     expect(duplicate.state).toBe("pending")
