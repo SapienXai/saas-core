@@ -22,6 +22,10 @@ import type { ProviderCheckoutSession, ProviderSubscriptionSnapshot } from "./pr
 
 export const STRIPE_BILLING_PROVIDER = "stripe"
 
+export function isInitialStripeSubscriptionSourceEligible(source: string | null | undefined) {
+  return source === "system" || source === "provider" || source === "trial"
+}
+
 export type NormalizedStripeEvent = {
   eventId: string
   eventType: string
@@ -311,7 +315,9 @@ async function applyStripeSubscriptionProjection(event: NormalizedStripeEvent, s
     if (!replacingSubscription && current.provider && current.provider !== STRIPE_BILLING_PROVIDER && current.provider_subscription_id) {
       throw new StripeBillingSyncError("PROVIDER_MISMATCH", "Workspace is linked to another billing provider.")
     }
-    if (!replacingSubscription && !current.provider_subscription_id && current.source !== "system" && current.source !== "provider") {
+    // A server-granted no-card trial may convert to its first provider subscription.
+    // Manual commercial overrides remain ineligible for an initial Stripe checkout.
+    if (!replacingSubscription && !current.provider_subscription_id && !isInitialStripeSubscriptionSourceEligible(current.source)) {
       throw new StripeBillingSyncError("WORKSPACE_NOT_BILLING_ELIGIBLE", "Workspace already has a non-provider commercial state.")
     }
     if (replacingSubscription || !current.provider_subscription_id) {

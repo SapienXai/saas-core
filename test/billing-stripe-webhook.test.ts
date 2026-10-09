@@ -3,8 +3,23 @@ import {
   getMutationSettlementSteps,
   getProviderMutationSettlement,
   getStripeCheckoutEventStatus,
+  isInitialStripeSubscriptionSourceEligible,
   normalizeStripeEvent,
 } from "../lib/billing/stripe-webhook"
+
+describe("Stripe initial subscription eligibility", () => {
+  it("allows a server-granted trial to convert to its first paid subscription", () => {
+    expect(isInitialStripeSubscriptionSourceEligible("trial")).toBe(true)
+    expect(isInitialStripeSubscriptionSourceEligible("system")).toBe(true)
+    expect(isInitialStripeSubscriptionSourceEligible("provider")).toBe(true)
+  })
+
+  it("continues to reject manually assigned commercial states", () => {
+    expect(isInitialStripeSubscriptionSourceEligible("manual")).toBe(false)
+    expect(isInitialStripeSubscriptionSourceEligible(null)).toBe(false)
+    expect(isInitialStripeSubscriptionSourceEligible(undefined)).toBe(false)
+  })
+})
 
 describe("Stripe webhook normalization", () => {
   it("keeps completed asynchronous Checkout pending until payment is confirmed", () => {
