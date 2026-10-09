@@ -77,11 +77,11 @@ export function ProductBrand() {
   )
 }
 
-function AuthFormBrand() {
+function AuthFormBrand({ href }: { href: string }) {
   const logoStyle = { "--auth-form-brand-url": `url("${PRODUCT_CONFIG.logoPath}")` } as CSSProperties
 
   return (
-    <Link href="/" aria-label={`${PRODUCT_CONFIG.name} home`} className="auth-form-brand" style={logoStyle}>
+    <Link href={href} aria-label={`${PRODUCT_CONFIG.name} home`} className="auth-form-brand" style={logoStyle}>
       <span className="auth-form-brand-mark" aria-hidden="true" />
     </Link>
   )
@@ -128,7 +128,7 @@ export function AuthShell({ title, description, children, footer, backHref = "/"
         </div>
         <section className="auth-card auth-form-card" aria-labelledby="auth-title">
           <div className="auth-form-content">
-            {showBrand && <AuthFormBrand />}
+            {showBrand && <AuthFormBrand href={backHref} />}
             {children}
           </div>
           {footer && <div className="auth-form-footer">{footer}</div>}

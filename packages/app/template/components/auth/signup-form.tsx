@@ -14,7 +14,7 @@ import { useLanguage } from "@/context/language-context"
 import { getDevMailpitUrl } from "@/lib/dev-mailpit"
 import { getProductOnboardingPath, isDeferredWorkspaceProvisioning, PRODUCT_CONFIG } from "@/lib/product-config"
 
-export function SignupForm() {
+export function SignupForm({ backHref = "/" }: { backHref?: string } = {}) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [passwordConfirmation, setPasswordConfirmation] = useState("")
@@ -99,7 +99,7 @@ export function SignupForm() {
   }
 
   return (
-    <AuthShell showBrand title={getTranslation("auth.signUpTitle")} description={getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })} footer={!confirmationMessage && <span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
+    <AuthShell showBrand backHref={backHref} title={getTranslation("auth.signUpTitle")} description={getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })} footer={!confirmationMessage && <span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
       {error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>}
       {confirmationMessage ? (
         <section className="auth-confirmation" aria-live="polite">

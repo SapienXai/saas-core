@@ -11,7 +11,7 @@ import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
 
-export function LoginForm() {
+export function LoginForm({ backHref = "/" }: { backHref?: string } = {}) {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -41,6 +41,7 @@ export function LoginForm() {
   return (
     <AuthShell
       showBrand
+      backHref={backHref}
       title={getTranslation("auth.signInTitle")}
       description={getTranslation("auth.signInSubtitle")}
       footer={<span>{getTranslation("auth.dontHaveAccount")} {" "}<Link className="auth-footer-link" href={`/signup?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.register")}</Link></span>}
