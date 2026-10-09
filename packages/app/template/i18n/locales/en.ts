@@ -41,6 +41,7 @@ export const en = {
       oauthExchangeFailed: "Google sign-in could not be completed. Please start the login again.", oauthFailed: "Google sign-in was cancelled or rejected. Please try again.",
       oauthSessionMissing: "Google sign-in completed, but the session could not be saved. Please try again.", passwordLength: "Use at least 8 characters.",
       passwordMismatch: "Passwords do not match.", resendFailed: "We could not resend the confirmation email. Please try again.",
+      emailRateLimited: "We can’t send confirmation emails right now. Please try again later.",
       serviceUnavailable: "We could not reach the account service. Please try again.",
     },
   },

@@ -45,8 +45,10 @@ export async function POST(request: Request) {
     options: { emailRedirectTo: `${origin}/auth/confirm?next=${encodeURIComponent(redirect)}` },
   })
   if (error) {
-    if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&error=create_failed`, requestUrl), 303)
-    return NextResponse.json({ error: "create_failed" }, { status: 400 })
+    const emailRateLimited = error.code === "over_email_send_rate_limit"
+    const errorCode = emailRateLimited ? "email_rate_limited" : "create_failed"
+    if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&error=${errorCode}`, requestUrl), 303)
+    return NextResponse.json({ error: errorCode }, { status: emailRateLimited ? 429 : 400 })
   }
 
   if (isFormRequest) return NextResponse.redirect(new URL(`/signup?redirect=${encodeURIComponent(redirect)}&confirmation=sent`, requestUrl), 303)

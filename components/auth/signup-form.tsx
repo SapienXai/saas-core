@@ -39,9 +39,22 @@ export function SignupForm({ backHref = "/" }: { backHref?: string } = {}) {
       }
       setConfirmationMessage("sent")
     }
+    if (params.get("error") === "email_rate_limited") {
+      setError(getTranslation("auth.errors.emailRateLimited"))
+    }
     setHydrated(true)
     setDevMailpitUrl(getDevMailpitUrl(window.location.hostname))
-  }, [])
+  }, [getTranslation])
+
+  async function getAuthFailureMessage(response: Response, fallback: string) {
+    try {
+      const payload = await response.json() as { error?: unknown }
+      if (payload.error === "email_rate_limited") return getTranslation("auth.errors.emailRateLimited")
+    } catch {
+      // Keep the existing generic message for non-JSON and transport failures.
+    }
+    return fallback
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -59,7 +72,7 @@ export function SignupForm({ backHref = "/" }: { backHref?: string } = {}) {
         body: JSON.stringify({ email: email.trim(), password, redirect: redirectPath }),
       })
       if (!response.ok) {
-        setError(getTranslation("auth.errors.serviceUnavailable"))
+        setError(await getAuthFailureMessage(response, getTranslation("auth.errors.serviceUnavailable")))
         setSubmitting(false)
         return
       }
@@ -82,7 +95,7 @@ export function SignupForm({ backHref = "/" }: { backHref?: string } = {}) {
         credentials: "same-origin",
         body: JSON.stringify({ email: email.trim(), redirect: redirectPath }),
       })
-      if (!response.ok) setError(getTranslation("auth.errors.resendFailed"))
+      if (!response.ok) setError(await getAuthFailureMessage(response, getTranslation("auth.errors.resendFailed")))
       else setConfirmationMessage("sent")
     } catch {
       setError(getTranslation("auth.errors.serviceUnavailable"))

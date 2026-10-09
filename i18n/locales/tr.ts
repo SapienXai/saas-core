@@ -5,6 +5,7 @@ type Localized<T> = T extends string ? string : T extends object ? { [K in keyof
 const turkishTranslations: Record<string, string> = {
   "Close": "Kapat", "Loading…": "Yükleniyor…", "Updating…": "Güncelleniyor…", "Next": "İleri", "Previous": "Önceki", "Language": "Dil",
   "Already have an account?": "Zaten hesabınız var mı?", "Back to sign in": "Girişe dön", "Check your inbox": "Gelen kutunuzu kontrol edin",
+  "We can’t send confirmation emails right now. Please try again later.": "Şu anda onay e-postalarını gönderemiyoruz. Lütfen daha sonra tekrar deneyin.",
   "Create an account": "Hesap oluştur", "Email": "E-posta", "Forgot password?": "Şifrenizi mi unuttunuz?", "Password": "Şifre", "Sign in": "Giriş yap",
   "Create your account": "Hesabınızı oluşturun", "Create account": "Hesap oluştur", "Welcome back": "Tekrar hoş geldiniz", "Workspace": "Çalışma alanı",
   "Workspace management": "Çalışma alanı yönetimi", "Create workspace": "Çalışma alanı oluştur", "Current workspace": "Geçerli çalışma alanı",

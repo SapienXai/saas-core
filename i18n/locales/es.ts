@@ -5,6 +5,7 @@ type Localized<T> = T extends string ? string : T extends object ? { [K in keyof
 const spanishTranslations: Record<string, string> = {
   "Close": "Cerrar", "Please enter a valid email address.": "Introduce una dirección de correo electrónico válida.", "Loading…": "Cargando…", "Updating…": "Actualizando…", "Next": "Siguiente", "Previous": "Anterior", "Language": "Idioma",
   "Already have an account?": "¿Ya tienes una cuenta?", "Back to sign in": "Volver a iniciar sesión", "Check your inbox": "Revisa tu bandeja de entrada",
+  "We can’t send confirmation emails right now. Please try again later.": "No podemos enviar correos de confirmación ahora. Inténtalo de nuevo más tarde.",
   "Create an account": "Crear una cuenta", "Email": "Correo electrónico", "Forgot password?": "¿Has olvidado tu contraseña?", "Password": "Contraseña", "Sign in": "Iniciar sesión",
   "Create your account": "Crea tu cuenta", "Create account": "Crear cuenta", "Welcome back": "Te damos la bienvenida", "Workspace": "Espacio de trabajo",
   "Workspace management": "Gestión del espacio de trabajo", "Create workspace": "Crear espacio de trabajo", "Current workspace": "Espacio de trabajo actual",

@@ -32,7 +32,13 @@ export async function POST(request: Request) {
     email,
     options: { emailRedirectTo: `${origin}/auth/confirm?next=${encodeURIComponent(redirect)}` },
   })
-  if (error) return NextResponse.json({ error: "resend_failed" }, { status: 400 })
+  if (error) {
+    const emailRateLimited = error.code === "over_email_send_rate_limit"
+    return NextResponse.json(
+      { error: emailRateLimited ? "email_rate_limited" : "resend_failed" },
+      { status: emailRateLimited ? 429 : 400 },
+    )
+  }
 
   return NextResponse.json({ ok: true })
 }
