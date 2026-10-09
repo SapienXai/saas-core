@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { getAuthRedirectUrl, getRequestUrl } from "@/lib/request-url"
+import { getProductOnboardingPath, isDeferredWorkspaceProvisioning } from "@/lib/product-config"
 
 type SignUpBody = {
   email?: unknown
@@ -13,7 +14,7 @@ const formRequest = (request: Request) => request.headers.get("content-type")?.s
 function safeRedirect(value: unknown) {
   return typeof value === "string" && value.startsWith("/") && !value.startsWith("//")
     ? value
-    : "/onboarding"
+    : isDeferredWorkspaceProvisioning() ? getProductOnboardingPath() : "/onboarding"
 }
 
 export async function POST(request: Request) {

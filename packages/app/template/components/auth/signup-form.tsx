@@ -12,7 +12,7 @@ import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
 import { getDevMailpitUrl } from "@/lib/dev-mailpit"
-import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { getProductOnboardingPath, isDeferredWorkspaceProvisioning, PRODUCT_CONFIG } from "@/lib/product-config"
 
 export function SignupForm() {
   const [email, setEmail] = useState("")
@@ -24,7 +24,7 @@ export function SignupForm() {
   const [submitting, setSubmitting] = useState(false)
   const [hydrated, setHydrated] = useState(false)
   const [devMailpitUrl, setDevMailpitUrl] = useState<string | null>(null)
-  const [redirectPath, setRedirectPath] = useState("/onboarding")
+  const [redirectPath, setRedirectPath] = useState(() => isDeferredWorkspaceProvisioning() ? getProductOnboardingPath() : "/onboarding")
   const { getTranslation } = useLanguage()
 
   useEffect(() => {

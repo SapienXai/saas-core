@@ -390,7 +390,7 @@ async function ensureCheckoutEligibility(subscription: SubscriptionRow) {
       return reconciled
     }
   }
-  if (subscription.source !== "system" && subscription.source !== "provider") throw new Error("This workspace is not eligible for a new paid checkout.")
+  if (subscription.source !== "system" && subscription.source !== "provider" && subscription.source !== "trial") throw new Error("This workspace is not eligible for a new paid checkout.")
   return subscription
 }
 
@@ -674,15 +674,35 @@ export async function previewCheckout(targetPlan: string, billingInterval = "mon
   }
 }
 
-function checkoutReturnUrl(sessionPlaceholder = true, planKey?: string, interval?: string) {
-  const url = getBillingReturnUrl("/manage/plan")
-  const suffix = "?checkout_session_id=" + (sessionPlaceholder ? "{CHECKOUT_SESSION_ID}" : "")
-  const plan = planKey ? "&plan=" + encodeURIComponent(planKey) : ""
-  const billingInterval = interval ? "&interval=" + encodeURIComponent(interval) : ""
-  return url + suffix + plan + billingInterval
+function safeCheckoutReturnPath(value?: string) {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.includes("\\") || /[\r\n]/.test(value)) return "/manage/plan"
+  try {
+    const parsed = new URL(value, "https://saas-core.invalid")
+    if (parsed.origin !== "https://saas-core.invalid") return "/manage/plan"
+    return parsed.pathname + parsed.search + parsed.hash
+  } catch {
+    return "/manage/plan"
+  }
 }
 
-export async function startCheckout(targetPlan: string, billingInterval = "month", requestKey?: string) {
+function checkoutReturnUrl(sessionPlaceholder = true, planKey?: string, interval?: string, returnPath?: string) {
+  const safePath = safeCheckoutReturnPath(returnPath)
+  const separator = safePath.includes("?") ? "&" : "?"
+  const session = "checkout_session_id=" + (sessionPlaceholder ? "{CHECKOUT_SESSION_ID}" : "")
+  const plan = planKey ? "&plan=" + encodeURIComponent(planKey) : ""
+  const billingInterval = interval ? "&interval=" + encodeURIComponent(interval) : ""
+  return getBillingReturnUrl(safePath + separator + session + plan + billingInterval)
+}
+
+function checkoutCancelUrl(planKey: string, interval: string, returnPath?: string) {
+  const parsed = new URL(safeCheckoutReturnPath(returnPath), "https://saas-core.invalid")
+  parsed.searchParams.set("checkout", "cancelled")
+  parsed.searchParams.set("plan", planKey)
+  parsed.searchParams.set("interval", interval)
+  return getBillingReturnUrl(parsed.pathname + parsed.search + parsed.hash)
+}
+
+export async function startCheckout(targetPlan: string, billingInterval = "month", requestKey?: string, returnPath?: string) {
   let mutation: BillingMutation | null = null
   let transitionId: string | null = null
   try {
@@ -752,8 +772,8 @@ export async function startCheckout(targetPlan: string, billingInterval = "month
         interval: billingInterval,
         priceId: mapping.provider_price_id,
         customerId: subscription.provider_customer_id,
-        successUrl: checkoutReturnUrl(true, planKey, billingInterval),
-        cancelUrl: getBillingReturnUrl("/manage/plan?checkout=cancelled&plan=" + encodeURIComponent(planKey) + "&interval=" + encodeURIComponent(billingInterval)),
+        successUrl: checkoutReturnUrl(true, planKey, billingInterval, returnPath),
+        cancelUrl: checkoutCancelUrl(planKey, billingInterval, returnPath),
       })
       if (!session.id || !session.url || session.workspaceId !== membership.workspace_id || session.mutationId !== mutation.id || session.livemode !== (environment === "live")) {
         throw new Error("The billing provider did not return a verified hosted session.")

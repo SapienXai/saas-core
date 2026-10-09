@@ -6,6 +6,7 @@ import { getAccountState, safeInternalRedirect } from "@/lib/account-state"
 import { getCurrentUserAccess } from "@/lib/auth-utils"
 import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
 import { getRequestUrl } from "@/lib/request-url"
+import { getProductOnboardingPath, isDeferredWorkspaceProvisioning } from "@/lib/product-config"
 
 export async function GET(request: Request) {
   const url = getRequestUrl(request)
@@ -34,8 +35,9 @@ export async function GET(request: Request) {
   const state = await getAccountState()
   const invitationRequested = Boolean((await cookies()).get(INVITATION_INTENT_COOKIE)?.value) || next === "/invite/accept"
   const access = state.authenticated && !state.workspaceId ? await getCurrentUserAccess() : null
+  const deferredProductSetup = state.authenticated && !state.workspaceId && isDeferredWorkspaceProvisioning() ? getProductOnboardingPath() : null
   const destination = state.authenticated
-    ? invitationRequested ? "/invite/accept" : access?.platformRole && !state.workspaceId ? "/platform" : state.path === "/onboarding" ? "/onboarding" : "/app"
+    ? invitationRequested ? "/invite/accept" : access?.platformRole && !state.workspaceId ? "/platform" : deferredProductSetup || (state.path === "/onboarding" ? "/onboarding" : "/app")
     : "/login"
   return NextResponse.redirect(new URL(destination, url))
 }

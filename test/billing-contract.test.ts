@@ -9,6 +9,7 @@ import {
   resolveBillingRetry,
   resolveBillingTransition,
   resolveEffectiveBillingPlan,
+  validateBillingPolicy,
 } from "../packages/core/src/index"
 
 function catalog(overrides: Record<string, unknown> = {}) {
@@ -64,6 +65,7 @@ describe("provider-neutral billing contract", () => {
         supportedIntervals: ["month", "year"],
         defaultInterval: "year",
         paymentGracePeriodDays: 14,
+        initialWorkspaceTrialDays: 14,
         presentation: {
           planOrder: ["starter_2", "team_plus"],
           plans: { team_plus: { description: "For growing teams", highlights: ["Shared work"] } },
@@ -77,8 +79,15 @@ describe("provider-neutral billing contract", () => {
 
     const result = defineProductConfig(config)
     expect(result.billing?.defaultInterval).toBe("year")
+    expect(result.billing?.initialWorkspaceTrialDays).toBe(14)
     expect(result.catalog.plans[0]?.limits?.["core.workspaces"]).toBeNull()
     expect(getBillingPlanOrder(result.catalog.plans.map((plan) => plan.key), result.billing?.presentation?.planOrder)).toEqual(["starter_2", "team_plus"])
+  })
+
+  it("restricts the configured first Workspace trial duration to a safe range", () => {
+    expect(() => validateBillingPolicy({ initialWorkspaceTrialDays: 0 })).toThrow(/initialWorkspaceTrialDays/)
+    expect(() => validateBillingPolicy({ initialWorkspaceTrialDays: 91 })).toThrow(/initialWorkspaceTrialDays/)
+    expect(validateBillingPolicy({ initialWorkspaceTrialDays: 14 })).toBeUndefined()
   })
 
   it("rejects malformed catalogs and optional billing fields", () => {

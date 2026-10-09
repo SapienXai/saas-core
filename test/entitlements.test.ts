@@ -74,6 +74,29 @@ describe("workspace entitlement policy", () => {
     })).toBe("paid")
   })
 
+  it("grants an internal trial only before its recorded boundary", () => {
+    const trial = {
+      subscriptionPlanKey: "pro",
+      fallbackPlanKey: "free",
+      source: "trial",
+      status: "trialing",
+      initialTrialEndsAt: "2026-09-15T12:00:00.000Z",
+      currentPeriodEndAt: "2026-09-15T12:00:00.000Z",
+    } as const
+
+    expect(resolveEffectiveEntitlementPlan({ ...trial, now: beforeBoundary })).toBe("pro")
+    expect(resolveEffectiveEntitlementPlan({ ...trial, now: exactBoundary })).toBe("free")
+    expect(resolveEffectiveEntitlementPlan({ ...trial, now: beforeBoundary, initialTrialEndsAt: null })).toBe("free")
+    expect(resolveEffectiveEntitlementPlan({ ...trial, now: beforeBoundary, status: "active" })).toBe("free")
+    expect(resolveEffectiveEntitlementPlan({
+      subscriptionPlanKey: "free",
+      fallbackPlanKey: "free",
+      source: "system",
+      status: "active",
+      now: beforeBoundary,
+    })).toBe("free")
+  })
+
   it("accepts a complete provider-neutral Stripe projection and rejects incomplete or mismatched evidence", () => {
     const stripe = {
       subscriptionPlanKey: "paid",

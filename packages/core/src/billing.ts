@@ -88,6 +88,8 @@ export type ProductBillingPolicy = {
   paymentGracePeriodDays?: number
   /** Short alias accepted for product configuration files. */
   gracePeriodDays?: number
+  /** Duration for a no-card first-Workspace trial, when a product provisions one. */
+  initialWorkspaceTrialDays?: number
   proration?: BillingProrationPolicy
   retry?: BillingRetryPolicy
 }
@@ -207,6 +209,9 @@ export function validateBillingPolicy(value: unknown, path = "billing"): asserts
   if (policy.defaultInterval !== undefined && policy.supportedIntervals !== undefined && !policy.supportedIntervals.includes(policy.defaultInterval)) throw new Error(`${path}.defaultInterval must be listed in supportedIntervals.`)
   for (const key of ["paymentGracePeriodDays", "gracePeriodDays"]) {
     if (policy[key] !== undefined && (!finiteNonNegativeInteger(policy[key]) || Number(policy[key]) > 366)) throw new Error(`${path}.${key} must be an integer from 0 through 366.`)
+  }
+  if (policy.initialWorkspaceTrialDays !== undefined && (!finiteNonNegativeInteger(policy.initialWorkspaceTrialDays) || Number(policy.initialWorkspaceTrialDays) < 1 || Number(policy.initialWorkspaceTrialDays) > 90)) {
+    throw new Error(`${path}.initialWorkspaceTrialDays must be an integer from 1 through 90.`)
   }
   if (policy.proration !== undefined) {
     if (!policy.proration || typeof policy.proration !== "object" || Array.isArray(policy.proration)) throw new Error(`${path}.proration must be an object.`)

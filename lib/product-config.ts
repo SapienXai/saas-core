@@ -1,4 +1,5 @@
 import productCatalog from "@/product.catalog.json"
+import type { ProductBillingConfig } from "@sapienx/saas-core"
 import type { PlatformRole } from "./platform-types"
 
 export type ProductPlanDefinition = {
@@ -25,6 +26,7 @@ export type ProductCatalog = {
   defaultPlanKey: string
   plans: readonly ProductPlanDefinition[]
   usageMetrics?: readonly ProductUsageMetricDefinition[]
+  billingPolicy?: ProductBillingConfig
 }
 
 export type ProductOnboardingConfig = {
@@ -107,6 +109,7 @@ export const PRODUCT_CONFIG: ProductConfig = {
     pwa: true,
   },
   onboarding: { productSetupPath: "/app" },
+  platformNavigation: [],
   catalog: productCatalog as ProductCatalog,
 }
 

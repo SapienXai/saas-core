@@ -44,6 +44,9 @@ export type WorkspaceEntitlements = {
     source: string
     currentPeriodStart: string | null
     currentPeriodEnd: string | null
+    trialStartedAt: string | null
+    trialEndsAt: string | null
+    hasInitialTrial: boolean
     cancelAtPeriodEnd: boolean
     scheduledChangeAction: string | null
     scheduledChangeAt: string | null
@@ -302,6 +305,7 @@ export type EffectiveEntitlementPlanInput = {
   providerSubscriptionId?: string | null
   providerPriceId?: string | null
   currentPeriodEndAt?: string | null
+  initialTrialEndsAt?: string | null
   fallbackPlanKey?: string | null
   paymentGraceEndsAt?: string | null
   now?: Date
@@ -315,6 +319,11 @@ function hasTrustedProviderProjection(input: EffectiveEntitlementPlanInput) {
   // complete local provider identity written by the verified billing boundary.
   if (input.source === "manual") return true
   if (input.source === "system") return false
+  if (input.source === "trial") {
+    return input.status === "trialing"
+      && isValidTimestamp(input.initialTrialEndsAt)
+      && new Date(input.initialTrialEndsAt).getTime() > effectiveNow(input.now).getTime()
+  }
   const providerProjection = input.source === "provider" && typeof input.provider === "string" && /^[a-z][a-z0-9_-]{0,79}$/.test(input.provider)
   if (input.source !== undefined && !providerProjection) return false
 
@@ -442,6 +451,8 @@ type SubscriptionRecord = {
   scheduled_change_action?: string | null
   current_period_start_at?: string | null
   current_period_end_at?: string | null
+  initial_trial_started_at?: string | null
+  initial_trial_ends_at?: string | null
   cancel_at_period_end?: boolean | null
   payment_failure_started_at?: string | null
   payment_grace_ends_at?: string | null
@@ -464,11 +475,20 @@ async function fallbackPlanKey(service: ReturnType<typeof createServiceRoleClien
 
 const getSubscription = cache(async function getSubscription(workspaceId: string): Promise<SubscriptionRecord & { override_id: string | null; override_plan_key: string | null; grace_expired: boolean }> {
   const service = createServiceRoleClient() as any
-  const { data, error } = await service
+  let { data, error } = await service
     .from("workspace_subscriptions")
-    .select("workspace_id, plan_key, status, source, provider, provider_environment, provider_customer_id, provider_subscription_id, provider_price_id, current_period_start, current_period_end, current_period_start_at, current_period_end_at, cancel_at_period_end, scheduled_change_at, scheduled_change_action, scheduled_plan_key, scheduled_plan_at, scheduled_effective_at, scheduled_provider_price_id, payment_failure_started_at, payment_grace_ends_at, billing_issue_code")
+    .select("workspace_id, plan_key, status, source, provider, provider_environment, provider_customer_id, provider_subscription_id, provider_price_id, current_period_start, current_period_end, current_period_start_at, current_period_end_at, initial_trial_started_at, initial_trial_ends_at, cancel_at_period_end, scheduled_change_at, scheduled_change_action, scheduled_plan_key, scheduled_plan_at, scheduled_effective_at, scheduled_provider_price_id, payment_failure_started_at, payment_grace_ends_at, billing_issue_code")
     .eq("workspace_id", workspaceId)
     .maybeSingle()
+  if (error?.code === "42703" && String(error.message || "").includes("initial_trial_")) {
+    const legacy = await service
+      .from("workspace_subscriptions")
+      .select("workspace_id, plan_key, status, source, provider, provider_environment, provider_customer_id, provider_subscription_id, provider_price_id, current_period_start, current_period_end, current_period_start_at, current_period_end_at, cancel_at_period_end, scheduled_change_at, scheduled_change_action, scheduled_plan_key, scheduled_plan_at, scheduled_effective_at, scheduled_provider_price_id, payment_failure_started_at, payment_grace_ends_at, billing_issue_code")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle()
+    data = legacy.data ? { ...legacy.data, initial_trial_started_at: null, initial_trial_ends_at: null } : null
+    error = legacy.error
+  }
   if (error) throw new Error(error.message)
 
   // The subscription row is normally created by the workspace trigger. The
@@ -485,6 +505,8 @@ const getSubscription = cache(async function getSubscription(workspaceId: string
     current_period_end: null,
     current_period_start_at: null,
     current_period_end_at: null,
+    initial_trial_started_at: null,
+    initial_trial_ends_at: null,
     cancel_at_period_end: false,
     scheduled_change_at: null,
     scheduled_change_action: null,
@@ -600,12 +622,13 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
     providerSubscriptionId: textValue(subscription.provider_subscription_id),
     providerPriceId: textValue(subscription.provider_price_id),
     currentPeriodEndAt: textValue(subscription.current_period_end_at) || textValue(subscription.current_period_end),
+    initialTrialEndsAt: textValue(subscription.initial_trial_ends_at),
     fallbackPlanKey: fallback,
     paymentGraceEndsAt: textValue(subscription.payment_grace_ends_at),
     now,
   })
   let providerMappingUnavailable = false
-  if (resolvedKey && resolvedKey !== fallback && !subscription.override_id && subscription.source !== "manual") {
+  if (resolvedKey && resolvedKey !== fallback && !subscription.override_id && subscription.source !== "manual" && subscription.source !== "trial") {
     const provider = textValue(subscription.provider)
     const providerEnvironment = textValue(subscription.provider_environment)
     const providerPriceId = textValue(subscription.provider_price_id)
@@ -704,6 +727,9 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
       source: subscription.override_id ? "manual" : subscription.source,
       currentPeriodStart: subscription.current_period_start || null,
       currentPeriodEnd: subscription.current_period_end || null,
+      trialStartedAt: textValue(subscription.initial_trial_started_at),
+      trialEndsAt: textValue(subscription.initial_trial_ends_at),
+      hasInitialTrial: isValidTimestamp(subscription.initial_trial_ends_at),
       cancelAtPeriodEnd: subscription.cancel_at_period_end === true,
       scheduledChangeAction: textValue(subscription.scheduled_change_action),
       scheduledChangeAt,

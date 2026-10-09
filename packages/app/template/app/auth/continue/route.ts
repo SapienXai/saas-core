@@ -4,6 +4,7 @@ import { getCurrentUserAccess } from "@/lib/auth-utils"
 import { cookies } from "next/headers"
 import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
 import { getRequestUrl } from "@/lib/request-url"
+import { getProductOnboardingPath, isDeferredWorkspaceProvisioning } from "@/lib/product-config"
 
 export async function GET(request: Request) {
   const url = getRequestUrl(request)
@@ -21,8 +22,9 @@ export async function GET(request: Request) {
   const access = requested.startsWith("/platform") || !state.workspaceId ? await getCurrentUserAccess() : null
   const platformRequested = requested.startsWith("/platform") && Boolean(access?.platformRole)
   const platformHome = !state.workspaceId && Boolean(access?.platformRole) ? "/platform" : null
+  const deferredProductSetup = !state.workspaceId && isDeferredWorkspaceProvisioning() ? getProductOnboardingPath() : null
   const destination = platformRequested
     ? requested
-    : platformHome || (state.path === "/onboarding" ? "/onboarding" : requested.startsWith("/app") ? requested : "/app")
+    : platformHome || deferredProductSetup || (state.path === "/onboarding" ? "/onboarding" : requested.startsWith("/app") ? requested : "/app")
   return NextResponse.redirect(new URL(destination, url))
 }
