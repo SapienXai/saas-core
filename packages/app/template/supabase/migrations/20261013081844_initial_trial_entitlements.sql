@@ -364,4 +364,3 @@ grant execute on function public.lock_workspace_entitlement(uuid, text) to servi
 
 comment on function public.lock_workspace_entitlement(uuid, text) is
   'Resolves the active Core plan, fails closed for unresolved pending targets, and applies the stricter finite ceiling for a pending explicit downgrade while preserving current-plan cancellation access.';
-
