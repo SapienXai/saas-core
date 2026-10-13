@@ -103,6 +103,57 @@ integration("transactional entitlement lock", () => {
       unlimited: false,
     })
 
+    const trialStartedAt = new Date(Date.now() - 60_000)
+    const trialEndsAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const activeTrial = await service!.from("workspace_subscriptions").update({
+      plan_key: "fixture_pro",
+      status: "trialing",
+      source: "trial",
+      provider: null,
+      provider_environment: null,
+      provider_customer_id: null,
+      provider_subscription_id: null,
+      provider_price_id: null,
+      current_period_start_at: trialStartedAt.toISOString(),
+      current_period_end_at: trialEndsAt.toISOString(),
+      current_period_end: trialEndsAt.toISOString().slice(0, 10),
+      initial_trial_started_at: trialStartedAt.toISOString(),
+      initial_trial_ends_at: trialEndsAt.toISOString(),
+    }).eq("workspace_id", workspaceId)
+    expect(activeTrial.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({
+      plan_key: "fixture_pro",
+      capability_configured: true,
+      limit_value: 3,
+      unlimited: false,
+    })
+
+    const expiredAt = new Date(Date.now() - 60_000)
+    const expiredTrial = await service!.from("workspace_subscriptions").update({
+      current_period_end_at: expiredAt.toISOString(),
+      current_period_end: expiredAt.toISOString().slice(0, 10),
+      initial_trial_ends_at: expiredAt.toISOString(),
+    }).eq("workspace_id", workspaceId)
+    expect(expiredTrial.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({
+      plan_key: "fixture_free",
+      capability_configured: true,
+      limit_value: 2,
+      unlimited: false,
+    })
+
+    const resetAfterTrial = await service!.from("workspace_subscriptions").update({
+      plan_key: "fixture_free",
+      status: "active",
+      source: "system",
+      current_period_start_at: null,
+      current_period_end_at: null,
+      current_period_end: null,
+      initial_trial_started_at: null,
+      initial_trial_ends_at: null,
+    }).eq("workspace_id", workspaceId)
+    expect(resetAfterTrial.error).toBeNull()
+
     const canceled = await service!.from("workspace_subscriptions").update({ status: "canceled" }).eq("workspace_id", workspaceId)
     expect(canceled.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
