@@ -1,12 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useState, type FormEvent } from "react"
 import { Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AuthField, AuthShell } from "@/components/auth/auth-shell"
+import { AuthDivider, AuthField, AuthShell } from "@/components/auth/auth-shell"
 import { SocialAuthButtons } from "@/components/auth/social-auth-buttons"
 import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
@@ -38,17 +38,75 @@ export function LoginForm({ backHref = "/" }: { backHref?: string } = {}) {
     }
   }, [getTranslation])
 
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (submitting) return
+
+    setError("")
+    setSubmitting(true)
+    try {
+      const response = await fetch("/auth/signin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ email: email.trim(), password, redirect: redirectPath }),
+      })
+
+      if (!response.ok) {
+        let errorCode = ""
+        try {
+          const payload = await response.json() as { error?: unknown }
+          if (typeof payload.error === "string") errorCode = payload.error
+        } catch {
+          // Use the existing generic message for non-JSON error responses.
+        }
+        setError(errorCode === "service_unavailable"
+          ? getTranslation("auth.errors.serviceUnavailable")
+          : getTranslation("auth.errors.generic"))
+        setSubmitting(false)
+        return
+      }
+
+      const continuationResponse = await fetch(`/auth/continue?redirect=${encodeURIComponent(redirectPath)}`, {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+      })
+      if (!continuationResponse.ok) {
+        setError(getTranslation("auth.errors.serviceUnavailable"))
+        setSubmitting(false)
+        return
+      }
+
+      const continuation = await continuationResponse.json() as { redirectTo?: unknown }
+      const destination = continuation.redirectTo
+      if (typeof destination !== "string" || !destination.startsWith("/") || destination.startsWith("//")) {
+        setError(getTranslation("auth.errors.serviceUnavailable"))
+        setSubmitting(false)
+        return
+      }
+
+      window.location.replace(destination)
+    } catch {
+      setError(getTranslation("auth.errors.serviceUnavailable"))
+      setSubmitting(false)
+    }
+  }
+
   return (
     <AuthShell
       showBrand
+      layout="account"
       backHref={backHref}
       title={getTranslation("auth.signInTitle")}
       description={getTranslation("auth.signInSubtitle")}
-      footer={<span>{getTranslation("auth.dontHaveAccount")} {" "}<Link className="auth-footer-link" href={`/signup?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.register")}</Link></span>}
+      footer={<span>{getTranslation("auth.dontHaveAccount")} {" "}<Link className="auth-footer-link" href={`/signup?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signUpAction")}</Link></span>}
     >
       {error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>}
-      <form method="post" action="/auth/signin" onSubmit={(event) => { if (submitting) { event.preventDefault(); return }; setSubmitting(true) }} className="auth-form">
+      <form method="post" action="/auth/signin" onSubmit={submit} aria-busy={submitting} className="auth-form auth-form--account">
         <input type="hidden" name="redirect" value={redirectPath} />
+        <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
+        <AuthDivider />
         <AuthField id="login-email" label={getTranslation("auth.email")}>
           <div className="auth-input-shell">
             <Mail className="auth-input-icon" aria-hidden="true" strokeWidth={1.75} />
@@ -60,7 +118,6 @@ export function LoginForm({ backHref = "/" }: { backHref?: string } = {}) {
         </AuthField>
         <div className="auth-form-meta"><Link href="/forgot-password" className="auth-muted-link">{getTranslation("auth.forgotPassword")}</Link></div>
         <Button type="submit" loading={submitting} className="auth-primary-button">{submitting ? getTranslation("auth.signingIn") : getTranslation("auth.signInAction")}</Button>
-        <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
       </form>
     </AuthShell>
   )

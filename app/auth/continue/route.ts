@@ -6,17 +6,27 @@ import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
 import { getRequestUrl } from "@/lib/request-url"
 import { getProductOnboardingPath, isDeferredWorkspaceProvisioning } from "@/lib/product-config"
 
+function navigationResponse(destination: string, url: URL, asJson: boolean) {
+  if (asJson) {
+    return NextResponse.json({ redirectTo: destination }, {
+      headers: { "Cache-Control": "no-store" },
+    })
+  }
+  return NextResponse.redirect(new URL(destination, url))
+}
+
 export async function GET(request: Request) {
   const url = getRequestUrl(request)
+  const asJson = request.headers.get("accept")?.includes("application/json") ?? false
   const state = await getAccountState()
   if (!state.authenticated) {
-    return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent("/app")}`, url))
+    return navigationResponse(`/login?redirect=${encodeURIComponent("/app")}`, url, asJson)
   }
 
   const requested = safeInternalRedirect(url.searchParams.get("redirect"), state.path)
   const invitationRequested = Boolean((await cookies()).get(INVITATION_INTENT_COOKIE)?.value) || requested === "/invite/accept"
   if (invitationRequested) {
-    return NextResponse.redirect(new URL("/invite/accept", url))
+    return navigationResponse("/invite/accept", url, asJson)
   }
 
   const access = requested.startsWith("/platform") || !state.workspaceId ? await getCurrentUserAccess() : null
@@ -26,5 +36,5 @@ export async function GET(request: Request) {
   const destination = platformRequested
     ? requested
     : platformHome || deferredProductSetup || (state.path === "/onboarding" ? "/onboarding" : requested.startsWith("/app") ? requested : "/app")
-  return NextResponse.redirect(new URL(destination, url))
+  return navigationResponse(destination, url, asJson)
 }

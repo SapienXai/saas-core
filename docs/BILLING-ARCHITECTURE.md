@@ -187,9 +187,8 @@ policy is intentionally asymmetric: month → year is immediate and uses
 `prorated_immediately`; year → month uses the provider's frequency replacement
 with `do_not_bill`, keeps the already-paid annual period and current annual
 entitlements through its exact period end, and projects the monthly interval
-locally for that boundary. It does not shorten the annual period, bill early,
-or apply a scheduled downgrade ceiling. A same-interval request is rejected
-before provider work.
+locally for that boundary. It does not shorten the annual period or bill early.
+A same-interval request is rejected before provider work.
 
 For an explicit plan change, the managed action adds one provider-neutral
 policy step before the provider mutation:

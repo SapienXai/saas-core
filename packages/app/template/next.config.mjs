@@ -1,6 +1,8 @@
-import { loadProductCspFrameSources } from './lib/content-security-policy.mjs'
+import { loadProductCspConnectSources, loadProductCspFrameSources, loadProductCspScriptSources } from './lib/content-security-policy.mjs'
 
 const productCspFrameSources = loadProductCspFrameSources()
+const productCspScriptSources = loadProductCspScriptSources()
+const productCspConnectSources = loadProductCspConnectSources()
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -46,12 +48,12 @@ const nextConfig = {
           "form-action 'self'",
           "frame-ancestors 'self'",
           "object-src 'none'",
-          "script-src 'self' 'unsafe-inline'",
+          `script-src 'self' 'unsafe-inline' ${productCspScriptSources.join(' ')}`.trim(),
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: blob: https:",
           "font-src 'self' data:",
           "media-src 'self' blob: https:",
-          "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://tiles.openfreemap.org",
+          `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://tiles.openfreemap.org ${productCspConnectSources.join(' ')}`.trim(),
           `frame-src 'self' ${productCspFrameSources.join(' ')}`.trim(),
           "worker-src 'self' blob:",
           "manifest-src 'self'",

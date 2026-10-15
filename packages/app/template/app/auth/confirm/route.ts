@@ -16,8 +16,16 @@ export async function GET(request: Request) {
   const code = url.searchParams.get("code")
   const next = safeInternalRedirect(url.searchParams.get("next"), "/onboarding")
 
+  const invalidConfirmationUrl = new URL(rawType === "email" ? "/signup" : "/login", url)
+  if (rawType === "email") {
+    invalidConfirmationUrl.searchParams.set("confirmation", "expired")
+    invalidConfirmationUrl.searchParams.set("redirect", next)
+  } else {
+    invalidConfirmationUrl.searchParams.set("error", "invalid_confirmation")
+  }
+
   if (!tokenHash && !code) {
-    return NextResponse.redirect(new URL("/login?error=invalid_confirmation", url))
+    return NextResponse.redirect(invalidConfirmationUrl)
   }
 
   const supabase = await createSupabaseServerClient()
@@ -25,7 +33,7 @@ export async function GET(request: Request) {
     ? await supabase.auth.verifyOtp({ token_hash: tokenHash, type: tokenType })
     : await supabase.auth.exchangeCodeForSession(code!)
   if (error) {
-    return NextResponse.redirect(new URL("/login?error=invalid_confirmation", url))
+    return NextResponse.redirect(invalidConfirmationUrl)
   }
 
   if (tokenType === "recovery" || rawType === "recovery") {

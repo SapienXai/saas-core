@@ -127,10 +127,9 @@ export type EffectiveConsumptionLimit = {
 }
 
 /**
- * Resolve the mutation ceiling without changing the active plan. A pending
- * explicit downgrade is the only scheduled change that can constrain new
- * finite-quota consumption. Missing target configuration remains unavailable;
- * only `null` is explicitly unlimited.
+ * Resolve the limit effective for mutations now. A scheduled plan does not
+ * replace current limits before its effective boundary; its limit is returned
+ * only as transition context. Only `null` is explicitly unlimited.
  */
 export function resolveEffectiveConsumptionLimit(input: {
   activeLimit: EntitlementLimit
@@ -138,34 +137,8 @@ export function resolveEffectiveConsumptionLimit(input: {
   scheduledPlanIsDowngrade?: boolean
 }): EffectiveConsumptionLimit {
   const activeLimit = input.activeLimit
-  const scheduledPlanIsDowngrade = input.scheduledPlanIsDowngrade === true
-  if (!scheduledPlanIsDowngrade) {
-    return { limit: activeLimit, activeLimit, scheduledLimit: input.scheduledLimit, constrainedByScheduledPlan: false }
-  }
-
-  const scheduledLimit = input.scheduledLimit
-  // A target plan that cannot resolve this capability must never widen access.
-  if (scheduledLimit === undefined) {
-    return { limit: undefined, activeLimit, scheduledLimit, constrainedByScheduledPlan: true }
-  }
-  // An active plan without a numeric capability can still be constrained by a
-  // finite target capability. Explicit unlimited remains the only unbounded
-  // value, and the active feature evaluator remains responsible for booleans.
-  if (activeLimit === undefined) {
-    return { limit: scheduledLimit, activeLimit, scheduledLimit, constrainedByScheduledPlan: true }
-  }
-  if (activeLimit === null) {
-    return { limit: scheduledLimit, activeLimit, scheduledLimit, constrainedByScheduledPlan: true }
-  }
-  if (scheduledLimit === null) {
-    return { limit: activeLimit, activeLimit, scheduledLimit, constrainedByScheduledPlan: true }
-  }
-  return {
-    limit: Math.min(activeLimit, scheduledLimit),
-    activeLimit,
-    scheduledLimit,
-    constrainedByScheduledPlan: true,
-  }
+  const scheduledLimit = input.scheduledPlanIsDowngrade ? input.scheduledLimit : undefined
+  return { limit: activeLimit, activeLimit, scheduledLimit, constrainedByScheduledPlan: false }
 }
 
 function assertUsageNumber(value: number, name: string) {

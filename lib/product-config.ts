@@ -85,6 +85,8 @@ export type ProductConfig = {
   shell?: ProductShellConfig
   /** Product-owned platform surfaces rendered inside the Core management shell. */
   platformNavigation?: readonly ProductPlatformNavigationItem[]
+  /** Additional indexable public product pages included in the Core sitemap. */
+  publicSitemapPaths?: readonly string[]
   /** Product-owned commercial catalog. Core only evaluates its stable keys. */
   catalog: ProductCatalog
 }

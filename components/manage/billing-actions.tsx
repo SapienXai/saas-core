@@ -545,9 +545,10 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
   const renderBillingIntervalSwitch = (className = "") => (
     <div className={`inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-white/10 dark:bg-white/[0.06] ${className}`} role="group" aria-label={t("manage.planUsage.billing.billingCycle")}>
       {resolvedPresentation.supportedIntervals.map((interval) => {
-        const available = billing.billingDeferred
-          ? catalogPlans.some((plan) => typeof plan.prices?.[interval]?.amount === "number")
-          : configuredPrices.some((price) => price.interval === interval)
+        const available = catalogPlans.some((plan) => {
+          const price = plan.prices?.[interval]
+          return typeof price?.amount === "number" && Number.isFinite(price.amount) && price.amount >= 0 && Boolean(price.currency)
+        }) || configuredPrices.some((price) => price.interval === interval)
         const active = billingInterval === interval
         return (
           <button
@@ -602,6 +603,14 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
     } catch {
       return null
     }
+  }
+  const catalogPlanIsFree = (planKey: string) => {
+    const amounts = Object.values(catalogPlans.find((plan) => plan.key === planKey)?.prices || {}).flatMap((price) =>
+      price && typeof price.amount === "number" && Number.isFinite(price.amount) && price.amount >= 0 && price.currency
+        ? [price.amount]
+        : [],
+    )
+    return amounts.length > 0 ? amounts.every((amount) => amount === 0) : null
   }
 
   const planChangeConfirmation = billingConfirmation?.type === "plan-change" ? billingConfirmation : null
@@ -824,10 +833,15 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
             {!isPaid && <div className="manage-plan-offer-banner mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-violet-50 px-4 py-3 dark:bg-violet-500/10"><div><p className="text-sm font-semibold text-violet-950 dark:text-violet-100">{t("manage.planUsage.billing.startWithPlan")}</p><p className="mt-0.5 text-xs text-violet-800/75 dark:text-violet-200/75">{t("manage.planUsage.billing.noLongSetup")}</p></div><span className="flex items-center gap-1 text-xs font-semibold text-violet-700 dark:text-violet-200"><ShieldCheck className="h-3.5 w-3.5" /> {t("manage.planUsage.billing.secureCheckout")}</span></div>}
             <div className={`mt-4 grid gap-4 ${availablePlans.length === 1 ? "max-w-2xl" : availablePlans.length === 2 ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>
               {availablePlans.map((plan) => {
-                const isFreePlan = !configuredPaidPlans.includes(plan.key)
+                const isFreePlan = catalogPlanIsFree(plan.key) ?? !configuredPaidPlans.includes(plan.key)
                 const switchesToFree = isPaid && isFreePlan
                 const isAlreadyScheduled = billing.scheduledPlanKey === plan.key && billing.scheduledPlanInterval === billingInterval
                 const configured = configuredPrices.some((price) => price.planKey === plan.key && price.interval === billingInterval) && configuredPaidPlans.includes(plan.key)
+                const configuredPrice = configuredPriceFor(plan.key)
+                const configuredPriceLabel = configuredMoney(configuredPrice)
+                const displayPrice = configuredPrice?.amount && configuredPriceLabel !== "Price unavailable"
+                  ? configuredPriceLabel
+                  : catalogPriceLabel(plan.key) || configuredPriceLabel
                 const recommended = Boolean(plan.metadata.recommended)
                 const isDowngrade = isPaid && (currentPlanPresentationOrder >= 0 ? resolvedPresentation.planOrder.indexOf(plan.key) < currentPlanPresentationOrder : plan.sort_order < currentPlanSortOrder)
                 const copy = planCopy(plan)
@@ -859,7 +873,7 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
                     </div>
                     <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
                       <div>
-                        <div className="flex items-baseline gap-1.5"><p className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{isFreePlan ? t("manage.planUsage.billing.freePlan") : configuredMoney(configuredPriceFor(plan.key))}</p>{!isFreePlan && <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{billingInterval === "year" ? t("manage.planUsage.billing.perYear") : t("manage.planUsage.billing.perMonth")}</span>}</div>
+                        <div className="flex items-baseline gap-1.5"><p className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{isFreePlan ? t("manage.planUsage.billing.freePlan") : displayPrice}</p>{!isFreePlan && <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{billingInterval === "year" ? t("manage.planUsage.billing.perYear") : t("manage.planUsage.billing.perMonth")}</span>}</div>
                         {!isFreePlan && billingInterval === "year" && savings && <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"><span className="font-semibold text-slate-400 line-through dark:text-slate-500">{savings.regularAnnualAmount} {t("manage.planUsage.billing.perYear")}</span><span className="font-bold text-emerald-700 dark:text-emerald-300">{t("manage.planUsage.billing.annualSavings", { amount: savings.amount, percent: String(savings.percent) })}</span></div>}
                         {!isFreePlan && <p className="mt-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">{billingInterval === "year" ? t("manage.planUsage.billing.billedAnnually") : t("manage.planUsage.billing.billedMonthly")}</p>}
                       </div>

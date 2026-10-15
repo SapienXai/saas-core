@@ -195,16 +195,9 @@ reactivation continue through
 the existing server-authorized provider adapter and normalized local
 `workspace_subscriptions` row. Provider webhooks, not a browser callback,
 activate paid entitlements. A scheduled downgrade or cancellation remains on
-the current plan until its effective timestamp. If usage is above the target
-plan, existing data stays intact and new restricted mutations are blocked.
-
-For an explicit pending downgrade, the current plan remains the display and
-feature-entitlement plan, but finite new-resource consumption is capped at the
-stricter of the active and scheduled target limits immediately. This is the
-same policy used by `canConsume()`, `assertCanConsume()`, and the
-`lock_workspace_entitlement()` transaction boundary. Scheduled cancellation,
-pause, and resume are excluded: they retain current-plan limits until their
-effective lifecycle boundary. Existing resources are retained in every case.
+the current plan, features, and limits until its effective timestamp. If usage
+is above the target plan at that boundary, existing data stays intact and new
+restricted mutations are blocked until usage is reduced.
 
 Missing, expired, canceled, paused, stale, malformed, or unmapped paid state
 resolves to the configured fallback or a restrictive error. It never grants

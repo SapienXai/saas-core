@@ -170,41 +170,39 @@ configured fallback limits. Existing resources remain intact; after the
 effective cancellation boundary, new restricted mutations are blocked until
 usage is reduced or the workspace returns to an eligible paid plan.
 
-### Pending downgrade consumption ceiling
+### Scheduled plan limits at the effective boundary
 
-An explicit scheduled downgrade keeps the current paid plan active for display,
-feature access, and existing resources until its effective boundary. New finite
-quota consumption is different: Core immediately uses the stricter of the
-active limit and the scheduled target limit. This prevents a workspace that was
-eligible at confirmation time from growing beyond the target before the change
-takes effect. Existing product rows are never deleted or changed; once usage is
-at or above the target, new consumption is rejected with `PLAN_LIMIT_REACHED`.
+An explicit scheduled downgrade keeps the current paid plan, features, limits,
+and mutation capacity effective until its scheduled timestamp. The target plan
+does not cap new finite-quota consumption before that boundary. At the boundary,
+the entitlement resolver selects the target plan; existing resources are
+preserved if usage is then above its limit, and new restricted mutations are
+rejected with `PLAN_LIMIT_REACHED` until usage is reduced.
 
-The server helper exposes the policy through the normal consumption path:
+The server helper returns the limit effective now and may include the scheduled
+limit as transition context:
 
 ```ts
-const ceiling = await billing.getEffectiveConsumptionLimit(workspaceId, "venues", userId)
+const effective = await billing.getEffectiveConsumptionLimit(workspaceId, "venues", userId)
 await billing.assertCanConsume(workspaceId, "venues", 1, userId)
 ```
 
-`getLimit()` and the billing UI continue to describe the active plan. A
-`canConsume()` decision may additionally include `activeLimit`,
-`scheduledLimit`, `constrainedByScheduledPlan`, and `scheduledPlanKey` so a
-consumer can explain why a currently paid workspace is temporarily capped.
+`getLimit()` and the billing UI describe the active plan. A `canConsume()`
+decision may additionally include `activeLimit`, `scheduledLimit`,
+`constrainedByScheduledPlan`, and `scheduledPlanKey` so a consumer can explain
+the upcoming change; `constrainedByScheduledPlan` remains false until the
+scheduled plan becomes effective.
 
-Scheduled cancellation, pause, or resume does not use this ceiling. The active
-plan's limits remain authoritative until the cancellation/lifecycle boundary,
-even when the eventual fallback plan has a smaller quota. Missing or malformed
-scheduled downgrade capability data fails closed rather than becoming
-unlimited.
+Scheduled cancellation, pause, and resume also retain current-plan limits until
+their lifecycle boundary. Missing, malformed, or unmapped paid state still
+resolves to a restrictive fallback; it never grants unlimited access.
 
 The provider may expose the scheduled target price before the boundary. Core
 accepts either the current active price or the exact active target mapping for
 the same provider and environment; an unknown price, inactive target, missing
 mapping, invalid boundary, or incomplete provider identity falls back
-restrictively. The current plan and features remain effective until the
-boundary, while the finite consumption ceiling still uses the stricter target
-limit. Billing overview presentation follows the current local interval and
+restrictively. The current plan, features, and limits remain effective until
+the boundary. Billing overview presentation follows the current local interval and
 provider amount, so a pending target is shown only in the scheduled-change
 banner. For an active provider-backed subscription, the displayed current
 charge must come from the authoritative provider amount. If that amount or

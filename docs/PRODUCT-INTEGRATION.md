@@ -39,23 +39,28 @@ constants through Core components or server modules.
 
 ## Content security policy extensions
 
-Core owns the default response security headers. A product may extend only the
-`frame-src` directive through the optional product-owned
-`src/product/security-config.json` file. It accepts exact HTTPS origins and
-does not replace the rest of the Core policy:
+Core owns the default response security headers. A product may extend the
+`frame-src`, `script-src` and `connect-src` directives through the optional
+product-owned `src/product/security-config.json` file. These values add
+sources without replacing the rest of the Core policy. `frameSrc` and
+`scriptSrc` accept exact HTTPS origins; `connectSrc` also accepts HTTPS
+subdomain wildcards:
 
 ```json
 {
   "contentSecurityPolicy": {
-    "frameSrc": ["https://video.example"]
+    "frameSrc": ["https://video.example"],
+    "scriptSrc": ["https://www.googletagmanager.com"],
+    "connectSrc": ["https://www.googletagmanager.com", "https://*.google-analytics.com"]
   }
 }
 ```
 
 The file is read by the Next.js config at build time. Invalid JSON, non-HTTPS
-values, wildcards, paths, credentials, or other non-origin values fail the
-build so malformed input cannot silently weaken the policy. Keep vendor
-origins limited to the frames the product actually embeds.
+values, paths, credentials, malformed wildcards, or other non-origin values
+fail the build so malformed input cannot silently weaken the policy. Keep
+vendor origins limited to the scripts, connections and frames the product
+actually uses.
 
 ## Ownership and dependency direction
 
@@ -302,6 +307,9 @@ Products may customize:
   PWA manifest icon; `iconPath` remains the 512px fallback, and authorized
   Workspace-specific icons keep using Core's size-aware asset route;
 - navigation labels and product routes;
+- canonical public pages in `PRODUCT_CONFIG.publicSitemapPaths`. The Core
+  `/sitemaps/pages.xml` route includes only safe root-relative paths from this
+  list; omit private, dynamic, noindex and tenant-specific routes;
 - dashboard cards and product-specific empty/loading states;
 - product CSS and domain-specific responsive views;
 - email and notification templates that call Core delivery infrastructure.

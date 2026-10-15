@@ -22,6 +22,7 @@ const billingMigrations = [
   "supabase/migrations/20260915120000_scheduled_provider_price_trust.sql",
   "supabase/migrations/20260916120000_saas_core_domain_foundation_v1.sql",
   "supabase/migrations/20261008000523_stripe_billing_provider.sql",
+  "supabase/migrations/20261015110000_effective_plan_limits_until_boundary.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES

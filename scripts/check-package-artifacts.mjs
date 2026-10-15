@@ -109,6 +109,7 @@ const managedPlanFiles = [
   "package/template/supabase/migrations/20260915090000_fix_invalid_scheduled_downgrade_fail_closed.sql",
   "package/template/supabase/migrations/20260915120000_scheduled_provider_price_trust.sql",
   "package/template/supabase/migrations/20260916120000_saas_core_domain_foundation_v1.sql",
+  "package/template/supabase/migrations/20261015110000_effective_plan_limits_until_boundary.sql",
   "package/template/supabase/migrations/20260830150000_saas_core_platform_user_guards.sql",
   "package/template/src/product/usage.ts",
   "package/template/app/platform/billing/actions.ts",

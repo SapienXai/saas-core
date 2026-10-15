@@ -4,7 +4,9 @@ type Localized<T> = T extends string ? string : T extends object ? { [K in keyof
 
 const turkishTranslations: Record<string, string> = {
   "Close": "Kapat", "Loading…": "Yükleniyor…", "Updating…": "Güncelleniyor…", "Next": "İleri", "Previous": "Önceki", "Language": "Dil",
-  "Already have an account?": "Zaten hesabınız var mı?", "Back to sign in": "Girişe dön", "Check your inbox": "Gelen kutunuzu kontrol edin",
+  "Already have an account?": "Zaten hesabınız var mı?", "Back to sign in": "Girişe dön", "Check your inbox.": "Gelen kutunuzu kontrol edin.",
+  "We’ve sent a verification link to": "Şu adrese doğrulama bağlantısı gönderdik:", "This link is invalid or expired.": "Bu bağlantı geçersiz veya süresi dolmuş.", "Request a new link to continue.": "Devam etmek için yeni bir bağlantı isteyin.",
+  "Change email address": "E-posta adresini değiştir", "Didn’t receive the email?": "E-posta gelmedi mi?", "Open email app": "E-posta uygulamasını aç", "Email confirmed. Opening your workspace…": "E-posta doğrulandı. Çalışma alanınız açılıyor…", "Resend in {seconds}s": "{seconds} sn içinde yeniden gönder", "Waiting for confirmation…": "Doğrulama bekleniyor…", "or": "veya",
   "We can’t send confirmation emails right now. Please try again later.": "Şu anda onay e-postalarını gönderemiyoruz. Lütfen daha sonra tekrar deneyin.",
   "Create an account": "Hesap oluştur", "Email": "E-posta", "Forgot password?": "Şifrenizi mi unuttunuz?", "Password": "Şifre", "Sign in": "Giriş yap",
   "Create your account": "Hesabınızı oluşturun", "Create account": "Hesap oluştur", "Welcome back": "Tekrar hoş geldiniz", "Workspace": "Çalışma alanı",

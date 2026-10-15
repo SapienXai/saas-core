@@ -213,6 +213,14 @@ downgrade. Scheduled cancellation, pause, and resume retain current-plan
 limits until their lifecycle boundary. It is source delivery only; consumers
 apply and verify it through their normal migration workflow.
 
+The additive `20261015110000_effective_plan_limits_until_boundary.sql`
+migration supersedes that early consumption ceiling. The current plan's limits
+remain effective until the scheduled plan's timestamp; after the boundary the
+target plan supplies the limit. Existing resources are preserved if usage is
+then over the target, and new restricted mutations are blocked until usage is
+reduced. The migration is source delivery only; consumers apply and verify it
+through their normal migration workflow.
+
 The additive `20260915120000_scheduled_provider_price_trust.sql` migration
 hardens future provider-price transitions. It accepts only the current mapped
 price or an exact active target mapping, keeps the current plan effective until

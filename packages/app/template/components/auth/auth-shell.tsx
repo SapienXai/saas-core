@@ -14,6 +14,9 @@ type AuthShellProps = {
   footer?: ReactNode
   backHref?: string
   showBrand?: boolean
+  showHeading?: boolean
+  sectionLabelledBy?: string
+  layout?: "default" | "account"
 }
 
 function getAuthBackgroundUrl() {
@@ -56,10 +59,10 @@ export function AuthDivider() {
   const { getTranslation } = useLanguage()
 
   return (
-    <div className="auth-divider" aria-hidden="true">
-      <span />
-      <span>{getTranslation("auth.divider")}</span>
-      <span />
+    <div className="auth-divider" role="separator" aria-label={getTranslation("auth.divider")}>
+      <span aria-hidden="true" />
+      <span aria-hidden="true">{getTranslation("auth.divider")}</span>
+      <span aria-hidden="true" />
     </div>
   )
 }
@@ -68,7 +71,7 @@ export function ProductBrand() {
   const { getTranslation } = useLanguage()
 
   return (
-    <Link href="/" aria-label={getTranslation("auth.homeLabel")} className="auth-brand">
+    <Link href="/" aria-label={getTranslation("auth.homeLabel", { product: PRODUCT_CONFIG.name })} className="auth-brand">
       <span className="auth-brand-mark">
         <Image src={PRODUCT_CONFIG.logoPath} alt="" width={34} height={34} priority />
       </span>
@@ -78,10 +81,11 @@ export function ProductBrand() {
 }
 
 function AuthFormBrand({ href }: { href: string }) {
+  const { getTranslation } = useLanguage()
   const logoStyle = { "--auth-form-brand-url": `url("${PRODUCT_CONFIG.logoPath}")` } as CSSProperties
 
   return (
-    <Link href={href} aria-label={`${PRODUCT_CONFIG.name} home`} className="auth-form-brand" style={logoStyle}>
+    <Link href={href} aria-label={getTranslation("auth.homeLabel", { product: PRODUCT_CONFIG.name })} className="auth-form-brand" style={logoStyle}>
       <span className="auth-form-brand-mark" aria-hidden="true" />
     </Link>
   )
@@ -114,25 +118,45 @@ export function AuthField({
   )
 }
 
-export function AuthShell({ title, description, children, footer, backHref = "/", showBrand = false }: AuthShellProps) {
+export function AuthShell({ title, description, children, footer, backHref = "/", showBrand = false, showHeading = true, sectionLabelledBy, layout = "default" }: AuthShellProps) {
+  const accountLayout = layout === "account"
+  const heading = (
+    <header className="auth-form-heading">
+      <h1 id="auth-title">{title}</h1>
+      <p>{description}</p>
+    </header>
+  )
+
   return (
-    <main className="auth-page auth-form-page">
+    <main className={`auth-page auth-form-page${accountLayout ? " auth-account-page" : ""}`}>
       <AuthMediaBackground />
-      <div className="auth-form-container">
-        <div className="auth-form-topline">
-          <AuthBackButton href={backHref} />
-          <header className="auth-form-heading">
-            <h1 id="auth-title">{title}</h1>
-            <p>{description}</p>
-          </header>
-        </div>
-        <section className="auth-card auth-form-card" aria-labelledby="auth-title">
-          <div className="auth-form-content">
-            {showBrand && <AuthFormBrand href={backHref} />}
-            {children}
-          </div>
-          {footer && <div className="auth-form-footer">{footer}</div>}
-        </section>
+      <div className={`auth-form-container${accountLayout ? " auth-form-container--account" : ""}`}>
+        {accountLayout ? (
+          <>
+            <div className="auth-form-topline auth-form-topline--account">
+              {showBrand && <AuthFormBrand href={backHref} />}
+              {showHeading && heading}
+            </div>
+            <section className="auth-card auth-form-card auth-form-card--account" aria-labelledby={sectionLabelledBy || (showHeading ? "auth-title" : undefined)}>
+              <div className="auth-form-content auth-form-content--account">{children}</div>
+              {footer && <div className="auth-form-footer auth-form-footer--account">{footer}</div>}
+            </section>
+          </>
+        ) : (
+          <>
+            <div className="auth-form-topline">
+              <AuthBackButton href={backHref} />
+              {heading}
+            </div>
+            <section className="auth-card auth-form-card" aria-labelledby="auth-title">
+              <div className="auth-form-content">
+                {showBrand && <AuthFormBrand href={backHref} />}
+                {children}
+              </div>
+              {footer && <div className="auth-form-footer">{footer}</div>}
+            </section>
+          </>
+        )}
       </div>
     </main>
   )
