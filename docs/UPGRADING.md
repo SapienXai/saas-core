@@ -5,18 +5,17 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
-The current coordinated runtime and package release is tag `saas-core-v2.6.0`
+The current coordinated runtime and package release is tag `saas-core-v2.6.1`
 on Core schema compatibility coordinate `2.0`. Its packed consumer contract
 delivers the additive billing sources listed in
-[`RELEASE-2.6.0.md`](./RELEASE-2.6.0.md), while the checked-out `main` branch
-may contain post-tag changes. In particular, current `main` also carries the
-platform-owner guard and fail-closed scheduled-downgrade replacement in the
-canonical source set; those files are development-branch state until a new
-coordinated release is tagged. Package packing and CLI `init`/`update` deliver
-sources but never execute SQL; each consumer owns the controlled apply and
-verification workstream. The Plan Catalog guide is shipped in the Core package
-as `docs/PLAN-CATALOG.md`. The release evidence and certification boundary are recorded in
-[`RELEASE-2.6.0.md`](./RELEASE-2.6.0.md), with the prior release retained in
+[`RELEASE-2.6.0.md`](./RELEASE-2.6.0.md) plus the Checkout lifecycle and
+scheduled-downgrade runtime fixes documented in
+[`RELEASE-2.6.1.md`](./RELEASE-2.6.1.md). The tag matches the current canonical
+source set. Package packing and CLI `init`/`update` deliver sources but never
+execute SQL; each consumer owns the controlled apply and verification
+workstream. The Plan Catalog guide is shipped in the Core package as
+`docs/PLAN-CATALOG.md`. The release evidence and certification boundary are
+recorded in the versioned release notes, with the prior release retained in
 [`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md), and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
@@ -55,8 +54,8 @@ The normal consumer path installs the coordinated packages from npm. A fresh
 consumer uses the registry-published CLI to materialize the packed template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.6.0 @sapienx/saas-core-config@^2.6.0 @sapienx/saas-core-ui@^2.6.0
-pnpm add -D @sapienx/saas-core-cli@^2.6.0
+pnpm add @sapienx/saas-core@^2.6.1 @sapienx/saas-core-config@^2.6.1 @sapienx/saas-core-ui@^2.6.1
+pnpm add -D @sapienx/saas-core-cli@^2.6.1
 pnpm exec saas-core init "My Product" ./my-product
 pnpm install --dir ./my-product
 ```
@@ -246,7 +245,7 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and schema compatibility coordinate are separate. The
-current runtime is `2.6.0` and the compatibility coordinate remains `2.0` even
+current runtime is `2.6.1` and the compatibility coordinate remains `2.0` even
 though the release delivers additive billing, entitlement, and plan-catalog
 sources. `doctor`
 reports Core source readiness, consumer presence/hash readiness, and manifest
@@ -304,11 +303,11 @@ bootstrap or npm Trusted Publishing with OIDC. It verifies fresh registry
 installation and creates the GitHub Release only afterward. Any failed gate
 stops before publication. Delete `NPM_TOKEN` after the first successful
 bootstrap and configure Trusted Publishers for all five packages. The `2.4.0`
-evidence remains the prior release baseline; the coordinated `2.6.0` boundary adds
+evidence remains the prior release baseline; the coordinated `2.6.0` boundary added
 target-plan downgrade eligibility and confirmation-time revalidation while
 retaining the controlled legacy-consumer upgrade, packed exports, managed
 billing/plan-catalog delivery, product-owned preservation, relocation, and a
-second frozen install/build. The final release should include
+second frozen install/build. The current `2.6.1` patch also carries the Checkout-session expiry, terminal Stripe status, and scheduled-downgrade runtime fixes described in `RELEASE-2.6.1.md`. The final release should include
 `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, clean DB tests,
 browser tests, build, `pnpm pack`, a fresh consumer, relocation, and a second
 frozen install/build.

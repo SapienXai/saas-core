@@ -1,3 +1,5 @@
+import type { ProviderCheckoutSession } from "./provider"
+
 export type PendingCheckoutResumeCandidate = {
   workspace_id: string
   provider: string
@@ -35,4 +37,22 @@ export function canResumePendingCheckout(input: {
     checkout.idempotency_key === mutation.id &&
     mutation.operation === "checkout" &&
     (mutation.status === "pending" || mutation.status === "unknown")
+}
+
+/** A Checkout session can be replaced only while it is still unpaid and owns no subscription. */
+export function canExpireUnpaidCheckoutSession(session: Pick<ProviderCheckoutSession, "status" | "paymentStatus" | "subscriptionId">) {
+  return (session.status === "open" || session.status === "expired") &&
+    (session.paymentStatus === "unpaid" || session.paymentStatus === "no_payment_required") &&
+    session.subscriptionId === null
+}
+
+/** A completed unpaid Checkout may be replaced after its linked subscription is terminal. */
+export function canCloseUnpaidTerminalCheckoutSession(
+  session: Pick<ProviderCheckoutSession, "status" | "paymentStatus" | "subscriptionId">,
+  subscriptionStatus: string | null | undefined,
+) {
+  return session.status === "complete" &&
+    session.paymentStatus === "unpaid" &&
+    Boolean(session.subscriptionId) &&
+    ["canceled", "expired", "incomplete_expired"].includes(subscriptionStatus || "")
 }

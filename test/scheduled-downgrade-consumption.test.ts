@@ -114,7 +114,7 @@ describe("scheduled downgrade consumption ceiling", () => {
     for (const key of Object.keys(productResolvers)) delete productResolvers[key]
   })
 
-  it("keeps the paid plan active for display while denying growth beyond the scheduled target", async () => {
+  it("keeps the active plan's limits until the scheduled downgrade boundary", async () => {
     const workspaceId = "scheduled-downgrade-display-workspace"
     const { now } = installFixture({
       workspaceId,
@@ -128,27 +128,28 @@ describe("scheduled downgrade consumption ceiling", () => {
     expect(entitlements.scheduledPlan?.key).toBe("starter")
 
     await expect(getEffectiveConsumptionLimit(workspaceId, "venues", { now })).resolves.toMatchObject({
-      limit: 1,
+      limit: 3,
       activeLimit: 3,
       scheduledLimit: 1,
-      constrainedByScheduledPlan: true,
+      constrainedByScheduledPlan: false,
       scheduledPlanKey: "starter",
     })
     await expect(canConsume(workspaceId, "venues", 1, { now })).resolves.toMatchObject({
-      allowed: false,
-      code: "PLAN_LIMIT_REACHED",
+      allowed: true,
+      code: null,
       current: 1,
-      limit: 1,
+      limit: 3,
       activeLimit: 3,
       scheduledLimit: 1,
-      constrainedByScheduledPlan: true,
+      constrainedByScheduledPlan: false,
       scheduledPlanKey: "starter",
     })
-    await expect(assertEntitlement(workspaceId, "venues", { now })).rejects.toMatchObject({
-      code: "PLAN_LIMIT_REACHED",
+    await expect(assertEntitlement(workspaceId, "venues", { now })).resolves.toMatchObject({
+      allowed: true,
+      limit: 3,
       activeLimit: 3,
       scheduledLimit: 1,
-      constrainedByScheduledPlan: true,
+      constrainedByScheduledPlan: false,
       scheduledPlanKey: "starter",
     })
   })
@@ -220,50 +221,39 @@ describe("scheduled downgrade consumption ceiling", () => {
     productResolvers.venues = () => 0
 
     await expect(getEffectiveConsumptionLimit(workspaceId, "venues", { now })).resolves.toMatchObject({
-      limit: undefined,
+      limit: 3,
       activeLimit: 3,
       scheduledLimit: undefined,
-      constrainedByScheduledPlan: true,
+      constrainedByScheduledPlan: false,
       scheduledPlanKey: "missing-target",
     })
     await expect(canConsume(workspaceId, "venues", 1, { now })).resolves.toMatchObject({
-      allowed: false,
-      code: "CAPABILITY_NOT_CONFIGURED",
-      limit: undefined,
+      allowed: true,
+      code: null,
+      limit: 3,
       activeLimit: 3,
       scheduledLimit: undefined,
-      constrainedByScheduledPlan: true,
+      constrainedByScheduledPlan: false,
       scheduledPlanKey: "missing-target",
     })
   })
 
-  it("allows consumption below the scheduled ceiling and rejects the exact boundary", async () => {
+  it("applies the target plan at the exact scheduled boundary", async () => {
     const belowId = "scheduled-downgrade-below-workspace"
     const { now } = installFixture({
       workspaceId: belowId,
-      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
+      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2020-01-01T00:00:00.000Z" }),
       usage: 1,
     })
     productResolvers.venues = () => 1
-    await expect(canConsume(belowId, "venues", 1, { now })).resolves.toMatchObject({ allowed: false, limit: 1 })
-
-    const underId = "scheduled-downgrade-under-boundary-workspace"
-    installFixture({
-      workspaceId: underId,
-      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
-      usage: 0,
+    await expect(getWorkspaceEntitlements(belowId)).resolves.toMatchObject({ planKey: "starter" })
+    await expect(canConsume(belowId, "venues", 1, { now })).resolves.toMatchObject({
+      allowed: false,
+      code: "PLAN_LIMIT_REACHED",
+      limit: 1,
+      activeLimit: 1,
+      constrainedByScheduledPlan: false,
     })
-    productResolvers.venues = () => 0
-    await expect(canConsume(underId, "venues", 1, { now })).resolves.toMatchObject({ allowed: true, limit: 1, remaining: 1 })
-
-    const atId = "scheduled-downgrade-at-boundary-workspace"
-    installFixture({
-      workspaceId: atId,
-      subscription: subscription({ scheduled_plan_key: "starter", scheduled_effective_at: "2099-01-01T00:00:00.000Z" }),
-      usage: 1,
-    })
-    productResolvers.venues = () => 1
-    await expect(canConsume(atId, "venues", 1, { now })).resolves.toMatchObject({ allowed: false, code: "PLAN_LIMIT_REACHED" })
   })
 
   it("keeps current limits for cancellation and scheduled upgrades", async () => {
@@ -348,7 +338,7 @@ describe("scheduled downgrade consumption ceiling", () => {
     expect(boundary.subscription.billingIssueCode).toBeNull()
   })
 
-  it("removes the ceiling after an undo and fails closed for a missing target capability", async () => {
+  it("removes the transition context after an undo and preserves current limits for an invalid target", async () => {
     const undoId = "scheduled-downgrade-undo-workspace"
     const { now } = installFixture({ workspaceId: undoId, subscription: subscription(), usage: 2 })
     productResolvers.venues = () => 2
@@ -363,15 +353,15 @@ describe("scheduled downgrade consumption ceiling", () => {
       targetLimits: { "core.members": 2 },
     })
     await expect(getEffectiveConsumptionLimit(missingId, "venues", { now })).resolves.toMatchObject({
-      limit: undefined,
+      limit: 3,
       activeLimit: 3,
       scheduledLimit: undefined,
-      constrainedByScheduledPlan: true,
+      constrainedByScheduledPlan: false,
     })
-    await expect(canConsume(missingId, "venues", 1, { now })).resolves.toMatchObject({ allowed: false, code: "CAPABILITY_NOT_CONFIGURED" })
+    await expect(canConsume(missingId, "venues", 1, { now })).resolves.toMatchObject({ allowed: true, limit: 3, code: null })
   })
 
-  it("applies the same target ceiling to Core members and pending invitations", async () => {
+  it("keeps Core member limits at the active plan until the scheduled boundary", async () => {
     const workspaceId = "scheduled-downgrade-members-workspace"
     const { now } = installFixture({
       workspaceId,
@@ -380,13 +370,13 @@ describe("scheduled downgrade consumption ceiling", () => {
       pendingInvitations: 1,
     })
     await expect(canConsume(workspaceId, "core.members", 1, { now })).resolves.toMatchObject({
-      allowed: false,
-      code: "PLAN_LIMIT_REACHED",
+      allowed: true,
+      code: null,
       current: 3,
-      limit: 2,
+      limit: 10,
       activeLimit: 10,
       scheduledLimit: 2,
-      constrainedByScheduledPlan: true,
+      constrainedByScheduledPlan: false,
     })
   })
 })

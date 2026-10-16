@@ -160,7 +160,9 @@ export function normalizeStripeSubscription(subscription: Stripe.Subscription): 
   return {
     id: subscription.id,
     status: collectionPaused && status.status === "active" ? "paused" : status.status,
-    providerStatus: subscription.status,
+    // Persist the normalized state so terminal provider-only values (such as
+    // `incomplete_expired`) cannot keep checkout eligibility locked forever.
+    providerStatus: collectionPaused && status.status === "active" ? "paused" : status.status,
     issueCode: scheduleIssue || (collectionPaused ? "payment_collection_paused" : status.issueCode),
     livemode: subscription.livemode,
     customerId,
@@ -240,6 +242,15 @@ export function createStripeBillingAdapter(): StripeBillingAdapter {
     async retrieveCheckoutSession(id: string) {
       await assertStripeAccountBinding(config)
       const session = await stripe.checkout.sessions.retrieve(id, { expand: ["subscription", "customer"] })
+      const normalized = normalizeCheckoutSession(session)
+      assertStripeMode(config, normalized.livemode)
+      return normalized
+    },
+    async expireCheckoutSession(id: string) {
+      assertBillingMutationsEnabled()
+      assertStripeBillingReady()
+      await assertStripeAccountBinding(config)
+      const session = await stripe.checkout.sessions.expire(id)
       const normalized = normalizeCheckoutSession(session)
       assertStripeMode(config, normalized.livemode)
       return normalized

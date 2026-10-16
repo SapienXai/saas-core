@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { canResumePendingCheckout } from "../lib/billing/checkout-resumption"
+import { canCloseUnpaidTerminalCheckoutSession, canExpireUnpaidCheckoutSession, canResumePendingCheckout } from "../lib/billing/checkout-resumption"
 
 const context = {
   workspaceId: "workspace-1",
@@ -23,6 +23,24 @@ const checkout = {
 const mutation = { id: "mutation-1", operation: "checkout", status: "pending" }
 
 describe("pending hosted checkout resumption", () => {
+  it("only allows replacement of open or expired unpaid sessions without a subscription", () => {
+    expect(canExpireUnpaidCheckoutSession({ status: "open", paymentStatus: "unpaid", subscriptionId: null })).toBe(true)
+    expect(canExpireUnpaidCheckoutSession({ status: "expired", paymentStatus: "no_payment_required", subscriptionId: null })).toBe(true)
+    expect(canExpireUnpaidCheckoutSession({ status: "open", paymentStatus: "paid", subscriptionId: null })).toBe(false)
+    expect(canExpireUnpaidCheckoutSession({ status: "open", paymentStatus: "unknown", subscriptionId: null })).toBe(false)
+    expect(canExpireUnpaidCheckoutSession({ status: "open", paymentStatus: "unpaid", subscriptionId: "sub_test" })).toBe(false)
+    expect(canExpireUnpaidCheckoutSession({ status: "complete", paymentStatus: "paid", subscriptionId: "sub_test" })).toBe(false)
+  })
+
+  it("only closes a completed unpaid session when its linked subscription is terminal", () => {
+    const session = { status: "complete" as const, paymentStatus: "unpaid" as const, subscriptionId: "sub_test" }
+    expect(canCloseUnpaidTerminalCheckoutSession(session, "incomplete_expired")).toBe(true)
+    expect(canCloseUnpaidTerminalCheckoutSession(session, "expired")).toBe(true)
+    expect(canCloseUnpaidTerminalCheckoutSession(session, "active")).toBe(false)
+    expect(canCloseUnpaidTerminalCheckoutSession({ ...session, paymentStatus: "paid" }, "canceled")).toBe(false)
+    expect(canCloseUnpaidTerminalCheckoutSession({ ...session, subscriptionId: null }, "expired")).toBe(false)
+  })
+
   it("accepts a created session tied to the same pending Workspace checkout", () => {
     expect(canResumePendingCheckout({ checkout, mutation, ...context })).toBe(true)
     expect(canResumePendingCheckout({ checkout, mutation: { ...mutation, status: "unknown" }, ...context })).toBe(true)

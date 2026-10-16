@@ -104,6 +104,7 @@ export interface BillingProviderAdapter {
   readonly environment: BillingProviderEnvironment
   createCheckoutSession(request: ProviderCheckoutRequest): Promise<ProviderCheckoutSession>
   retrieveCheckoutSession(id: string): Promise<ProviderCheckoutSession>
+  expireCheckoutSession(id: string): Promise<ProviderCheckoutSession>
   retrieveSubscription(id: string): Promise<ProviderSubscriptionSnapshot>
   createPortalSession(request: ProviderPortalRequest): Promise<ProviderPortalSession>
   retrievePrice(id: string): Promise<ProviderPriceSnapshot>

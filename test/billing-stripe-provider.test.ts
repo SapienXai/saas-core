@@ -138,7 +138,7 @@ describe("Stripe billing provider boundary", () => {
     expect(normalize("trialing").status).toBe("trialing")
     expect(normalize("past_due").status).toBe("past_due")
     expect(normalize("incomplete").status).toBe("pending")
-    expect(normalize("incomplete_expired").status).toBe("expired")
+    expect(normalize("incomplete_expired")).toMatchObject({ status: "expired", providerStatus: "expired" })
     expect(normalize("unpaid").status).toBe("unpaid")
     expect(normalize("future_status")).toMatchObject({ status: "pending", issueCode: "unsupported_subscription_status" })
   })
@@ -238,6 +238,7 @@ describe("Stripe billing provider boundary", () => {
 
     const adapter = createStripeBillingAdapter()
     await expect(adapter.createCheckoutSession(checkoutRequest)).rejects.toMatchObject({ code: "BILLING_DEFERRED" })
+    await expect(adapter.expireCheckoutSession("cs_test_pending")).rejects.toMatchObject({ code: "BILLING_DEFERRED" })
     await expect(adapter.verifyWebhook('{"id":"evt_test","object":"event"}', "t=1,v1=invalid"))
       .rejects.toThrow(/signature/i)
   })

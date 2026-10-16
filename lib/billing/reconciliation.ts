@@ -43,7 +43,7 @@ export function compareBillingEventOrder(
 }
 
 export function isTerminalBillingSubscription(status: string | null | undefined) {
-  return status === "canceled" || status === "expired"
+  return status === "canceled" || status === "expired" || status === "incomplete_expired"
 }
 
 export type BillingSubscriptionProjectionRow = {

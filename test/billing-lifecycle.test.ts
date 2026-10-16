@@ -9,6 +9,7 @@ import {
 import {
   compareBillingEventOrder,
   isBillingEnvironmentMatch,
+  isTerminalBillingSubscription,
   projectCanonicalSubscription,
 } from "../lib/billing/reconciliation"
 import type Stripe from "stripe"
@@ -37,6 +38,12 @@ const subscription = {
 }
 
 describe("canonical billing lifecycle", () => {
+  it("treats Stripe's expired incomplete Checkout state as terminal for replacement", () => {
+    expect(isTerminalBillingSubscription("incomplete_expired")).toBe(true)
+    expect(isTerminalBillingSubscription("expired")).toBe(true)
+    expect(isTerminalBillingSubscription("active")).toBe(false)
+  })
+
   it("permits a canceled subscription to be replaced and converges duplicate events", () => {
     const current = {
       provider: "stripe",
