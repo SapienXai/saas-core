@@ -33,11 +33,13 @@ function assert(condition, message) {
   if (!condition) throw new Error(message)
 }
 
-function writeState({ published = [], mismatched = [], networkFailure = [] } = {}) {
+function writeState({ published = [], acceptedButHidden = [], mismatched = [], networkFailure = [], visibilityDelay = 0 } = {}) {
   const packages = Object.fromEntries(PACKAGE_NAMES.map((name) => [name, { published: false }]))
   for (const name of published) packages[name] = { published: true, ...identity(artifactFile(name)) }
+  for (const name of acceptedButHidden) packages[name] = { published: true, ...identity(artifactFile(name)) }
   for (const name of mismatched) packages[name] = { published: true, integrity: "sha512-not-the-local-artifact", shasum: "not-the-local-artifact" }
-  writeFileSync(stateFile, JSON.stringify({ packages, networkFailure }, null, 2))
+  const remainingVisibilityMisses = Object.fromEntries([...published, ...acceptedButHidden].map((name) => [name, visibilityDelay]))
+  writeFileSync(stateFile, JSON.stringify({ packages, networkFailure, visibilityDelay, remainingVisibilityMisses }, null, 2))
   writeFileSync(logFile, "[]")
 }
 
@@ -53,6 +55,8 @@ function run(script, args = []) {
       RELEASE_MOCK_STATE: stateFile,
       RELEASE_MOCK_LOG: logFile,
       RELEASE_MOCK_PACKAGE_MAP: JSON.stringify(packageMap),
+      RELEASE_REGISTRY_POLL_INTERVAL_MS: "1",
+      RELEASE_REGISTRY_POLL_TIMEOUT_MS: "1000",
       SAAS_CORE_PUBLIC_RELEASE_APPROVED: "true",
       SAAS_CORE_NPM_BOOTSTRAP_APPROVED: "",
       NODE_AUTH_TOKEN: "",
@@ -62,8 +66,14 @@ function run(script, args = []) {
 }
 
 function finalJson(result) {
-  const lines = `${result.stdout || ""}\n${result.stderr || ""}`.trim().split("\n").filter(Boolean)
-  return JSON.parse(lines.at(-1))
+  const candidates = [result.stderr || "", result.stdout || ""]
+    .flatMap((stream) => stream.trim().split("\n").filter(Boolean).reverse())
+  for (const line of candidates) {
+    try {
+      return JSON.parse(line)
+    } catch {}
+  }
+  throw new Error(`Unable to parse release summary.\n${result.stdout}\n${result.stderr}`)
 }
 
 function publishLog() {
@@ -96,6 +106,13 @@ if (command === "view") {
     process.exit(1)
   }
   const packageState = state.packages[packageName]
+  if (packageState?.published && (state.remainingVisibilityMisses?.[packageName] || 0) > 0) {
+    state.remainingVisibilityMisses[packageName] -= 1
+    writeFileSync(stateFile, JSON.stringify(state, null, 2))
+    console.error("npm error code E404")
+    console.error("npm error 404 No match found for " + spec)
+    process.exit(1)
+  }
   if (!packageState?.published) {
     console.error("npm error code E404")
     console.error("npm error 404 No match found for " + spec)
@@ -112,12 +129,18 @@ if (command === "publish") {
     console.error("mock publish received an unknown artifact")
     process.exit(1)
   }
+  if (state.packages[name]?.published) {
+    console.error("npm error code E403")
+    console.error("npm error 403 Cannot publish over existing versions: ${RELEASE_VERSION}")
+    process.exit(1)
+  }
   const bytes = readFileSync(artifact)
   state.packages[name] = {
     published: true,
     integrity: "sha512-" + createHash("sha512").update(bytes).digest("base64"),
     shasum: createHash("sha1").update(bytes).digest("hex"),
   }
+  state.remainingVisibilityMisses[name] = state.visibilityDelay || 0
   writeFileSync(stateFile, JSON.stringify(state, null, 2))
   const log = JSON.parse(readFileSync(logFile, "utf8"))
   log.push(name)
@@ -155,6 +178,18 @@ process.exit(1)
   assert(summary.reports.slice(0, 2).every((report) => report.publication === "ALREADY_PRESENT_AND_VERIFIED"), "Scenario B must skip the two verified packages.")
   assert(summary.reports.slice(2).every((report) => report.publication === "PUBLISHED_AND_VERIFIED"), "Scenario B must verify each resumed publication.")
 
+  writeState({ visibilityDelay: 2 })
+  result = run("publish-npm-release.mjs")
+  summary = finalJson(result)
+  assert(result.status === 0 && publishLog().length === 5, "Scenario F must wait for npm registry visibility after accepted publications.")
+  assert(summary.reports.length === 5 && summary.reports.every((report) => report.publication === "PUBLISHED_AND_VERIFIED"), `Scenario F must report all delayed packages only after integrity verification: ${JSON.stringify(summary)}\n${result.stdout}\n${result.stderr}`)
+
+  writeState({ acceptedButHidden: [PACKAGE_NAMES[0]], visibilityDelay: 3 })
+  result = run("publish-npm-release.mjs")
+  summary = finalJson(result)
+  assert(result.status === 0 && publishLog().length === 4, "Scenario G must treat an immutable-version conflict as a pending publication and continue without republishing it.")
+  assert(summary.reports.length === 5 && summary.reports.every((report) => report.publication === "PUBLISHED_AND_VERIFIED"), "Scenario G must verify the already-accepted hidden package and all new packages.")
+
   writeState({ published: PACKAGE_NAMES })
   result = run("check-registry-release.mjs", ["--preflight"])
   summary = finalJson(result)
@@ -188,6 +223,8 @@ process.exit(1)
       C: "5/5 exact -> no publish calls",
       D: "identity mismatch -> hard fail before publish",
       E: "registry/network indeterminate -> hard fail before publish",
+      F: "accepted npm publish with delayed visibility -> poll until all artifact identities verify",
+      G: "accepted-but-not-yet-visible version conflict -> verify the immutable existing artifact without republishing",
     },
   }))
 } finally {

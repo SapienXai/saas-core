@@ -299,10 +299,14 @@ release gate is `pnpm release:check`; tag `saas-core-vX.Y.Z` only after it
 passes. The release workflow derives `X.Y.Z` from the tag, validates the
 package coordinates, packs and inspects all five artifacts, then publishes in
 dependency-safe order through either the one-time first-release `NPM_TOKEN`
-bootstrap or npm Trusted Publishing with OIDC. It verifies fresh registry
-installation and creates the GitHub Release only afterward. Any failed gate
-stops before publication. Delete `NPM_TOKEN` after the first successful
-bootstrap and configure Trusted Publishers for all five packages. The `2.4.0`
+bootstrap or npm Trusted Publishing with OIDC. npm may accept a publish before
+the version appears in registry reads, so the publisher waits for visibility
+and exact artifact integrity within a bounded timeout; reruns recognize an
+already accepted immutable version and verify it instead of republishing it.
+It verifies fresh registry installation and creates the GitHub Release only
+afterward. Any failed gate stops before publication. Delete `NPM_TOKEN` after
+the first successful bootstrap and configure Trusted Publishers for all five
+packages. The `2.4.0`
 evidence remains the prior release baseline; the coordinated `2.6.0` boundary added
 target-plan downgrade eligibility and confirmation-time revalidation while
 retaining the controlled legacy-consumer upgrade, packed exports, managed
