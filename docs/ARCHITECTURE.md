@@ -197,7 +197,7 @@ domains, Platform Control, and source-derived interaction surfaces. It has a
 generic Workspace plus Projects model and does not require industry-specific
 concepts to boot.
 
-The coordinated runtime is `2.6.1`; the Core schema compatibility coordinate
+The coordinated runtime is `2.6.2`; the Core schema compatibility coordinate
 remains `2.0`. The tagged release delivers the additive, Core-managed migration
 sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,

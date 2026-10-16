@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core-ui",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "description": "Reusable SaaS Core UI primitives and interaction surfaces",
   "license": "UNLICENSED",
   "repository": { "type": "git", "url": "git+https://github.com/SapienXai/saas-core.git" },

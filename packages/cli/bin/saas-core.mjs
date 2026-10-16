@@ -313,6 +313,7 @@ export type ProductConfig = {
   onboarding?: { productSetupPath?: string | null; workspaceProvisioning?: "manual" | "deferred" }
   auth?: ProductAuthConfig
   shell?: ProductShellConfig
+  publicSitemapPaths?: readonly string[]
   catalog: ProductCatalog
 }
 

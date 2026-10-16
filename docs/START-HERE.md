@@ -6,9 +6,9 @@ of you.
 
 ## Coordinates and release truth
 
-The coordinated runtime/package release in this checkout is `2.6.1`. The
+The coordinated runtime/package release in this checkout is `2.6.2`. The
 database compatibility coordinate is `2.0`; it is not the same thing as the
-package version. The `saas-core-v2.6.1` tag is the release anchor, while the
+package version. The `saas-core-v2.6.2` tag is the release anchor, while the
 checked-out `main` branch can contain post-tag, unreleased changes. Treat
 `package.json`, `scripts/release-constants.mjs`, package manifests and the
 consumer manifest as authority; prose and historical release notes are
@@ -16,7 +16,7 @@ context.
 
 ```mermaid
 flowchart LR
-  Release[Runtime package release 2.6.1] -. separate coordinate .-> Schema[Core schema compatibility 2.0]
+  Release[Runtime package release 2.6.2] -. separate coordinate .-> Schema[Core schema compatibility 2.0]
   Schema --> Source[Source-only migrations]
   Release --> Template[Canonical app template]
   Template --> Consumer[Generated product consumer]
@@ -79,8 +79,8 @@ tracked set and `pnpm verify` before handing off changes.
 Start from a registry release or a local Core source:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.6.1 @sapienx/saas-core-config@^2.6.1 @sapienx/saas-core-ui@^2.6.1
-pnpm add -D @sapienx/saas-core-cli@^2.6.1
+pnpm add @sapienx/saas-core@^2.6.2 @sapienx/saas-core-config@^2.6.2 @sapienx/saas-core-ui@^2.6.2
+pnpm add -D @sapienx/saas-core-cli@^2.6.2
 pnpm exec saas-core init "My Product" ./my-product
 cd my-product
 pnpm install

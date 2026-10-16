@@ -1,4 +1,4 @@
-export const CORE_VERSION = "2.6.1"
+export const CORE_VERSION = "2.6.2"
 export const CORE_SCHEMA_VERSION = "2.0"
 
 export * from "./billing.js"

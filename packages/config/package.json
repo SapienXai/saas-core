@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core-config",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "description": "Product configuration boundary for SaaS Core",
   "license": "UNLICENSED",
   "repository": { "type": "git", "url": "git+https://github.com/SapienXai/saas-core.git" },

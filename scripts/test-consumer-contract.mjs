@@ -45,6 +45,8 @@ try {
   const readme = await readFile(path.join(product, "README.md"), "utf8")
   const agents = await readFile(path.join(product, "AGENTS.md"), "utf8")
   const gitignore = await readFile(path.join(product, ".gitignore"), "utf8")
+  const generatedProductConfig = await readFile(path.join(product, "lib/product-config.ts"), "utf8")
+  assert(generatedProductConfig.includes("publicSitemapPaths?: readonly string[]"), "generated ProductConfig does not support the managed sitemap route")
   assert(readme.startsWith("# Contract Demo\n"), "generated README is not dynamic")
   for (const phrase of ["pnpm db:start", "pnpm db:types", "billing:sync-catalog", "workspace_id", "source-only", "supabase/migrations/", "exact migration paths"]) assert(readme.includes(phrase), `generated README is missing ${phrase}`)
   for (const phrase of ["Product implementation rules", "Verification contract", "workspace_id", "server-only", "BEGIN:nextjs-agent-rules", "unknown flat migrations remain Product-owned"]) assert(agents.includes(phrase), `generated AGENTS.md is missing ${phrase}`)

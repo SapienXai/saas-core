@@ -22,5 +22,5 @@ export * from "./components/ui/tooltip"
 export * from "./components/ui/sidebar"
 export * from "./components/billing"
 
-export const UI_SYSTEM_VERSION = "2.6.1"
+export const UI_SYSTEM_VERSION = "2.6.2"
 export const UI_SOURCE = "Production-derived source-preserving primitives"

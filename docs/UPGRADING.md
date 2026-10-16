@@ -5,12 +5,12 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
-The current coordinated runtime and package release is tag `saas-core-v2.6.1`
+The current coordinated runtime and package release is tag `saas-core-v2.6.2`
 on Core schema compatibility coordinate `2.0`. Its packed consumer contract
 delivers the additive billing sources listed in
 [`RELEASE-2.6.0.md`](./RELEASE-2.6.0.md) plus the Checkout lifecycle and
 scheduled-downgrade runtime fixes documented in
-[`RELEASE-2.6.1.md`](./RELEASE-2.6.1.md). The tag matches the current canonical
+[`RELEASE-2.6.2.md`](./RELEASE-2.6.2.md). The tag matches the current canonical
 source set. Package packing and CLI `init`/`update` deliver sources but never
 execute SQL; each consumer owns the controlled apply and verification
 workstream. The Plan Catalog guide is shipped in the Core package as
@@ -54,8 +54,8 @@ The normal consumer path installs the coordinated packages from npm. A fresh
 consumer uses the registry-published CLI to materialize the packed template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.6.1 @sapienx/saas-core-config@^2.6.1 @sapienx/saas-core-ui@^2.6.1
-pnpm add -D @sapienx/saas-core-cli@^2.6.1
+pnpm add @sapienx/saas-core@^2.6.2 @sapienx/saas-core-config@^2.6.2 @sapienx/saas-core-ui@^2.6.2
+pnpm add -D @sapienx/saas-core-cli@^2.6.2
 pnpm exec saas-core init "My Product" ./my-product
 pnpm install --dir ./my-product
 ```
@@ -245,7 +245,7 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and schema compatibility coordinate are separate. The
-current runtime is `2.6.1` and the compatibility coordinate remains `2.0` even
+current runtime is `2.6.2` and the compatibility coordinate remains `2.0` even
 though the release delivers additive billing, entitlement, and plan-catalog
 sources. `doctor`
 reports Core source readiness, consumer presence/hash readiness, and manifest
@@ -307,7 +307,7 @@ evidence remains the prior release baseline; the coordinated `2.6.0` boundary ad
 target-plan downgrade eligibility and confirmation-time revalidation while
 retaining the controlled legacy-consumer upgrade, packed exports, managed
 billing/plan-catalog delivery, product-owned preservation, relocation, and a
-second frozen install/build. The current `2.6.1` patch also carries the Checkout-session expiry, terminal Stripe status, and scheduled-downgrade runtime fixes described in `RELEASE-2.6.1.md`. The final release should include
+second frozen install/build. The current `2.6.2` patch also carries the Checkout-session expiry, terminal Stripe status, and scheduled-downgrade runtime fixes described in `RELEASE-2.6.2.md`. The final release should include
 `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, clean DB tests,
 browser tests, build, `pnpm pack`, a fresh consumer, relocation, and a second
 frozen install/build.
