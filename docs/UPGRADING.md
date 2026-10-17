@@ -19,6 +19,18 @@ recorded in the versioned release notes, with the prior release retained in
 [`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md), and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
+## Unreleased Checkout reconciliation follow-up on `main`
+
+Post-2.6.2 source adds a fail-closed fast path for Checkout returns: it reuses
+the local subscription only when Workspace, Stripe environment, subscription,
+Price, plan, active status, and the durable succeeded transition all match the
+verified paid Checkout Session. Otherwise the existing Stripe reconciliation
+and projection path remains authoritative. The return path also passes its
+already verified Checkout snapshot through validation instead of retrieving
+the same Session twice. This does not change the database schema or grant
+entitlement from browser state. The patch is currently on `main` after the
+2.6.2 tag; it is not part of the published 2.6.2 package.
+
 The managed entitlement runtime imports the product-owned server extension
 `src/product/usage.ts`. Fresh consumers receive a neutral resolver registry;
 updates preserve an existing registry and scaffold it only when a legacy

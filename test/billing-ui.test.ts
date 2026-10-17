@@ -93,6 +93,7 @@ describe("provider-neutral billing UI", () => {
     expect(source).toContain('searchParams.get("checkout_session_id")')
     expect(source).toContain("pendingOutcome.checkoutSessionId")
     expect(source).toContain("window.setTimeout(refreshUntilVerified, 2500)")
+    expect(webhook).toContain("isSettledStripeCheckoutProjection")
     expect(source).not.toContain("@paddle/paddle-js")
     expect(actions).toContain("reconcileBillingCheckoutSession")
     expect(webhook).toContain("A completed Checkout return never grants access")

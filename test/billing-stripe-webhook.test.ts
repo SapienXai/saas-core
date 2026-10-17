@@ -4,6 +4,7 @@ import {
   getProviderMutationSettlement,
   getStripeCheckoutEventStatus,
   isInitialStripeSubscriptionSourceEligible,
+  isSettledStripeCheckoutProjection,
   normalizeStripeEvent,
 } from "../lib/billing/stripe-webhook"
 
@@ -78,6 +79,37 @@ describe("Stripe webhook normalization", () => {
   it("rejects event payloads without verified Stripe event identity", () => {
     expect(() => normalizeStripeEvent({ id: "", type: "invoice.paid", created: 1, livemode: false, data: { object: { id: "in_1", object: "invoice" } } }))
       .toThrow("Stripe webhook event metadata is incomplete or invalid.")
+  })
+})
+
+describe("settled Stripe Checkout projection recovery", () => {
+  const input = {
+    workspaceId: "9d342cbb-49d6-4614-bd5c-01c266d1511e",
+    environment: "sandbox" as const,
+    planKey: "starter",
+    priceId: "price_starter_month",
+    subscriptionId: "sub_sandbox",
+    subscription: {
+      workspace_id: "9d342cbb-49d6-4614-bd5c-01c266d1511e",
+      plan_key: "starter",
+      status: "active",
+      source: "provider",
+      provider: "stripe",
+      provider_environment: "sandbox",
+      provider_subscription_id: "sub_sandbox",
+      provider_price_id: "price_starter_month",
+      provider_status: "active",
+    },
+    transition: { id: "transition_checkout", state: "succeeded" },
+  }
+
+  it("reuses only a fully correlated, provider-confirmed active projection", () => {
+    expect(isSettledStripeCheckoutProjection(input)).toBe(true)
+    expect(isSettledStripeCheckoutProjection({ ...input, transition: { ...input.transition, state: "pending" } })).toBe(false)
+    expect(isSettledStripeCheckoutProjection({ ...input, subscription: { ...input.subscription, provider_environment: "live" } })).toBe(false)
+    expect(isSettledStripeCheckoutProjection({ ...input, subscription: { ...input.subscription, provider_price_id: "price_other" } })).toBe(false)
+    expect(isSettledStripeCheckoutProjection({ ...input, subscription: { ...input.subscription, provider_subscription_id: "sub_other" } })).toBe(false)
+    expect(isSettledStripeCheckoutProjection({ ...input, subscription: { ...input.subscription, status: "past_due", provider_status: "past_due" } })).toBe(false)
   })
 })
 

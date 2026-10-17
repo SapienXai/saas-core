@@ -136,6 +136,39 @@ export function getStripeCheckoutEventStatus(
   return "created"
 }
 
+export function isSettledStripeCheckoutProjection(input: {
+  workspaceId: string
+  environment: "sandbox" | "live"
+  planKey: string
+  priceId: string
+  subscriptionId: string
+  subscription: {
+    workspace_id: string
+    plan_key: string
+    status: string
+    source: string
+    provider: string | null
+    provider_environment: string | null
+    provider_subscription_id: string | null
+    provider_price_id: string | null
+    provider_status: string | null
+  } | null
+  transition: { id: string; state: string } | null
+}) {
+  const { subscription, transition } = input
+  return Boolean(subscription && transition &&
+    subscription.workspace_id === input.workspaceId &&
+    subscription.plan_key === input.planKey &&
+    subscription.source === "provider" &&
+    subscription.provider === STRIPE_BILLING_PROVIDER &&
+    subscription.provider_environment === input.environment &&
+    subscription.provider_subscription_id === input.subscriptionId &&
+    subscription.provider_price_id === input.priceId &&
+    ["active", "trialing"].includes(subscription.status) &&
+    ["active", "trialing"].includes(subscription.provider_status || "") &&
+    transition.state === "succeeded")
+}
+
 export async function recordStripeWebhookEvent(event: NormalizedStripeEvent) {
   const environment = getBillingEnvironment()
   if (event.livemode !== (environment === "live")) {
@@ -635,11 +668,11 @@ async function settleProviderMutation(
   }
 }
 
-async function applyStripeCheckoutEvent(event: NormalizedStripeEvent) {
+async function applyStripeCheckoutEvent(event: NormalizedStripeEvent, verifiedSession?: ProviderCheckoutSession) {
   const environment = getBillingEnvironment()
   const sessionId = event.objectId
   const adapter = createStripeBillingAdapter()
-  const session: ProviderCheckoutSession = await adapter.retrieveCheckoutSession(sessionId)
+  const session: ProviderCheckoutSession = verifiedSession || await adapter.retrieveCheckoutSession(sessionId)
   const db = createServiceRoleClient() as any
   const { data: checkout, error } = await db.from("billing_checkout_sessions")
     .select("workspace_id, target_plan_key, provider_price_id, status, idempotency_key")
@@ -797,6 +830,38 @@ export async function reconcileStripeCheckoutSession(checkoutSessionId: string, 
     return { status: "pending" as const, workspaceId }
   }
   if (!session.subscriptionId) return { status: "pending" as const, workspaceId }
+
+  const [{ data: projected, error: projectionError }, { data: settledTransition, error: settledTransitionError }] = await Promise.all([
+    db.from("workspace_subscriptions")
+      .select("workspace_id, plan_key, status, source, provider, provider_environment, provider_subscription_id, provider_price_id, provider_status")
+      .eq("workspace_id", workspaceId)
+      .maybeSingle(),
+    db.from("billing_mutation_transitions")
+      .select("id, state")
+      .eq("mutation_id", checkout.idempotency_key)
+      .eq("workspace_id", workspaceId)
+      .eq("kind", "checkout")
+      .maybeSingle(),
+  ])
+  if (projectionError || settledTransitionError) throw new Error(projectionError?.message || settledTransitionError?.message)
+  if (projected && settledTransition && isSettledStripeCheckoutProjection({
+    workspaceId,
+    environment,
+    planKey: checkout.target_plan_key,
+    priceId: checkout.provider_price_id,
+    subscriptionId: session.subscriptionId,
+    subscription: projected,
+    transition: settledTransition,
+  })) {
+    return {
+      status: "processed" as const,
+      workspaceId,
+      planKey: projected.plan_key,
+      subscriptionStatus: projected.provider_status,
+      transitionId: settledTransition.id,
+    }
+  }
+
   const completed = normalizeStripeEvent({
     id: "checkout_return_" + session.id + "_" + Date.now(),
     type: "checkout.session.completed",
@@ -804,7 +869,7 @@ export async function reconcileStripeCheckoutSession(checkoutSessionId: string, 
     livemode: session.livemode,
     data: { object: { id: session.id, object: "checkout.session", metadata: session.metadata } },
   })
-  const result = await applyStripeCheckoutEvent({ ...completed, occurredAt: new Date().toISOString(), workspaceId })
+  const result = await applyStripeCheckoutEvent({ ...completed, occurredAt: new Date().toISOString(), workspaceId }, session)
   const { data: transition, error: transitionError } = await db.from("billing_mutation_transitions")
     .select("id")
     .eq("mutation_id", checkout.idempotency_key)
