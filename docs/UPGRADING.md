@@ -28,8 +28,11 @@ verified paid Checkout Session. Otherwise the existing Stripe reconciliation
 and projection path remains authoritative. The return path also passes its
 already verified Checkout snapshot through validation instead of retrieving
 the same Session twice. This does not change the database schema or grant
-entitlement from browser state. The patch is currently on `main` after the
-2.6.2 tag; it is not part of the published 2.6.2 package.
+entitlement from browser state. The shared billing success experience now uses
+Radix's managed dialog layer, keeping close and action controls inside the
+active modal's pointer and focus boundary when shown above another dialog. The
+patch is currently on `main` after the 2.6.2 tag; it is not part of the
+published 2.6.2 package.
 
 The managed entitlement runtime imports the product-owned server extension
 `src/product/usage.ts`. Fresh consumers receive a neutral resolver registry;

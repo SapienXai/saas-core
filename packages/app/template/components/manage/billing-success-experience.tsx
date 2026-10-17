@@ -3,9 +3,9 @@
 import { useEffect, useRef } from "react"
 import { ArrowRight, Check, CircleCheck, Sparkles, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { useLanguage } from "@/context/language-context"
 import { formatDate as formatLocalizedDate } from "@/i18n/format"
-import { BillingOverlayPortal } from "@/components/manage/billing-overlay-portal"
 
 type BillingSuccessKind = "purchase" | "upgrade" | "downgrade" | "billing"
 
@@ -44,53 +44,21 @@ export function BillingSuccessExperience({
   const { currentLang, getTranslation } = useLanguage()
   const t = getTranslation
   const continueRef = useRef<HTMLButtonElement>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
-  const previousFocusRef = useRef<HTMLElement | null>(null)
+  const isDark = typeof document !== "undefined" && document.body.dataset.manageTheme === "dark"
   const effectiveDate = effectiveAt ? formatLocalizedDate(effectiveAt, currentLang, { dateStyle: "medium", timeStyle: "short" }) : null
   const isDowngrade = kind === "downgrade"
   const isScheduledBilling = kind === "billing" && Boolean(effectiveDate)
   const isScheduled = isDowngrade || isScheduledBilling
 
   useEffect(() => {
-    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const previousOverflow = document.body.style.overflow
     const previousSuccessState = document.body.dataset.billingSuccessOpen
-    document.body.style.overflow = "hidden"
     document.body.dataset.billingSuccessOpen = "true"
-    continueRef.current?.focus()
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault()
-        onCloseRef.current()
-        return
-      }
-      if (event.key !== "Tab" || !dialogRef.current) return
-      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])")).filter((element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true")
-      if (!focusable.length) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-    window.addEventListener("keydown", handleKeyDown)
-
     return () => {
-      document.body.style.overflow = previousOverflow
       if (previousSuccessState === undefined) {
         delete document.body.dataset.billingSuccessOpen
       } else {
         document.body.dataset.billingSuccessOpen = previousSuccessState
       }
-      window.removeEventListener("keydown", handleKeyDown)
-      if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus({ preventScroll: true })
     }
   }, [])
 
@@ -116,11 +84,20 @@ export function BillingSuccessExperience({
         : t("manage.planUsage.billing.success.billingDescription")
 
   return (
-    <BillingOverlayPortal>
-      <style>{`@keyframes billing-success-confetti-fall{0%{opacity:0;transform:translate3d(0,-8vh,0) rotate(0deg)}12%{opacity:1}100%{opacity:0;transform:translate3d(8vw,108vh,0) rotate(520deg)}}@keyframes billing-success-feature-in{0%{opacity:0;transform:translateY(4px)}100%{opacity:1;transform:translateY(0)}}.billing-success-confetti{animation-name:billing-success-confetti-fall;animation-timing-function:cubic-bezier(.2,.65,.35,1);animation-iteration-count:1}.billing-success-feature{animation-name:billing-success-feature-in;animation-timing-function:ease-out;animation-fill-mode:forwards;animation-iteration-count:1}@media (prefers-reduced-motion:reduce){.billing-success-confetti,.billing-success-feature{animation:none!important;opacity:1!important;transform:none!important}}`}</style>
-      <div ref={dialogRef} className="billing-success-experience fixed inset-0 z-[100] overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="billing-success-title" aria-describedby="billing-success-description">
+    <Dialog open onOpenChange={(nextOpen) => { if (!nextOpen) onClose() }}>
+      <DialogContent
+        className={`billing-success-experience fixed left-0 top-0 right-0 bottom-0 z-[100] flex h-[100dvh] w-full max-w-none translate-x-0 translate-y-0 items-center justify-center overflow-y-auto rounded-none border-0 bg-transparent p-3 shadow-none sm:rounded-none sm:p-5 ${isDark ? "dark" : ""}`}
+        overlayClassName={`z-[90] backdrop-blur-[6px] ${isDark ? "bg-slate-950/65" : "bg-slate-950/35"}`}
+        aria-labelledby="billing-success-title"
+        aria-describedby="billing-success-description"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          continueRef.current?.focus({ preventScroll: true })
+        }}
+        onInteractOutside={(event) => event.preventDefault()}
+      >
+        <style>{`@keyframes billing-success-confetti-fall{0%{opacity:0;transform:translate3d(0,-8vh,0) rotate(0deg)}12%{opacity:1}100%{opacity:0;transform:translate3d(8vw,108vh,0) rotate(520deg)}}@keyframes billing-success-feature-in{0%{opacity:0;transform:translateY(4px)}100%{opacity:1;transform:translateY(0)}}.billing-success-confetti{animation-name:billing-success-confetti-fall;animation-timing-function:cubic-bezier(.2,.65,.35,1);animation-iteration-count:1}.billing-success-feature{animation-name:billing-success-feature-in;animation-timing-function:ease-out;animation-fill-mode:forwards;animation-iteration-count:1}@media (prefers-reduced-motion:reduce){.billing-success-confetti,.billing-success-feature{animation:none!important;opacity:1!important;transform:none!important}}`}</style>
         <div className="relative flex min-h-full items-center justify-center p-3 sm:p-5">
-          <div className="absolute inset-0 bg-slate-950/35 backdrop-blur-[6px] dark:bg-slate-950/65" aria-hidden="true" />
           <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden" aria-hidden="true">
             {CONFETTI.map((piece) => (
               <span
@@ -133,51 +110,53 @@ export function BillingSuccessExperience({
 
           <div className="relative z-10 w-full max-w-[24rem] text-center">
             <div className="billing-success-card relative rounded-[1.5rem] border border-white/90 bg-white/95 p-4 shadow-[0_24px_70px_-30px_rgba(30,20,70,0.6)] backdrop-blur-xl dark:border-white/10 dark:bg-[#1c1b29]/95 dark:shadow-[0_24px_70px_-30px_rgba(139,92,246,0.45)] sm:p-5">
-            <button type="button" onClick={onClose} aria-label={t("common.close")} className="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-white">
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 shadow-[0_10px_24px_-14px_rgba(16,185,129,0.9)] dark:bg-emerald-500/15 dark:text-emerald-300">
-              <CircleCheck className="h-7 w-7" strokeWidth={1.7} aria-hidden="true" />
-            </div>
-            <p className="mt-4 flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">
-              <Sparkles className="h-3 w-3" aria-hidden="true" /> {isScheduled ? t("manage.planUsage.billing.success.changeScheduled") : t("manage.planUsage.billing.success.paymentSuccessful")}
-            </p>
-            <h2 id="billing-success-title" className="mt-2 text-xl font-bold tracking-tight text-slate-950 dark:text-white sm:text-2xl">{title}</h2>
-            <p id="billing-success-description" className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-600 dark:text-slate-300">{description}</p>
-
-            <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-400/15 dark:bg-violet-500/10">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-200">{isScheduled ? t("manage.planUsage.billing.success.scheduledChange") : t("manage.planUsage.billing.success.activePlan")}</span>
-                <span className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-violet-700 shadow-sm dark:bg-white/10 dark:text-violet-200">{isScheduled ? effectiveDate ? t("manage.planUsage.billing.success.scheduledStartsOn", { date: effectiveDate }) : t("manage.planUsage.billing.success.scheduled") : interval === "year" ? t("manage.planUsage.billing.success.billedAnnually") : t("manage.planUsage.billing.success.billedMonthly")}</span>
+              <DialogClose asChild>
+                <button type="button" aria-label={t("common.close")} className="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-white">
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </DialogClose>
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 shadow-[0_10px_24px_-14px_rgba(16,185,129,0.9)] dark:bg-emerald-500/15 dark:text-emerald-300">
+                <CircleCheck className="h-7 w-7" strokeWidth={1.7} aria-hidden="true" />
               </div>
-              <p className="mt-1 flex items-center gap-1.5 text-base font-bold text-slate-950 dark:text-white">{fromPlanName && isDowngrade && <><span>{fromPlanName}</span><ArrowRight className="h-3.5 w-3.5 shrink-0 text-violet-500" aria-hidden="true" /></>}<span>{planName}</span></p>
-            </div>
+              <p className="mt-4 flex items-center justify-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.18em] text-violet-600 dark:text-violet-300">
+                <Sparkles className="h-3 w-3" aria-hidden="true" /> {isScheduled ? t("manage.planUsage.billing.success.changeScheduled") : t("manage.planUsage.billing.success.paymentSuccessful")}
+              </p>
+              <DialogTitle id="billing-success-title" className="mt-2 text-xl font-bold leading-tight tracking-tight text-slate-950 dark:text-white sm:text-2xl">{title}</DialogTitle>
+              <DialogDescription id="billing-success-description" className="mx-auto mt-2 max-w-md text-xs leading-5 text-slate-600 dark:text-slate-300">{description}</DialogDescription>
 
-            <div className="mt-4 text-left">
-              <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{isScheduled ? t("manage.planUsage.billing.success.featuresAfterChange") : t("manage.planUsage.billing.success.featuresReady")}</p>
-              <div className="mt-2 grid gap-1.5">
-                {highlights.map((highlight, index) => (
-                  <div key={highlight} className="billing-success-feature flex items-center gap-2 rounded-lg border border-slate-100 bg-white/75 px-2.5 py-2 text-xs font-medium text-slate-700 opacity-0 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200" style={{ animationDelay: `${160 + index * 80}ms` }}>
-                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" />
-                    <span>{highlight}</span>
-                  </div>
-                ))}
+              <div className="mt-4 rounded-xl border border-violet-100 bg-violet-50/70 p-3 text-left dark:border-violet-400/15 dark:bg-violet-500/10">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-200">{isScheduled ? t("manage.planUsage.billing.success.scheduledChange") : t("manage.planUsage.billing.success.activePlan")}</span>
+                  <span className="rounded-full bg-white px-2 py-1 text-[9px] font-bold text-violet-700 shadow-sm dark:bg-white/10 dark:text-violet-200">{isScheduled ? effectiveDate ? t("manage.planUsage.billing.success.scheduledStartsOn", { date: effectiveDate }) : t("manage.planUsage.billing.success.scheduled") : interval === "year" ? t("manage.planUsage.billing.success.billedAnnually") : t("manage.planUsage.billing.success.billedMonthly")}</span>
+                </div>
+                <p className="mt-1 flex items-center gap-1.5 text-base font-bold text-slate-950 dark:text-white">{fromPlanName && isDowngrade && <><span>{fromPlanName}</span><ArrowRight className="h-3.5 w-3.5 shrink-0 text-violet-500" aria-hidden="true" /></>}<span>{planName}</span></p>
               </div>
-            </div>
 
-            <div className="mt-4 flex flex-col gap-1.5 sm:flex-row">
-              <Button ref={continueRef} type="button" onClick={onContinue} className="min-h-10 flex-1 rounded-lg bg-violet-600 px-3 text-sm font-semibold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-700 focus-visible:ring-violet-500 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#1c1b29]">
-                {t("manage.planUsage.billing.success.continue")}
-                <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </Button>
-              <button type="button" onClick={onManageBilling} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white">
-                {t("manage.planUsage.billing.success.manageBilling")}
-              </button>
-            </div>
+              <div className="mt-4 text-left">
+                <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{isScheduled ? t("manage.planUsage.billing.success.featuresAfterChange") : t("manage.planUsage.billing.success.featuresReady")}</p>
+                <div className="mt-2 grid gap-1.5">
+                  {highlights.map((highlight, index) => (
+                    <div key={highlight} className="billing-success-feature flex items-center gap-2 rounded-lg border border-slate-100 bg-white/75 px-2.5 py-2 text-xs font-medium text-slate-700 opacity-0 dark:border-white/10 dark:bg-white/[0.04] dark:text-slate-200" style={{ animationDelay: `${160 + index * 80}ms` }}>
+                      <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" aria-hidden="true" />
+                      <span>{highlight}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-col gap-1.5 sm:flex-row">
+                <Button ref={continueRef} type="button" onClick={onContinue} className="min-h-10 flex-1 rounded-lg bg-violet-600 px-3 text-sm font-semibold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-700 focus-visible:ring-violet-500 focus-visible:ring-offset-white dark:focus-visible:ring-offset-[#1c1b29]">
+                  {t("manage.planUsage.billing.success.continue")}
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+                <button type="button" onClick={onManageBilling} className="min-h-10 rounded-lg px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white">
+                  {t("manage.planUsage.billing.success.manageBilling")}
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </BillingOverlayPortal>
+      </DialogContent>
+    </Dialog>
   )
 }

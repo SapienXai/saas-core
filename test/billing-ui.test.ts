@@ -110,6 +110,18 @@ describe("provider-neutral billing UI", () => {
     expect(startCheckout).not.toContain('revalidatePath("/manage/plan")')
   })
 
+  it("keeps success actions inside the active Radix dialog layer", () => {
+    const success = read("components/manage/billing-success-experience.tsx")
+
+    expect(success).toContain("<Dialog open onOpenChange=")
+    expect(success).toContain("<DialogClose asChild>")
+    expect(success).toContain("onOpenAutoFocus=")
+    expect(success).toContain("onInteractOutside={(event) => event.preventDefault()}")
+    expect(success).not.toContain("BillingOverlayPortal")
+    expect(success).not.toContain('role="dialog"')
+    expect(success).not.toContain('window.addEventListener("keydown"')
+  })
+
   it("keeps scheduled changes, free plans, payment recovery, and authorization actionable", () => {
     const page = read("app/manage/plan/page.tsx")
     const actions = read("components/manage/billing-actions.tsx")
