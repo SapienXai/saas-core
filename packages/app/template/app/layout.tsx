@@ -66,7 +66,7 @@ export default async function RootLayout({
         <meta name="theme-color" content="#090b11" />
       </head>
       <body className="font-sans">
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <DevelopmentServiceWorkerCleanup />
           <LanguageProvider initialLanguage={language}>{children}</LanguageProvider>
           <Suspense fallback={null}><NavigationFeedback /></Suspense>

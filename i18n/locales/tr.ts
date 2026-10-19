@@ -3,6 +3,7 @@ import { en } from "@/i18n/locales/en"
 type Localized<T> = T extends string ? string : T extends object ? { [K in keyof T]: Localized<T[K]> } : T
 
 const turkishTranslations: Record<string, string> = {
+  "Appearance": "Görünüm", "System": "Sistem", "Light": "Açık", "Dark": "Koyu",
   "Close": "Kapat", "Loading…": "Yükleniyor…", "Updating…": "Güncelleniyor…", "Next": "İleri", "Previous": "Önceki", "Language": "Dil",
   "Already have an account?": "Zaten hesabınız var mı?", "Back to sign in": "Girişe dön", "Check your inbox.": "Gelen kutunuzu kontrol edin.",
   "We’ve sent a verification link to": "Şu adrese doğrulama bağlantısı gönderdik:", "This link is invalid or expired.": "Bu bağlantı geçersiz veya süresi dolmuş.", "Request a new link to continue.": "Devam etmek için yeni bir bağlantı isteyin.",

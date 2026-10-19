@@ -6,9 +6,8 @@ import { useEffect, useRef, useState } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Switch } from "@/components/ui/switch"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Activity, AlertCircle, Archive, ArrowUpRight, BarChart3, Briefcase, CalendarDays, Check, ChevronDown, ChevronRight, Crown, FileText, Folder, Globe2, Layers3, LayoutDashboard, List, LogOut, Moon, Music2, Package, PanelLeftClose, PanelLeftOpen, Plus, Settings2, Smartphone, Sun, Users, WalletCards, X, type LucideIcon } from "lucide-react"
+import { Activity, AlertCircle, Archive, ArrowUpRight, BarChart3, Briefcase, CalendarDays, Check, ChevronDown, ChevronRight, Crown, FileText, Folder, Globe2, Layers3, LayoutDashboard, List, LogOut, Monitor, Moon, Music2, Package, PanelLeftClose, PanelLeftOpen, Plus, Settings2, Smartphone, Sun, Users, WalletCards, X, type LucideIcon } from "lucide-react"
 import { useLanguage } from "@/context/language-context"
 import { useManageContext } from "@/context/manage-context"
 import { cn } from "@/lib/utils"
@@ -100,11 +99,12 @@ interface ManageSidebarProps {
   onClose: () => void
   isCollapsed: boolean
   isDark: boolean
-  onThemeChange: (isDark: boolean) => void
+  themePreference: "system" | "light" | "dark"
+  onThemeChange: (preference: "system" | "light" | "dark") => void
   toggleSidebar: () => void
 }
 
-export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeChange, toggleSidebar }: ManageSidebarProps) {
+export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, themePreference, onThemeChange, toggleSidebar }: ManageSidebarProps) {
   const pathname = usePathname()
   const { currentLang, getTranslation, setLanguage } = useLanguage()
   const { role, platformRole, user, currentWorkspace, planCatalog, ownedWorkspaceId, canCreateWorkspace } = useManageContext()
@@ -472,9 +472,21 @@ export function ManageSidebar({ isOpen, onClose, isCollapsed, isDark, onThemeCha
                 ))}
               </div>
             </div>
-            <div className="mx-1 flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-white/[0.06]">
-              <span className="flex items-center gap-2 text-xs font-semibold">{isDark ? <Moon className="h-4 w-4 text-violet-400" /> : <Sun className="h-4 w-4 text-amber-500" />}{isDark ? getTranslation("manage.common.darkMode") : getTranslation("manage.common.lightMode")}</span>
-              <Switch aria-label={isDark ? getTranslation("manage.common.darkMode") : getTranslation("manage.common.lightMode")} checked={isDark} onCheckedChange={onThemeChange} className="h-5 w-9 border-0 bg-slate-300 data-[state=checked]:bg-violet-600 dark:bg-slate-600" />
+            <div className="mx-1 rounded-xl bg-slate-50 px-2.5 py-2.5 dark:bg-white/[0.06]">
+              <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">{getTranslation("manage.common.appearance")}</p>
+              <div className="grid grid-cols-3 gap-1 rounded-xl border border-slate-200 bg-white p-1 dark:border-white/10 dark:bg-black/20" role="group" aria-label={getTranslation("manage.common.appearance")}>
+                {([
+                  { value: "system", label: "systemTheme", Icon: Monitor },
+                  { value: "light", label: "lightTheme", Icon: Sun },
+                  { value: "dark", label: "darkTheme", Icon: Moon },
+                ] as const).map(({ value, label, Icon }) => {
+                  const selected = themePreference === value
+                  return <button key={value} type="button" aria-pressed={selected} onClick={() => onThemeChange(value)} className={cn("flex min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 py-2 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500", selected ? "bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-900" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-white/[0.08] dark:hover:text-white")}>
+                    <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{getTranslation(`manage.common.${label}`)}</span>
+                  </button>
+                })}
+              </div>
             </div>
             <ManagePushNotificationSwitch className="mx-1 mt-2" />
             {canManageWorkspace && (canCreateWorkspace ? (

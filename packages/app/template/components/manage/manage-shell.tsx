@@ -14,6 +14,11 @@ import { ManagementPageLoading } from "@/components/ui/page-loading"
 import { ManageAppInstallPrompt, type ManagementPwaBranding } from "@/components/manage/manage-app-install-prompt"
 
 type PullRefreshState = "idle" | "pulling" | "ready" | "refreshing"
+type ThemePreference = "system" | "light" | "dark"
+
+function normalizeThemePreference(value: string | null): ThemePreference | null {
+  return value === "system" || value === "light" || value === "dark" ? value : null
+}
 
 const PULL_REFRESH_THRESHOLD = 76
 const PULL_REFRESH_MAX_DISTANCE = 96
@@ -25,10 +30,11 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
   const router = useRouter()
   const { user, loading, platformRole, currentWorkspace } = useManageContext()
   const { getTranslation } = useLanguage()
-  const { setTheme } = useTheme()
+  const { resolvedTheme, setTheme } = useTheme()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [manageDarkMode, setManageDarkMode] = useState(false)
+  const [themePreference, setThemePreference] = useState<ThemePreference>("system")
+  const manageDarkMode = themePreference === "dark" || (themePreference === "system" && resolvedTheme === "dark")
   const [hasLoadedThemePreference, setHasLoadedThemePreference] = useState(false)
   const [pullDistance, setPullDistance] = useState(0)
   const [pullState, setPullState] = useState<PullRefreshState>("idle")
@@ -58,18 +64,26 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
   }, [router, setManagedPullDistance, setManagedPullState])
 
   useEffect(() => {
-    setManageDarkMode(window.localStorage.getItem("saas-core:manage:theme") === "dark")
-    setSidebarCollapsed(window.localStorage.getItem("saas-core:manage:sidebar-collapsed") === "1")
+    try {
+      const storedPreference = normalizeThemePreference(window.localStorage.getItem("saas-core:manage:theme")) || "system"
+      setThemePreference(storedPreference)
+      setSidebarCollapsed(window.localStorage.getItem("saas-core:manage:sidebar-collapsed") === "1")
+    } catch {
+      setThemePreference("system")
+    }
     hasLoadedThemePreferenceRef.current = true
     setHasLoadedThemePreference(true)
   }, [setTheme])
 
   useEffect(() => {
     if (!hasLoadedThemePreferenceRef.current || !hasLoadedThemePreference) return
-    const theme = manageDarkMode ? "dark" : "light"
-    window.localStorage.setItem("saas-core:manage:theme", theme)
-    setTheme(theme)
-  }, [hasLoadedThemePreference, manageDarkMode, setTheme])
+    try {
+      window.localStorage.setItem("saas-core:manage:theme", themePreference)
+    } catch {
+      // The shared provider still applies the selected theme without storage.
+    }
+    setTheme(themePreference)
+  }, [hasLoadedThemePreference, setTheme, themePreference])
 
   useEffect(() => {
     // Selects and popovers are portalled to <body>, outside the .dark shell.
@@ -238,7 +252,7 @@ export function ManageShell({ children, initialBranding }: { children: React.Rea
         )}
         <div className="manage-shell relative z-10 isolate flex h-dvh min-h-0 w-full overflow-hidden overscroll-none bg-[#f6f7fb] text-slate-950 transition-colors dark:bg-[#050506] dark:text-white" style={shellStyle}>
           <ManageOfflineServiceWorker />
-          <ManageSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} isCollapsed={sidebarCollapsed} isDark={manageDarkMode} onThemeChange={setManageDarkMode} toggleSidebar={toggleSidebar} />
+          <ManageSidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} isCollapsed={sidebarCollapsed} isDark={manageDarkMode} themePreference={themePreference} onThemeChange={setThemePreference} toggleSidebar={toggleSidebar} />
           <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <ManageHeader user={user} toggleSidebar={toggleSidebar} />
             <main ref={mainRef} className="manage-main min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 pb-6 pt-3 md:px-6 md:pb-6 md:pt-5">{children}</main>

@@ -3,6 +3,7 @@ import { en } from "@/i18n/locales/en"
 type Localized<T> = T extends string ? string : T extends object ? { [K in keyof T]: Localized<T[K]> } : T
 
 const spanishTranslations: Record<string, string> = {
+  "Appearance": "Apariencia", "System": "Sistema", "Light": "Claro", "Dark": "Oscuro",
   "Close": "Cerrar", "Please enter a valid email address.": "Introduce una dirección de correo electrónico válida.", "Loading…": "Cargando…", "Updating…": "Actualizando…", "Next": "Siguiente", "Previous": "Anterior", "Language": "Idioma",
   "Already have an account?": "¿Ya tienes una cuenta?", "Back to sign in": "Volver a iniciar sesión", "Check your inbox.": "Revisa tu bandeja de entrada.",
   "We’ve sent a verification link to": "Hemos enviado un enlace de verificación a", "This link is invalid or expired.": "Este enlace no es válido o ha caducado.", "Request a new link to continue.": "Solicita un enlace nuevo para continuar.",
