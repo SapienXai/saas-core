@@ -54,10 +54,11 @@ describe("Paddle Sandbox renewal boundary", () => {
   const start = "2026-11-10T19:00:00.000Z"
   const boundary = "2026-12-10T19:00:00.000Z"
   const end = "2027-01-10T19:00:00.000Z"
-  const current = { id: "pri_old", product_id: "pro_old" }
-  const target = { id: "pri_new", product_id: "pro_new" }
+  const current = { id: "pri_old", product_id: "pro_old", status: "active", unit_price: { amount: "49000", currency_code: "USD" }, billing_cycle: { interval: "year", frequency: 1 } }
+  const target = { id: "pri_new", product_id: "pro_new", status: "active", unit_price: { amount: "4900", currency_code: "USD" }, billing_cycle: { interval: "month", frequency: 1 } }
   const scheduled: Parameters<typeof normalizePaddleSubscription>[0] = {
     id: "sub_test", status: "active", customer_id: "ctm_test", currency_code: "USD",
+    collection_mode: "automatic", paused_at: null,
     current_billing_period: { starts_at: start, ends_at: boundary }, next_billed_at: boundary, scheduled_change: null,
     items: [{ price: target, quantity: 1 }],
     custom_data: {
@@ -99,5 +100,40 @@ describe("Paddle Sandbox renewal boundary", () => {
       data: { id: "txn_test", origin: "subscription_recurring", subscription_id: renewed.id },
     })
     expect(event).toMatchObject({ objectId: "txn_test", origin: "subscription_recurring", subscriptionId: renewed.id })
+  })
+
+  it("keeps the annual price for a native pause at the exact paid boundary", () => {
+    const annual = {
+      ...scheduled, next_billed_at: null, items: [{ price: current, quantity: 1 }],
+      scheduled_change: { action: "pause", effective_at: boundary, resume_at: null },
+      custom_data: { ...scheduled.custom_data, billing_schedule_strategy: "pause_then_resume", billing_schedule_target_plan_key: "pro" },
+    }
+    const snapshot = normalizePaddleSubscription(annual)
+    expect(snapshot.items[0]?.priceId).toBe(current.id)
+    expect(snapshot.scheduledPlan).toEqual({ priceId: target.id, effectiveAt: boundary })
+    expect(snapshot.deferredIntervalChange).toMatchObject({ phase: "scheduled", effectiveAt: boundary })
+    expect(normalizePaddleSubscription({ ...annual, scheduled_change: null }).deferredIntervalChange).toBeUndefined()
+    expect(() => normalizePaddleSubscription({ ...annual, scheduled_change: { action: "pause", effective_at: start } })).toThrow("boundary")
+  })
+
+  it("permits staging only after the approved pause and recognizes the resumed monthly period", () => {
+    const paused = {
+      ...scheduled, status: "paused", paused_at: boundary, next_billed_at: null,
+      items: [{ price: current, quantity: 1 }],
+      custom_data: { ...scheduled.custom_data, billing_schedule_strategy: "pause_then_resume", billing_schedule_target_plan_key: "pro" },
+    }
+    expect(normalizePaddleSubscription(paused).deferredIntervalChange).toMatchObject({ phase: "paused", effectiveAt: boundary })
+    expect(() => normalizePaddleSubscription({ ...paused, paused_at: start })).toThrow("boundary")
+    const staged = { ...paused, items: [{ price: target, quantity: 1 }], current_billing_period: { starts_at: boundary, ends_at: end } }
+    expect(normalizePaddleSubscription(staged)).toMatchObject({
+      deferredIntervalChange: { phase: "paused", effectiveAt: boundary },
+      currentBillingPeriod: null,
+      items: [{ priceId: current.id }],
+    })
+    const unrelatedLaterPause = { ...staged, paused_at: end }
+    expect(normalizePaddleSubscription(unrelatedLaterPause).deferredIntervalChange).toBeUndefined()
+    const resumed = { ...renewed, custom_data: paused.custom_data }
+    expect(normalizePaddleSubscription(resumed).deferredIntervalChange).toMatchObject({ phase: "resumed", effectiveAt: boundary })
+    expect(() => normalizePaddleSubscription({ ...resumed, current_billing_period: scheduled.current_billing_period })).toThrow("boundary")
   })
 })

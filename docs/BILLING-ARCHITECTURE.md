@@ -82,6 +82,29 @@ same Paddle update so the existing entitlement stays active until the
 boundary. Some changes of billing interval move the provider renewal date.
 Core declines such previews before writing to Paddle.
 
+For annual-to-monthly changes, Paddle Sandbox moved the renewal about a
+month after the update even when the request included the existing annual
+end. A separate billing-date update restored the original date, but a
+failure between those requests would leave the early renewal in place.
+Keep the preview guard for that path.
+
+For a Workspace owner's same-plan annual-to-monthly change, Core schedules a
+Paddle pause at the verified annual end and records the approval in the
+existing billing transition. Paddle keeps the annual price and the Workspace
+keeps paid access until that boundary. Undo clears the scheduled pause and
+restores the annual renewal. Schedule the change before Paddle's 30-minute
+renewal lock.
+
+The existing billing lifecycle job checks due Paddle Sandbox pauses. It
+requires the recorded boundary, owner approval, current Workspace binding,
+and Paddle's paused state before staging the monthly price without billing.
+Paddle resets its period dates during staging, so the Workspace still
+projects the last paid period. Core records one durable resume claim before
+sending the billable request. On an uncertain result, later runs reconcile
+Paddle's state without sending a second resume. An unresolved attempt that
+stays paused requires operator review. The monthly paid period opens only
+after reconciliation verifies a completed payment.
+
 Paddle owns recurring collection. An advanced paid period requires an
 authoritative completed recurring transaction for the same subscription,
 customer, price and period. Signed lifecycle events trigger the existing

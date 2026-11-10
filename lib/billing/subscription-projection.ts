@@ -5,7 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase"
 import { getProviderPriceByProviderId, isPaidPlanKey, type ProviderPriceMapping } from "./price-mapping"
 import { getConfiguredFallbackPlanKey, isTerminalBillingSubscription, projectCanonicalSubscription, type CanonicalSubscription } from "./reconciliation"
 import { upsertBillingProviderAccount, updateBillingMutationTransition } from "./persistence"
-import type { BillingProviderAdapter, ProviderSubscriptionSnapshot } from "./provider"
+import { deferredIntervalResumeRequestKey, type BillingProviderAdapter, type ProviderSubscriptionSnapshot } from "./provider"
 
 export class BillingProjectionError extends Error {
   readonly code: string
@@ -55,12 +55,12 @@ function maxEventMarker(currentAt: string | null, currentId: string | null, inco
   return { at: currentAt, id: currentId && currentId > incomingId ? currentId : incomingId }
 }
 
-async function claimWorkspaceProjection(db: any, workspaceId: string) {
+export async function claimWorkspaceProjection(db: any, workspaceId: string, leaseSeconds = 30) {
   const leaseToken = randomUUID()
   const { data, error } = await db.rpc("claim_billing_projection", {
     p_workspace_id: workspaceId,
     p_lease_token: leaseToken,
-    p_lease_seconds: 30,
+    p_lease_seconds: leaseSeconds,
   })
   if (error) throw new Error(error.message)
   const row = Array.isArray(data) ? data[0] : data
@@ -70,7 +70,7 @@ async function claimWorkspaceProjection(db: any, workspaceId: string) {
   return { leaseToken, revision: row.lease_revision as number }
 }
 
-async function releaseWorkspaceProjection(db: any, workspaceId: string, leaseToken: string, revision: number) {
+export async function releaseWorkspaceProjection(db: any, workspaceId: string, leaseToken: string, revision: number) {
   const { error } = await db.rpc("release_billing_projection", {
     p_workspace_id: workspaceId,
     p_lease_token: leaseToken,
@@ -158,15 +158,22 @@ export async function applyProviderSubscriptionProjection(
     // Commit a new paid window only after its recurring transaction completes.
     const previousEnd = Date.parse(current.current_period_end_at || "")
     const providerStart = Date.parse(subscription.currentBillingPeriod?.startsAt || "")
+    const deferred = subscription.deferredIntervalChange
+    const resumesDeferredInterval = deferred?.phase === "resumed" && (
+      current.status !== "active" || current.provider_price_id !== deferred.targetPriceId ||
+      Date.parse(current.current_period_start_at || "") !== providerStart
+    )
     const advancesPaidPeriod = current.provider_subscription_id === subscriptionId &&
       providerStart >= previousEnd && (subscription.status === "active" || subscription.status === "past_due")
-    if (adapter.hasPaidRenewal && advancesPaidPeriod && providerStart > Date.now()) {
+    let deferredPaymentPending = false
+    if (adapter.hasPaidRenewal && (advancesPaidPeriod || resumesDeferredInterval) && providerStart > Date.now()) {
       throw new BillingProjectionError("RENEWAL_NOT_EFFECTIVE", "The next billing period has not started.")
     }
-    if (adapter.hasPaidRenewal && advancesPaidPeriod && !await adapter.hasPaidRenewal(subscription)) {
+    if (adapter.hasPaidRenewal && (advancesPaidPeriod || resumesDeferredInterval) && !await adapter.hasPaidRenewal(subscription)) {
       if (subscription.status !== "past_due") {
         throw new BillingProjectionError("RENEWAL_PENDING_PAYMENT", "The new billing period is awaiting payment.")
       }
+      deferredPaymentPending = resumesDeferredInterval
       const previousPrice = current.provider_price_id &&
         await getProviderPriceByProviderId(provider, current.provider_price_id, environment, false)
       if (!previousPrice || !current.current_period_start_at || !current.current_period_end_at) {
@@ -246,6 +253,7 @@ export async function applyProviderSubscriptionProjection(
       authoritative: true,
     })
     const eventMarker = maxEventMarker(current.last_provider_event_at, current.last_provider_event_id, event.occurredAt, event.eventId)
+    const deferredPause = deferred && (deferred.phase !== "resumed" || deferredPaymentPending) ? deferred.effectiveAt : null
     const patch = {
       plan_key: projection.planKey,
       status: projection.status,
@@ -266,8 +274,8 @@ export async function applyProviderSubscriptionProjection(
       last_provider_event_at: eventMarker.at,
       last_provider_event_id: eventMarker.id,
       next_billed_at: subscription.nextBilledAt,
-      scheduled_change_at: subscription.cancelEffectiveAt,
-      scheduled_change_action: subscription.cancelAtPeriodEnd ? "cancel" : null,
+      scheduled_change_at: subscription.cancelEffectiveAt || deferredPause,
+      scheduled_change_action: subscription.cancelAtPeriodEnd ? "cancel" : deferredPause ? "pause" : null,
       scheduled_plan_key: projection.scheduledPlanKey,
       scheduled_plan_at: projection.scheduledPlanAt,
       scheduled_effective_at: projection.scheduledEffectiveAt,
@@ -279,6 +287,17 @@ export async function applyProviderSubscriptionProjection(
       billing_projection_revision: lease.revision + 1,
       billing_projection_lease_token: null,
       billing_projection_lease_until: null,
+    }
+    const paidCutover = deferred?.phase === "resumed" && subscription.status === "active"
+    const canceledCutover = subscription.status === "canceled" && subscription.customData.billing_schedule_strategy === "pause_then_resume"
+    const settledScheduleId = paidCutover ? deferred.scheduleId : canceledCutover ? uuidValue(subscription.customData.billing_schedule_mutation_id) : null
+    if (settledScheduleId) {
+      // Persist the resume outcome while the projection lease still protects the due marker.
+      const { error } = await db.from("billing_mutations")
+        .update(paidCutover ? { status: "succeeded", error_code: null } : { status: "failed", error_code: "PADDLE_INTERVAL_CANCELED" })
+        .eq("workspace_id", workspaceId).eq("operation", "resume")
+        .eq("request_key", deferredIntervalResumeRequestKey(settledScheduleId)).in("status", ["pending", "unknown"])
+      if (error) throw new Error(error.message)
     }
     const { data: updated, error: updateError } = await db.from("workspace_subscriptions")
       .update(patch)
@@ -312,8 +331,8 @@ export async function applyProviderSubscriptionProjection(
         mutationKind: subscription.customData.billing_schedule_mutation_id
           ? subscription.customData.billing_schedule_mutation_kind
           : subscription.customData.billing_mutation_kind,
-        scheduledPlanKey: scheduledPlan?.mapping.plan_key || null,
-        scheduledPlanInterval: scheduledPlan?.mapping.billing_interval || null,
+        scheduledPlanKey: scheduledPlan?.mapping.plan_key || deferred?.targetPlanKey || null,
+        scheduledPlanInterval: scheduledPlan?.mapping.billing_interval || (deferred ? "month" : null),
         scheduledTargetPlanKey: stringValue(subscription.customData.billing_schedule_target_plan_key),
         scheduledTargetInterval: stringValue(subscription.customData.billing_schedule_target_interval),
         expectedPlanKey: stringValue(subscription.customData.plan_key),
@@ -322,6 +341,7 @@ export async function applyProviderSubscriptionProjection(
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         hasPendingUpdate: subscription.hasPendingUpdate,
         pendingUpdateExpired: event.eventType === "customer.subscription.pending_update_expired",
+        verifiedDeferredPause: deferred?.phase === "paused",
       },
     )
     return { status: "processed" as const, workspaceId, planKey: projection.planKey, subscriptionStatus: projection.status }
@@ -351,6 +371,7 @@ export function getProviderMutationSettlement(input: {
   cancelAtPeriodEnd: boolean
   hasPendingUpdate?: boolean
   pendingUpdateExpired?: boolean
+  verifiedDeferredPause?: boolean
 }): ProviderMutationSettlement {
   const planMatches = !input.toPlanKey || input.toPlanKey === input.providerPlanKey
   const metadataMatches = (!input.expectedPlanKey || input.expectedPlanKey === input.providerPlanKey) &&
@@ -360,7 +381,7 @@ export function getProviderMutationSettlement(input: {
 
   switch (input.mutationKind) {
     case "scheduled_plan_change":
-      succeeded = active &&
+      succeeded = (active || input.verifiedDeferredPause === true) &&
         Boolean(input.toPlanKey) &&
         input.scheduledPlanKey === input.toPlanKey &&
         input.scheduledPlanKey === input.scheduledTargetPlanKey &&
@@ -459,6 +480,7 @@ export async function settleProviderMutation(
     cancelAtPeriodEnd: boolean
     hasPendingUpdate?: boolean
     pendingUpdateExpired?: boolean
+    verifiedDeferredPause?: boolean
   } = {
     scheduledPlanKey: null,
     cancelAtPeriodEnd: false,
@@ -500,6 +522,7 @@ export async function settleProviderMutation(
     cancelAtPeriodEnd: providerState.cancelAtPeriodEnd,
     hasPendingUpdate: providerState.hasPendingUpdate,
     pendingUpdateExpired: providerState.pendingUpdateExpired,
+    verifiedDeferredPause: providerState.verifiedDeferredPause,
   })
   if (!settlement) return
 

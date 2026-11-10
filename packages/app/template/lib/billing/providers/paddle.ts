@@ -1,7 +1,9 @@
 import "server-only"
 
 import { createHmac, timingSafeEqual } from "node:crypto"
+import { createServiceRoleClient } from "@/lib/supabase"
 import { BillingConfigurationError, BillingMutationRejectedError, BillingScheduleUnavailableError } from "../config"
+import { getProviderPriceByProviderId } from "../price-mapping"
 import type { BillingProviderAdapter, ProviderCheckoutSession, ProviderInvoiceSummary, ProviderSubscriptionSnapshot } from "../provider"
 
 const apiOrigin = "https://sandbox-api.paddle.com"
@@ -60,11 +62,13 @@ type PaddleSubscription = {
   id: string
   status: string
   customer_id: string
+  collection_mode: string
+  paused_at: string | null
   next_billed_at: string | null
   current_billing_period: { starts_at: string; ends_at: string } | null
-  scheduled_change: { action: string; effective_at: string } | null
+  scheduled_change: { action: string; effective_at: string; resume_at?: string | null } | null
   custom_data: Record<string, unknown> | null
-  items: PaddleItem[]
+  items: Array<{ price: PaddlePrice; quantity: number }>
   currency_code: string
 }
 type PaddlePreview = PaddleSubscription & {
@@ -87,17 +91,19 @@ function paddlePath(kind: "prices" | "transactions" | "subscriptions", id: strin
 async function paddleRequest<T>(path: string, body?: object, method = "GET"): Promise<T> {
   const { apiKey } = getPaddleSandboxConfig()
   const updatesSubscription = method === "PATCH" && /^\/subscriptions\/sub_[a-z0-9]{26}$/.test(path)
+  const pausesSubscription = method === "POST" && /^\/subscriptions\/sub_[a-z0-9]{26}\/pause$/.test(path)
+  const resumesSubscription = method === "POST" && /^\/subscriptions\/sub_[a-z0-9]{26}\/resume$/.test(path)
   const response = await fetch(apiOrigin + path, {
     method,
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Paddle-Version": "1" },
     ...(body ? { body: JSON.stringify(body) } : {}),
     cache: "no-store",
-    signal: AbortSignal.timeout(updatesSubscription ? 25_000 : 10_000),
+    signal: AbortSignal.timeout(updatesSubscription || resumesSubscription ? 25_000 : 10_000),
   })
   if (!response.ok) {
     const error = await response.json().catch(() => null) as { error?: { code?: unknown; type?: unknown } } | null
     const code = typeof error?.error?.code === "string" && /^[a-z0-9_]+$/.test(error.error.code) ? error.error.code : null
-    if (updatesSubscription && code && error?.error?.type === "request_error" &&
+    if ((updatesSubscription || pausesSubscription) && code && error?.error?.type === "request_error" &&
         [400, 402, 403, 404, 409, 422].includes(response.status)) {
       throw new BillingMutationRejectedError(code)
     }
@@ -160,6 +166,7 @@ const scheduleFields = [
   "billing_schedule_mutation_id", "billing_schedule_mutation_kind", "billing_schedule_target_plan_key",
   "billing_schedule_target_interval", "billing_schedule_target_price_id", "billing_schedule_effective_at",
   "billing_schedule_current_price_id", "billing_schedule_current_product_id",
+  "billing_schedule_strategy",
 ] as const
 
 function withoutSchedule(customData: PaddleSubscription["custom_data"]) {
@@ -168,9 +175,42 @@ function withoutSchedule(customData: PaddleSubscription["custom_data"]) {
   return metadata
 }
 
+function getDeferredIntervalChange(subscription: PaddleSubscription): ProviderSubscriptionSnapshot["deferredIntervalChange"] {
+  const data = stringMetadata(subscription.custom_data)
+  if (data.billing_schedule_strategy !== "pause_then_resume") return
+  const { billing_schedule_mutation_id: scheduleId, billing_schedule_effective_at: effectiveAt,
+    billing_schedule_current_price_id: currentPriceId, billing_schedule_target_price_id: targetPriceId,
+    billing_schedule_target_plan_key: targetPlanKey } = data
+  const boundary = Date.parse(effectiveAt)
+  const item = subscription.items[0]
+  const priceId = item?.price.id
+  if (!scheduleId || !Number.isFinite(boundary) || !currentPriceId || !targetPriceId || !targetPlanKey ||
+      subscription.items.length !== 1 || item.quantity !== 1 || subscription.collection_mode !== "automatic") return
+  const base = { scheduleId, effectiveAt, currentPriceId, targetPriceId, targetPlanKey }
+  if (subscription.status === "active" && priceId === currentPriceId &&
+      subscription.scheduled_change?.action === "pause" && !subscription.scheduled_change.resume_at &&
+      Date.parse(subscription.scheduled_change.effective_at) === boundary &&
+      Date.parse(subscription.current_billing_period?.ends_at || "") === boundary) return { ...base, phase: "scheduled" }
+  const pausedAt = Date.parse(subscription.paused_at || "")
+  if (subscription.status === "paused" && !subscription.scheduled_change && !subscription.next_billed_at &&
+      pausedAt >= boundary && (
+        priceId === currentPriceId && Date.parse(subscription.current_billing_period?.ends_at || "") === boundary ||
+        // Paddle resets the provider dates when staging a different interval, even while paused.
+        priceId === targetPriceId && Date.parse(subscription.current_billing_period?.starts_at || "") >= pausedAt
+      )) return { ...base, phase: "paused" }
+  if ((subscription.status === "active" || subscription.status === "past_due") && priceId === targetPriceId &&
+      Date.parse(subscription.current_billing_period?.starts_at || "") >= boundary) return { ...base, phase: "resumed" }
+}
+
 function getPaddleSchedule(subscription: PaddleSubscription) {
   const data = stringMetadata(subscription.custom_data)
   if (!data.billing_schedule_mutation_id || subscription.status === "canceled" || subscription.status === "paused") return null
+  if (data.billing_schedule_strategy === "pause_then_resume") {
+    const deferred = getDeferredIntervalChange(subscription)
+    return deferred?.phase === "scheduled"
+      ? { id: deferred.scheduleId, priceId: deferred.targetPriceId, currentPriceId: deferred.currentPriceId, currentProductId: subscription.items[0].price.product_id, effectiveAt: deferred.effectiveAt }
+      : null
+  }
   const effectiveAt = data.billing_schedule_effective_at
   const period = subscription.current_billing_period
   if (!period || !effectiveAt || !Number.isFinite(Date.parse(effectiveAt))) {
@@ -194,6 +234,14 @@ export function normalizePaddleSubscription(subscription: PaddleSubscription): P
   if (!item?.price || item.quantity !== 1) throw new Error("Unsupported Paddle subscription items.")
   const status = subscription.status
   const schedule = getPaddleSchedule(subscription)
+  const deferred = getDeferredIntervalChange(subscription)
+  const data = stringMetadata(subscription.custom_data)
+  if (data.billing_schedule_strategy === "pause_then_resume" && !deferred && (
+    status === "paused" && Date.parse(subscription.paused_at || "") < Date.parse(data.billing_schedule_effective_at) ||
+    subscription.scheduled_change?.action === "pause" ||
+    (status === "active" || status === "past_due") && item.price.id === data.billing_schedule_target_price_id
+  )) throw new Error("Paddle interval change does not match its verified boundary.")
+  const staged = deferred?.phase === "paused" && item.price.id === deferred.targetPriceId
   const cancelEffectiveAt = subscription.scheduled_change?.action === "cancel" ? subscription.scheduled_change.effective_at : null
   return {
     id: subscription.id,
@@ -203,7 +251,7 @@ export function normalizePaddleSubscription(subscription: PaddleSubscription): P
     livemode: false,
     customerId: subscription.customer_id,
     nextBilledAt: subscription.next_billed_at,
-    currentBillingPeriod: subscription.current_billing_period
+    currentBillingPeriod: !staged && subscription.current_billing_period
       ? { startsAt: subscription.current_billing_period.starts_at, endsAt: subscription.current_billing_period.ends_at }
       : null,
     cancelAtPeriodEnd: Boolean(cancelEffectiveAt),
@@ -211,9 +259,10 @@ export function normalizePaddleSubscription(subscription: PaddleSubscription): P
     hasPendingUpdate: false,
     scheduleId: schedule?.id ?? null,
     scheduledPlan: schedule ? { priceId: schedule.priceId, effectiveAt: schedule.effectiveAt } : null,
+    deferredIntervalChange: deferred,
     collectionPaused: status === "paused",
-    customData: stringMetadata(subscription.custom_data),
-    items: [{ id: item.price.id, priceId: schedule?.currentPriceId ?? item.price.id, productId: schedule?.currentProductId ?? item.price.product_id, quantity: item.quantity }],
+    customData: data,
+    items: [{ id: item.price.id, priceId: staged ? deferred.currentPriceId : schedule?.currentPriceId ?? item.price.id, productId: schedule?.currentProductId ?? item.price.product_id, quantity: item.quantity }],
   }
 }
 
@@ -242,6 +291,92 @@ function assertScheduledPreview(preview: PaddlePreview, effectiveAt: string) {
       preview.immediate_transaction || !preview.next_transaction) {
     throw new BillingScheduleUnavailableError()
   }
+}
+
+function isAnnualToMonthly(subscription: PaddleSubscription, target: PaddlePrice | undefined) {
+  const current = subscription.items[0]?.price
+  return subscription.items.length === 1 && subscription.items[0].quantity === 1 &&
+    current?.billing_cycle?.interval === "year" && current.billing_cycle.frequency === 1 &&
+    target?.billing_cycle?.interval === "month" && target.billing_cycle.frequency === 1 &&
+    target.product_id === current.product_id
+}
+
+function assertCanScheduleIntervalChange(subscription: PaddleSubscription, effectiveAt: string) {
+  const boundary = Date.parse(effectiveAt)
+  if (subscription.status !== "active" || subscription.collection_mode !== "automatic" ||
+      subscription.scheduled_change || getPaddleSchedule(subscription) ||
+      Date.parse(subscription.next_billed_at || "") !== boundary ||
+      Date.parse(subscription.current_billing_period?.ends_at || "") !== boundary ||
+      boundary - Date.now() <= 30 * 60 * 1000) throw new BillingScheduleUnavailableError()
+}
+
+async function assertSamePlanIntervalChange(current: PaddleSubscription, targetPriceId: string) {
+  const [annual, monthly] = await Promise.all([
+    getProviderPriceByProviderId(provider, current.items[0].price.id, environment, false),
+    getProviderPriceByProviderId(provider, targetPriceId, environment),
+  ])
+  if (!annual || !monthly || annual.plan_key !== monthly.plan_key || annual.currency !== monthly.currency ||
+      annual.billing_interval !== "year" || monthly.billing_interval !== "month") throw new BillingScheduleUnavailableError()
+}
+
+export async function readPaddleIntervalApproval(workspaceId: string, scheduleId: string, planKey: string, effectiveAt: string) {
+  const { data, error } = await createServiceRoleClient().from("billing_mutation_transitions")
+    .select("state,from_plan_key,to_plan_key,effective_at")
+    .eq("workspace_id", workspaceId).eq("mutation_id", scheduleId)
+    .eq("provider", provider).eq("environment", environment).eq("kind", "interval_change").maybeSingle()
+  if (error) throw new Error(error.message)
+  if (data?.from_plan_key !== planKey || data.to_plan_key !== planKey ||
+      Date.parse(data.effective_at || "") !== Date.parse(effectiveAt) || data.state === "failed") {
+    throw new Error("Paddle interval change has no matching owner approval.")
+  }
+  return data.state
+}
+
+type DeferredPaddleBinding = {
+  workspaceId: string
+  subscriptionId: string
+  customerId: string
+  scheduleId: string
+  effectiveAt: string
+  targetPriceId: string
+}
+
+function assertPausedPaddleBinding(subscription: PaddleSubscription, binding: DeferredPaddleBinding) {
+  const change = getDeferredIntervalChange(subscription)
+  const data = subscription.custom_data
+  if (change?.phase !== "paused" || change.scheduleId !== binding.scheduleId || change.targetPriceId !== binding.targetPriceId ||
+      Date.parse(change.effectiveAt) !== Date.parse(binding.effectiveAt) || Date.parse(change.effectiveAt) > Date.now() ||
+      subscription.customer_id !== binding.customerId || data?.workspace_id !== binding.workspaceId ||
+      data.billing_provider !== provider || data.billing_environment !== environment) {
+    throw new Error("Paddle has not confirmed the authorized interval change at its paid boundary.")
+  }
+}
+
+export async function stagePaddleDeferredInterval(binding: DeferredPaddleBinding) {
+  const current = await getPaddleSubscription(binding.subscriptionId)
+  assertPausedPaddleBinding(current, binding)
+  if (current.items[0].price.id === binding.targetPriceId) return
+  const target = await paddleRequest<PaddlePrice>(paddlePath("prices", binding.targetPriceId))
+  if (target.id !== binding.targetPriceId || target.status !== "active" || !isAnnualToMonthly(current, target)) {
+    throw new Error("Paddle monthly price is no longer eligible.")
+  }
+  const updated = await paddleRequest<PaddleSubscription>(paddlePath("subscriptions", current.id), {
+    items: [{ price_id: binding.targetPriceId, quantity: 1 }],
+    proration_billing_mode: "do_not_bill",
+  }, "PATCH")
+  assertPausedPaddleBinding(updated, binding)
+  if (updated.id !== current.id || updated.items[0].price.id !== binding.targetPriceId) throw new Error("Paddle did not stage the monthly price.")
+}
+
+export async function resumePaddleDeferredInterval(binding: DeferredPaddleBinding, claimResume: () => Promise<boolean>) {
+  const current = await getPaddleSubscription(binding.subscriptionId)
+  assertPausedPaddleBinding(current, binding)
+  if (current.items[0].price.id !== binding.targetPriceId) throw new Error("Paddle monthly price is not staged.")
+  if (!await claimResume()) return false
+  await paddleRequest<PaddleSubscription>(paddlePath("subscriptions", current.id) + "/resume", {
+    effective_from: "immediately", on_resume: "start_new_billing_period",
+  }, "POST")
+  return true
 }
 
 function invoiceSummary(transaction: PaddleTransaction): ProviderInvoiceSummary {
@@ -369,7 +504,19 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
     async previewSubscriptionChange({ subscriptionId, customerId, priceId, effectiveAt }) {
       const preview = await paddleRequest<PaddlePreview>(paddlePath("subscriptions", subscriptionId) + "/preview", changeItems(priceId, effectiveAt), "PATCH")
       if (preview.customer_id !== customerId) throw new Error("Paddle preview belongs to another customer.")
-      if (effectiveAt) assertScheduledPreview(preview, effectiveAt)
+      if (effectiveAt) {
+        const current = await getPaddleSubscription(subscriptionId)
+        if (getDeferredIntervalChange(current)?.phase === "scheduled") throw new BillingScheduleUnavailableError()
+        if (isAnnualToMonthly(current, preview.items[0]?.price)) {
+          assertCanScheduleIntervalChange(current, effectiveAt)
+          await assertSamePlanIntervalChange(current, priceId)
+          if (current.customer_id !== customerId || preview.items[0].price.id !== priceId || preview.immediate_transaction) {
+            throw new BillingScheduleUnavailableError()
+          }
+        } else {
+          assertScheduledPreview(preview, effectiveAt)
+        }
+      }
       const immediate = preview.immediate_transaction?.details.totals
       const recurring = (effectiveAt ? preview.next_transaction?.details.totals : preview.recurring_transaction_details?.totals)
       const result = preview.update_summary?.result
@@ -382,7 +529,7 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
         amount: charge || credit, amountDue: charge, creditToBalance,
         action: charge > 0 ? "charge" : credit > 0 ? "credit" : "none",
         currency: immediate?.currency_code || preview.currency_code,
-        nextPaymentAttempt: preview.next_billed_at,
+        nextPaymentAttempt: effectiveAt || preview.next_billed_at,
         recurringAmount, recurringCurrency: recurring?.currency_code || preview.currency_code,
       }
     },
@@ -400,6 +547,7 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
     },
     async schedulePlanChange(input) {
       const current = await getPaddleSubscription(input.subscriptionId)
+      if (getDeferredIntervalChange(current)?.phase === "scheduled") throw new BillingScheduleUnavailableError()
       const schedule = getPaddleSchedule(current)
       const item = current.items[0]
       const currentPriceId = schedule?.currentPriceId ?? item?.price.id
@@ -409,21 +557,37 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
           Math.floor(Date.parse(effectiveAt) / 1000) !== input.periodEnd) throw new Error("Paddle's paid period changed since it was previewed.")
       const path = paddlePath("subscriptions", input.subscriptionId)
       const body = changeItems(input.targetPriceId, effectiveAt)
-      assertScheduledPreview(await paddleRequest<PaddlePreview>(path + "/preview", body, "PATCH"), effectiveAt)
-      const updated = await paddleRequest<PaddleSubscription>(path, {
-        ...body,
-        custom_data: {
-          ...withoutSchedule(current.custom_data),
-          billing_schedule_mutation_id: input.mutationId,
-          billing_schedule_mutation_kind: "scheduled_plan_change",
-          billing_schedule_target_plan_key: input.targetPlanKey,
-          billing_schedule_target_interval: input.targetInterval,
-          billing_schedule_target_price_id: input.targetPriceId,
-          billing_schedule_current_price_id: currentPriceId,
-          billing_schedule_current_product_id: currentProductId,
-          billing_schedule_effective_at: effectiveAt,
-        },
-      }, "PATCH")
+      const preview = await paddleRequest<PaddlePreview>(path + "/preview", body, "PATCH")
+      const metadata = {
+        ...withoutSchedule(current.custom_data),
+        billing_schedule_mutation_id: input.mutationId,
+        billing_schedule_mutation_kind: "scheduled_plan_change",
+        billing_schedule_target_plan_key: input.targetPlanKey,
+        billing_schedule_target_interval: input.targetInterval,
+        billing_schedule_target_price_id: input.targetPriceId,
+        billing_schedule_current_price_id: currentPriceId,
+        billing_schedule_current_product_id: currentProductId,
+        billing_schedule_effective_at: effectiveAt,
+      }
+      let updated: PaddleSubscription
+      if (isAnnualToMonthly(current, preview.items[0]?.price)) {
+        assertCanScheduleIntervalChange(current, effectiveAt)
+        await assertSamePlanIntervalChange(current, input.targetPriceId)
+        if (preview.immediate_transaction || preview.items[0].price.id !== input.targetPriceId || input.targetInterval !== "month") {
+          throw new BillingScheduleUnavailableError()
+        }
+        const workspaceId = stringMetadata(current.custom_data).workspace_id
+        if (!workspaceId) throw new BillingScheduleUnavailableError()
+        await readPaddleIntervalApproval(workspaceId, input.mutationId, input.targetPlanKey, effectiveAt)
+        const marked = await paddleRequest<PaddleSubscription>(path, {
+          custom_data: { ...metadata, billing_schedule_strategy: "pause_then_resume" },
+        }, "PATCH")
+        assertCanScheduleIntervalChange(marked, effectiveAt)
+        updated = await paddleRequest<PaddleSubscription>(path + "/pause", { effective_from: "next_billing_period" }, "POST")
+      } else {
+        assertScheduledPreview(preview, effectiveAt)
+        updated = await paddleRequest<PaddleSubscription>(path, { ...body, custom_data: metadata }, "PATCH")
+      }
       if (getPaddleSchedule(updated)?.id !== input.mutationId) throw new Error("Paddle did not confirm the scheduled price.")
       return { scheduleId: input.mutationId, effectiveAt }
     },
@@ -432,17 +596,22 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
       const schedule = getPaddleSchedule(current)
       if (!schedule || schedule.id !== scheduleId) throw new Error("Paddle schedule changed before it could be undone.")
       const path = paddlePath("subscriptions", subscriptionId)
+      const metadata = {
+        ...withoutSchedule(current.custom_data),
+        ...(mutationKind === "undo_plan_change" ? {
+          billing_mutation_id: mutationId, billing_mutation_kind: mutationKind, plan_key: "", billing_interval: "",
+        } : {}),
+      }
+      if (getDeferredIntervalChange(current)?.phase === "scheduled") {
+        const cleared = await paddleRequest<PaddleSubscription>(path, { scheduled_change: null }, "PATCH")
+        if (cleared.status !== "active" || cleared.scheduled_change || cleared.items[0]?.price.id !== schedule.currentPriceId ||
+            Date.parse(cleared.next_billed_at || "") !== Date.parse(schedule.effectiveAt)) throw new Error("Paddle did not restore the annual renewal.")
+        await paddleRequest<PaddleSubscription>(path, { custom_data: metadata }, "PATCH")
+        return
+      }
       const body = changeItems(schedule.currentPriceId, schedule.effectiveAt)
       assertScheduledPreview(await paddleRequest<PaddlePreview>(path + "/preview", body, "PATCH"), schedule.effectiveAt)
-      const updated = await paddleRequest<PaddleSubscription>(path, {
-        ...body,
-        custom_data: {
-          ...withoutSchedule(current.custom_data),
-          ...(mutationKind === "undo_plan_change" ? {
-            billing_mutation_id: mutationId, billing_mutation_kind: mutationKind, plan_key: "", billing_interval: "",
-          } : {}),
-        },
-      }, "PATCH")
+      const updated = await paddleRequest<PaddleSubscription>(path, { ...body, custom_data: metadata }, "PATCH")
       if (updated.items[0]?.price.id !== schedule.currentPriceId || getPaddleSchedule(updated)) throw new Error("Paddle did not undo the scheduled price.")
     },
     async scheduleCancellation(subscriptionId) {

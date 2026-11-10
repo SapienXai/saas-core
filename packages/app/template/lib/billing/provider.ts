@@ -40,6 +40,10 @@ export type ProviderPortalSession = { url: string }
 
 export type ProviderSubscriptionStatus = "active" | "trialing" | "past_due" | "paused" | "canceled" | "pending" | "expired" | "unpaid"
 
+export function deferredIntervalResumeRequestKey(scheduleId: string) {
+  return "paddle-interval-resume:" + scheduleId
+}
+
 export type ProviderSubscriptionSnapshot = {
   id: string
   status: ProviderSubscriptionStatus
@@ -54,6 +58,14 @@ export type ProviderSubscriptionSnapshot = {
   hasPendingUpdate: boolean
   scheduleId: string | null
   scheduledPlan: { priceId: string; effectiveAt: string } | null
+  deferredIntervalChange?: {
+    scheduleId: string
+    effectiveAt: string
+    currentPriceId: string
+    targetPriceId: string
+    targetPlanKey: string
+    phase: "scheduled" | "paused" | "resumed"
+  }
   collectionPaused: boolean
   customData: Record<string, string>
   items: Array<{ id: string; priceId: string | null; productId: string | null; quantity: number }>

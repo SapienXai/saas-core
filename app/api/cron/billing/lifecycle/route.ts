@@ -1,5 +1,6 @@
 import { isBillingProviderConfigured } from "@/lib/billing/providers"
 import { expirePaymentGracePeriods, processDuePaddleBillingWebhookEvents, processDueStripeBillingWebhookEvents } from "@/lib/billing/lifecycle"
+import { processDuePaddleIntervalChanges } from "@/lib/billing/paddle-interval-cutover"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -15,13 +16,13 @@ export async function GET(request: Request) {
   }
 
   try {
+    const paddleSandbox = process.env.SAAS_CORE_BILLING_PROVIDER === "paddle" && isBillingProviderConfigured()
     const [gracePeriods, webhooks] = await Promise.all([
       expirePaymentGracePeriods(),
-      process.env.SAAS_CORE_BILLING_PROVIDER === "paddle" && isBillingProviderConfigured()
-        ? processDuePaddleBillingWebhookEvents()
-        : processDueStripeBillingWebhookEvents(),
+      paddleSandbox ? processDuePaddleBillingWebhookEvents() : processDueStripeBillingWebhookEvents(),
     ])
-    return Response.json({ ok: true, ...gracePeriods, webhooks })
+    const intervalChanges = paddleSandbox ? await processDuePaddleIntervalChanges() : null
+    return Response.json({ ok: true, ...gracePeriods, webhooks, ...(intervalChanges && { intervalChanges }) })
   } catch (error) {
     console.error("Billing lifecycle cron failed", { error: error instanceof Error ? error.message : String(error) })
     return Response.json({ error: "Billing lifecycle could not be completed." }, { status: 500 })
