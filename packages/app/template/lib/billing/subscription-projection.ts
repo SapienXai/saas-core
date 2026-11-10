@@ -108,7 +108,7 @@ async function validateInitialCheckoutCorrelation(
 export async function applyProviderSubscriptionProjection(
   event: { eventId: string; occurredAt: string; workspaceId: string | null; eventType: string },
   subscriptionId: string,
-  adapter: Pick<BillingProviderAdapter, "provider" | "environment" | "retrieveSubscription">,
+  adapter: Pick<BillingProviderAdapter, "provider" | "environment" | "retrieveSubscription" | "hasPaidRenewal">,
 ) {
   const { provider, environment } = adapter
   const db = createServiceRoleClient() as any
@@ -130,12 +130,12 @@ export async function applyProviderSubscriptionProjection(
   let committed = false
   try {
     const { data: current, error: currentError } = await db.from("workspace_subscriptions")
-      .select("workspace_id, plan_key, status, source, provider, provider_environment, provider_customer_id, provider_subscription_id, provider_status, billing_interval, billing_currency, current_period_start, current_period_end, current_period_start_at, current_period_end_at, cancel_at_period_end, scheduled_change_at, scheduled_change_action, scheduled_plan_key, scheduled_plan_at, scheduled_effective_at, scheduled_plan_interval, scheduled_provider_price_id, last_provider_event_at, last_provider_event_id, payment_failure_started_at, payment_grace_ends_at, billing_issue_code")
+      .select("workspace_id, plan_key, status, source, provider, provider_environment, provider_customer_id, provider_subscription_id, provider_price_id, provider_status, billing_interval, billing_currency, current_period_start, current_period_end, current_period_start_at, current_period_end_at, cancel_at_period_end, scheduled_change_at, scheduled_change_action, scheduled_plan_key, scheduled_plan_at, scheduled_effective_at, scheduled_plan_interval, scheduled_provider_price_id, last_provider_event_at, last_provider_event_id, payment_failure_started_at, payment_grace_ends_at, billing_issue_code")
       .eq("workspace_id", workspaceId)
       .single()
     if (currentError || !current) throw new Error(currentError?.message || "Workspace subscription does not exist.")
 
-    const subscription = await adapter.retrieveSubscription(subscriptionId)
+    let subscription = await adapter.retrieveSubscription(subscriptionId)
     if (subscription.id !== subscriptionId) throw new BillingProjectionError("SUBSCRIPTION_LINK_MISMATCH", "Billing provider returned a different subscription.")
     const subscriptionWorkspaceId = subscription.customData.workspace_id || subscription.customData.saas_core_workspace_id
     if (subscriptionWorkspaceId && uuidValue(subscriptionWorkspaceId) !== workspaceId) {
@@ -152,6 +152,31 @@ export async function applyProviderSubscriptionProjection(
     }
     if (subscription.issueCode === "unsupported_subscription_schedule" || subscription.issueCode === "unmanaged_subscription_schedule") {
       throw new BillingProjectionError("UNSUPPORTED_SCHEDULE", "Billing subscription has a schedule this product cannot safely manage.")
+    }
+
+    // Paddle advances the subscription dates while collecting the renewal.
+    // Commit a new paid window only after its recurring transaction completes.
+    const previousEnd = Date.parse(current.current_period_end_at || "")
+    const providerStart = Date.parse(subscription.currentBillingPeriod?.startsAt || "")
+    const advancesPaidPeriod = current.provider_subscription_id === subscriptionId &&
+      providerStart >= previousEnd && (subscription.status === "active" || subscription.status === "past_due")
+    if (adapter.hasPaidRenewal && advancesPaidPeriod && providerStart > Date.now()) {
+      throw new BillingProjectionError("RENEWAL_NOT_EFFECTIVE", "The next billing period has not started.")
+    }
+    if (adapter.hasPaidRenewal && advancesPaidPeriod && !await adapter.hasPaidRenewal(subscription)) {
+      if (subscription.status !== "past_due") {
+        throw new BillingProjectionError("RENEWAL_PENDING_PAYMENT", "The new billing period is awaiting payment.")
+      }
+      const previousPrice = current.provider_price_id &&
+        await getProviderPriceByProviderId(provider, current.provider_price_id, environment, false)
+      if (!previousPrice || !current.current_period_start_at || !current.current_period_end_at) {
+        throw new BillingProjectionError("RENEWAL_PRICE_MISSING", "The last paid billing period could not be verified.")
+      }
+      subscription = {
+        ...subscription,
+        currentBillingPeriod: { startsAt: current.current_period_start_at, endsAt: current.current_period_end_at },
+        items: [{ id: previousPrice.provider_price_id, priceId: previousPrice.provider_price_id, productId: previousPrice.provider_product_id, quantity: 1 }],
+      }
     }
 
     const item = subscription.items[0]

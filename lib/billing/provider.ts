@@ -32,6 +32,7 @@ export type ProviderCheckoutSession = {
 
 export type ProviderPortalRequest = {
   customerId: string
+  subscriptionId?: string
   returnUrl: string
 }
 
@@ -96,6 +97,8 @@ export type ProviderSubscriptionChangePreview = {
   action: "charge" | "credit" | "none"
   currency: string
   nextPaymentAttempt: string | null
+  recurringAmount?: number
+  recurringCurrency?: string
 }
 
 /** Narrow surface used by application services; provider-specific calls stay in adapters. */
@@ -106,12 +109,13 @@ export interface BillingProviderAdapter {
   retrieveCheckoutSession(id: string): Promise<ProviderCheckoutSession>
   expireCheckoutSession(id: string): Promise<ProviderCheckoutSession>
   retrieveSubscription(id: string): Promise<ProviderSubscriptionSnapshot>
+  hasPaidRenewal?(subscription: ProviderSubscriptionSnapshot): Promise<boolean>
   createPortalSession(request: ProviderPortalRequest): Promise<ProviderPortalSession>
   retrievePrice(id: string): Promise<ProviderPriceSnapshot>
   getCustomerPaymentMethod(customerId: string): Promise<ProviderPaymentMethodSummary | null>
   listInvoices(customerId: string, subscriptionId?: string | null): Promise<ProviderInvoiceSummary[]>
   retrieveInvoice(id: string, expectedCustomerId: string, expectedSubscriptionId?: string | null): Promise<ProviderInvoiceSummary>
-  previewSubscriptionChange(input: { subscriptionId: string; customerId: string; itemId: string; priceId: string; prorationDate: number; resetBillingCycle?: boolean }): Promise<ProviderSubscriptionChangePreview>
+  previewSubscriptionChange(input: { subscriptionId: string; customerId: string; itemId: string; priceId: string; prorationDate: number; resetBillingCycle?: boolean; effectiveAt?: string }): Promise<ProviderSubscriptionChangePreview>
   updateSubscriptionPrice(input: { subscriptionId: string; itemId: string; priceId: string; prorationDate: number; resetBillingCycle?: boolean; idempotencyKey: string; metadata?: Record<string, string> }): Promise<ProviderSubscriptionSnapshot>
   schedulePlanChange(input: { subscriptionId: string; currentPriceId: string; targetPriceId: string; targetPlanKey: string; targetInterval: BillingProviderInterval; periodEnd: number; intervalCount: number; mutationId: string; idempotencyKey: string }): Promise<{ scheduleId: string; effectiveAt: string }>
   releaseSchedule(subscriptionId: string, scheduleId: string, idempotencyKey: string, mutationKind?: "undo_plan_change" | "cancel"): Promise<void>

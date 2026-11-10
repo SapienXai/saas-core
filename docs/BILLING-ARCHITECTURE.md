@@ -71,8 +71,28 @@ the existing leased subscription projection and settling the checkout.
 
 A test notification destination can forward only the Paddle webhook path
 (`/api/billing/paddle/webhook`) over HTTPS. The lifecycle job drains Paddle
-receipts while the local pilot is enabled. Plan and cycle changes, customer
-portal actions, and Live activation are outside this pilot.
+receipts while the local pilot is enabled. The Paddle adapter is restricted
+to this local Sandbox configuration.
+
+Paddle previews immediate price changes with tax and proration. The update
+requires payment success when it collects a charge. For a period-end change,
+Core verifies that the provider preview preserves the current paid boundary
+and has no immediate charge. The adapter records the old and next price in the
+same Paddle update so the existing entitlement stays active until the
+boundary. Some changes of billing interval move the provider renewal date.
+Core declines such previews before writing to Paddle.
+
+Paddle owns recurring collection. An advanced paid period requires an
+authoritative completed recurring transaction for the same subscription,
+customer, price and period. Signed lifecycle events trigger the existing
+leased reconciliation. The paid period uses precise timestamps, including
+short periods that fit within one UTC date.
+
+The owner can open the Paddle-hosted customer portal using a fresh session
+for the subscription's verified customer. The same customer and subscription
+checks protect invoice downloads. PlaceDJ keeps server-verified resource limits
+in downgrade eligibility and applies its device-local cache limit through
+Player reconciliation at the plan boundary.
 
 ## Product catalog and copy
 

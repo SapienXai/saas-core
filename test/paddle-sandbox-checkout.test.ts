@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto"
+import { normalizePaddleSandboxEvent } from "../lib/billing/paddle-webhook"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { getPaddleReturnPath, getPaddleSandboxConfig, verifyPaddleSandboxWebhook } from "../lib/billing/providers/paddle"
+import { getPaddleReturnPath, getPaddleSandboxConfig, matchesPaidPaddleRenewal, normalizePaddleSubscription, verifyPaddleSandboxWebhook } from "../lib/billing/providers/paddle"
 
 afterEach(() => vi.unstubAllEnvs())
 
@@ -46,5 +47,57 @@ describe("Paddle Sandbox checkout", () => {
       .toBe("/manage/plan?checkout=cancelled")
     expect(getPaddleReturnPath(origin + "//other.example/", origin, "txn_new", false))
       .toBe("/manage/plan?checkout=cancelled")
+  })
+})
+
+describe("Paddle Sandbox renewal boundary", () => {
+  const start = "2026-11-10T19:00:00.000Z"
+  const boundary = "2026-12-10T19:00:00.000Z"
+  const end = "2027-01-10T19:00:00.000Z"
+  const current = { id: "pri_old", product_id: "pro_old" }
+  const target = { id: "pri_new", product_id: "pro_new" }
+  const scheduled: Parameters<typeof normalizePaddleSubscription>[0] = {
+    id: "sub_test", status: "active", customer_id: "ctm_test", currency_code: "USD",
+    current_billing_period: { starts_at: start, ends_at: boundary }, next_billed_at: boundary, scheduled_change: null,
+    items: [{ price: target, quantity: 1 }],
+    custom_data: {
+      billing_schedule_mutation_id: "test-mutation",
+      billing_schedule_target_price_id: target.id,
+      billing_schedule_current_price_id: current.id,
+      billing_schedule_current_product_id: current.product_id,
+      billing_schedule_effective_at: boundary,
+    },
+  }
+  const renewed = { ...scheduled, current_billing_period: { starts_at: boundary, ends_at: end }, next_billed_at: end }
+
+  it("retains the previous price while Paddle is still in the paid period", () => {
+    const snapshot = normalizePaddleSubscription(scheduled)
+    expect(snapshot.items[0]).toMatchObject({ priceId: current.id, productId: current.product_id })
+    expect(snapshot.scheduledPlan).toEqual({ priceId: target.id, effectiveAt: boundary })
+    expect(() => normalizePaddleSubscription({ ...scheduled, next_billed_at: end })).toThrow("renewal date")
+  })
+
+  it("requires a completed recurring payment for the same new period, customer, and price", () => {
+    const snapshot = normalizePaddleSubscription(renewed)
+    expect(snapshot.scheduledPlan).toBeNull()
+    expect(snapshot.items[0]?.priceId).toBe(target.id)
+    const transaction = {
+      origin: "subscription_recurring", status: "completed", subscription_id: renewed.id, customer_id: renewed.customer_id,
+      billing_period: renewed.current_billing_period, items: renewed.items,
+    }
+    expect(matchesPaidPaddleRenewal(transaction, snapshot)).toBe(true)
+    expect(matchesPaidPaddleRenewal({ ...transaction, status: "billed" }, snapshot)).toBe(false)
+    expect(matchesPaidPaddleRenewal({ ...transaction, origin: "subscription_update" }, snapshot)).toBe(false)
+    expect(matchesPaidPaddleRenewal({ ...transaction, customer_id: "other" }, snapshot)).toBe(false)
+    expect(matchesPaidPaddleRenewal({ ...transaction, billing_period: scheduled.current_billing_period }, snapshot)).toBe(false)
+    expect(matchesPaidPaddleRenewal({ ...transaction, items: [{ price: current, quantity: 1 }] }, snapshot)).toBe(false)
+  })
+
+  it("normalizes the signed recurring transaction identity for reconciliation", () => {
+    const event = normalizePaddleSandboxEvent({
+      event_id: "evt_00000000000000000000000000", event_type: "transaction.completed", occurred_at: boundary,
+      data: { id: "txn_test", origin: "subscription_recurring", subscription_id: renewed.id },
+    })
+    expect(event).toMatchObject({ objectId: "txn_test", origin: "subscription_recurring", subscriptionId: renewed.id })
   })
 })

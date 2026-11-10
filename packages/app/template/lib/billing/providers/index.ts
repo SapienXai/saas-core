@@ -29,7 +29,7 @@ export function getBillingProviderAdapter(): BillingProviderAdapter {
 }
 
 export function isSubscriptionManagementEnabled() {
-  return getBillingProviderName() === "stripe"
+  return getBillingProviderName() === "stripe" || isBillingProviderConfigured()
 }
 
 export function assertSubscriptionManagementEnabled() {

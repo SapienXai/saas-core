@@ -5,21 +5,25 @@ import { createServiceRoleClient } from "@/lib/supabase"
 import { claimBillingWebhookEvent, finalizeBillingWebhookEvent, recordBillingWebhookEvent } from "./persistence"
 import { getProviderPriceByProviderId } from "./price-mapping"
 import { createPaddleSandboxAdapter, getPaddleSandboxConfig, isPaddleTransactionId, retrievePaddleTransaction } from "./providers/paddle"
-import { applyProviderSubscriptionProjection, settleProviderMutation } from "./subscription-projection"
+import { applyProviderSubscriptionProjection, BillingProjectionError, settleProviderMutation } from "./subscription-projection"
 
 const provider = "paddle"
 const environment = "sandbox"
 type EventMarker = { eventId: string; eventType: string; occurredAt: string }
-type PaddleEvent = EventMarker & { objectId: string }
+type PaddleEvent = EventMarker & { objectId: string; subscriptionId: string | null; origin: string | null }
 
 export function normalizePaddleSandboxEvent(value: unknown): PaddleEvent {
-  const event = value as { event_id?: unknown; event_type?: unknown; occurred_at?: unknown; data?: { id?: unknown } } | null
+  const event = value as { event_id?: unknown; event_type?: unknown; occurred_at?: unknown; data?: { id?: unknown; subscription_id?: unknown; origin?: unknown } } | null
   if (!event || typeof event.event_id !== "string" || !/^evt_[a-z0-9]{26}$/.test(event.event_id) ||
       typeof event.event_type !== "string" || typeof event.occurred_at !== "string" ||
       !Number.isFinite(Date.parse(event.occurred_at)) || typeof event.data?.id !== "string") {
     throw new Error("Invalid Paddle event.")
   }
-  return { eventId: event.event_id, eventType: event.event_type, occurredAt: event.occurred_at, objectId: event.data.id }
+  return {
+    eventId: event.event_id, eventType: event.event_type, occurredAt: event.occurred_at, objectId: event.data.id,
+    subscriptionId: typeof event.data.subscription_id === "string" ? event.data.subscription_id : null,
+    origin: typeof event.data.origin === "string" ? event.data.origin : null,
+  }
 }
 
 export function isPaddleCheckoutEvent(eventType: string) {
@@ -27,7 +31,7 @@ export function isPaddleCheckoutEvent(eventType: string) {
 }
 
 export function isPaddleSubscriptionEvent(eventType: string) {
-  return ["subscription.updated", "subscription.canceled", "subscription.paused", "subscription.past_due", "subscription.resumed"].includes(eventType)
+  return ["subscription.updated", "subscription.activated", "subscription.canceled", "subscription.paused", "subscription.past_due", "subscription.resumed"].includes(eventType)
 }
 
 export async function getVerifiedPaddleCheckout(transactionId: string, workspaceId?: string) {
@@ -77,6 +81,15 @@ export async function reconcilePaddleCheckoutSession(transactionId: string, expe
   }
   if (checkout.status === "expired") throw new Error("Completed Paddle transaction conflicts with an expired checkout.")
 
+  if (checkout.status === "completed") {
+    const { data: transition, error } = await db.from("billing_mutation_transitions").select("id, state")
+      .eq("workspace_id", workspaceId).eq("mutation_id", checkout.idempotency_key).eq("kind", "checkout").maybeSingle()
+    if (error) throw new Error(error.message)
+    if (transition?.state === "succeeded") return {
+      status: "processed" as const, workspaceId, transitionId: transition.id as string,
+      planKey: checkout.target_plan_key as string, subscriptionStatus: "active" as const,
+    }
+  }
   const adapter = createPaddleSandboxAdapter()
   const result = await applyProviderSubscriptionProjection(
     { ...(event ?? { eventId: `reconcile_${transactionId}`, occurredAt: new Date().toISOString(), eventType: "transaction.completed" }), workspaceId },
@@ -87,7 +100,7 @@ export async function reconcilePaddleCheckoutSession(transactionId: string, expe
         const subscription = await adapter.retrieveSubscription(id)
         if (subscription.customerId !== session.customerId ||
             subscription.customData.workspace_id !== workspaceId ||
-            subscription.customData.billing_mutation_id !== checkout.idempotency_key ||
+            (subscription.customData.billing_checkout_mutation_id || subscription.customData.billing_mutation_id) !== checkout.idempotency_key ||
             subscription.items.length !== 1 || subscription.items[0]?.priceId !== checkout.provider_price_id) {
           throw new Error("Paddle subscription does not match the completed transaction.")
         }
@@ -138,7 +151,10 @@ export async function processStoredPaddleWebhookEvent(eventId: string) {
   try {
     const event = claim.payload as PaddleEvent
     let status: "processed" | "ignored"
-    if (isPaddleCheckoutEvent(event.eventType)) {
+    if (event.eventType === "transaction.completed" && event.origin === "subscription_recurring" && event.subscriptionId) {
+      const result = await reconcilePaddleSubscription(event.subscriptionId, undefined, event)
+      status = result.status
+    } else if (isPaddleCheckoutEvent(event.eventType)) {
       const result = await reconcilePaddleCheckoutSession(event.objectId, undefined, event)
       if (result.status === "pending") throw new Error("Paddle transaction is still being confirmed.")
       status = result.workspaceId ? "processed" : "ignored"
@@ -150,12 +166,13 @@ export async function processStoredPaddleWebhookEvent(eventId: string) {
     }
     await finalizeBillingWebhookEvent({ eventId, leaseToken, status, now })
     return status
-  } catch {
+  } catch (error) {
+    const errorCode = error instanceof BillingProjectionError ? error.code : "PADDLE_RECONCILIATION_FAILED"
     const nextAttemptAt = claim.attempts < claim.max_attempts
       ? new Date(now.getTime() + Math.min(3600, 30 * 2 ** Math.max(0, claim.attempts - 1)) * 1000)
       : null
     await finalizeBillingWebhookEvent({
-      eventId, leaseToken, status: "failed", errorCode: "PADDLE_RECONCILIATION_FAILED", nextAttemptAt, now,
+      eventId, leaseToken, status: "failed", errorCode, nextAttemptAt, now,
     })
     return "failed"
   }

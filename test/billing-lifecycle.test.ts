@@ -78,6 +78,20 @@ describe("canonical billing lifecycle", () => {
     expect(duplicate.reason).toBe("DUPLICATE")
   })
 
+  it("keeps exact timestamps for a same-day paid period without writing invalid date columns", () => {
+    const start = "2026-11-10T18:58:01.495971Z"
+    const end = "2026-11-10T19:36:56.008Z"
+    const projection = projectCanonicalSubscription({
+      eventId: "evt-same-day", occurredAt: start, mapping,
+      subscription: { ...subscription, currentBillingPeriod: { startsAt: start, endsAt: end }, nextBilledAt: end },
+      current: { plan_key: "paid" },
+      fallbackPlanKey: "workspace", authoritative: true,
+    })
+    expect(projection).toMatchObject({
+      currentPeriodStart: null, currentPeriodEnd: null, currentPeriodStartAt: start, currentPeriodEndAt: end,
+    })
+  })
+
   it("orders equal timestamps deterministically and rejects stale events", () => {
     expect(compareBillingEventOrder("2026-09-01T00:00:00Z", "evt-b", "2026-09-01T00:00:00Z", "evt-a")).toBe("newer")
     expect(compareBillingEventOrder("2026-08-31T00:00:00Z", "evt-z", "2026-09-01T00:00:00Z", "evt-a")).toBe("older")

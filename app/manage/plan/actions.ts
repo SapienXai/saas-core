@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { AuthorizationError, getCurrentWorkspace, requireUser, requireWorkspaceRole } from "@/lib/authorization"
-import { BillingConfigurationError, isBillingDeferred } from "@/lib/billing/config"
+import { BillingConfigurationError, BillingMutationRejectedError, BillingScheduleUnavailableError, isBillingDeferred } from "@/lib/billing/config"
 import { getActiveProviderPrice, getProviderPriceByProviderId, isBillingInterval, isPaidPlanKey, type BillingInterval, type PaidPlanKey, type ProviderPriceMapping } from "@/lib/billing/price-mapping"
 import { canResumePendingCheckout } from "@/lib/billing/checkout-resumption"
 import { assertSubscriptionManagementEnabled, getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured, isSubscriptionManagementEnabled } from "@/lib/billing/providers"
@@ -177,7 +177,7 @@ function resultRecord(value: Json): Record<string, Json> {
 }
 
 function friendlyBillingError(error: unknown) {
-  if (error instanceof AuthorizationError) return error.message
+  if (error instanceof AuthorizationError || error instanceof BillingScheduleUnavailableError || error instanceof BillingMutationRejectedError) return error.message
   if (error instanceof BillingConfigurationError && error.code === "BILLING_DEFERRED") return "Billing changes are temporarily unavailable."
   if (error instanceof Error && /not configured|must be set|invalid format/i.test(error.message)) return "Billing is not configured for this environment."
   const providerUnavailable = error instanceof Error && /past_due|cannot change|not change|temporarily unavailable/i.test(error.message)
@@ -368,6 +368,12 @@ async function finishCanonicalTransition(transitionId: string, state: "succeeded
 }
 
 async function persistUnknownProviderOutcome(mutation: BillingMutation, transitionId: string | null, error: unknown, operation: string) {
+  if (error instanceof BillingMutationRejectedError || error instanceof BillingScheduleUnavailableError) {
+    const code = error instanceof BillingMutationRejectedError ? "PROVIDER_CHANGE_REJECTED" : "BILLING_SCHEDULE_UNAVAILABLE"
+    if (transitionId) await finishCanonicalTransition(transitionId, "failed", {}, code)
+    await finishBillingMutation(mutation.id, "failed", {}, code)
+    return
+  }
   const reason = error instanceof Error ? error.message : String(error)
   if (transitionId) await finishCanonicalTransition(transitionId, "unknown", { status: "unknown", operation, reason: reason.slice(0, 500) })
   try {
@@ -458,7 +464,7 @@ async function calculatePlanChangePreview(context: PlanChangeContext) {
   const adapter = getBillingProviderAdapter()
   const targetPlan = context.mapping.plan_key
   let providerPreview = null as Awaited<ReturnType<BillingProviderAdapter["previewSubscriptionChange"]>> | null
-  if (context.changeTiming === "immediate") {
+  if (context.changeTiming === "immediate" || adapter.provider === "paddle") {
     const itemId = context.state.subscription.items[0]?.id
     if (!itemId || !context.state.subscription.customerId || !context.subscription.provider_subscription_id) throw new Error("The current subscription item is unavailable.")
     providerPreview = await adapter.previewSubscriptionChange({
@@ -467,6 +473,7 @@ async function calculatePlanChangePreview(context: PlanChangeContext) {
       itemId,
       priceId: context.mapping.provider_price_id,
       prorationDate: context.prorationDate,
+      ...(context.changeTiming === "period_end" && context.currentPeriodEndAt ? { effectiveAt: context.currentPeriodEndAt } : {}),
       ...(context.resetBillingCycle ? { resetBillingCycle: true } : {}),
     })
   }
@@ -483,10 +490,12 @@ async function calculatePlanChangePreview(context: PlanChangeContext) {
     action,
     amount: String(previewAmount),
     currency: providerPreview?.currency || context.mapping.currency,
-    recurringAmount: context.targetPrice.amount === null ? null : String(context.targetPrice.amount),
-    recurringCurrency: context.targetPrice.currency,
+    recurringAmount: providerPreview?.recurringAmount !== undefined ? String(providerPreview.recurringAmount) : context.targetPrice.amount === null ? null : String(context.targetPrice.amount),
+    recurringCurrency: providerPreview?.recurringCurrency || context.targetPrice.currency,
     creditToBalance: String(providerPreview?.creditToBalance || 0),
-    nextBilledAt: context.state.subscription.nextBilledAt,
+    nextBilledAt: adapter.provider === "paddle" && providerPreview?.nextPaymentAttempt
+      ? providerPreview.nextPaymentAttempt
+      : context.state.subscription.nextBilledAt,
     effectiveAt,
     prorationDate: context.prorationDate,
     fingerprint: planChangeFingerprint(context.subscription, context.currentPriceId, context.mapping.provider_price_id),
@@ -810,11 +819,13 @@ export async function createBillingPortalSession() {
     assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id) {
+    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id ||
+        !subscription.provider_subscription_id || subscription.provider_environment !== getBillingProviderEnvironment()) {
       return { success: false, message: "No active billing account is available." }
     }
     const portal = await getBillingProviderAdapter().createPortalSession({
       customerId: subscription.provider_customer_id,
+      subscriptionId: subscription.provider_subscription_id,
       returnUrl: getBillingReturnUrl("/manage/plan"),
     })
     return { success: true, url: portal.url }
@@ -896,7 +907,15 @@ export async function changePlan(targetPlan: string, previewToken?: string, requ
 
     const currentPreview = await calculatePlanChangePreview(context)
     const fieldsToMatch = ["amount", "action", "interval", "isDowngrade", "recurringAmount", "creditToBalance", "currency", "nextBilledAt", "effectiveAt", "changeTiming", "prorationPolicy", "prorationDate"]
-    if (fieldsToMatch.some((field) => currentPreview[field as keyof typeof currentPreview] !== saved[field])) {
+    if (fieldsToMatch.some((field) => {
+      const value = currentPreview[field as keyof typeof currentPreview]
+      // An immediate Paddle interval change starts a new cycle at confirmation
+      // time, so its predicted billing date can move by seconds.
+      if (field === "nextBilledAt" && getBillingProviderName() === "paddle" && context.changeTiming === "immediate") {
+        return String(value || "").slice(0, 10) !== String(saved[field] || "").slice(0, 10)
+      }
+      return value !== saved[field]
+    })) {
       await finishBillingMutation(mutation.id, "failed", {}, "PREVIEW_CHANGED")
       return { success: false, message: "The billing amount changed. Review the new preview before confirming." }
     }
@@ -934,7 +953,7 @@ export async function changePlan(targetPlan: string, previewToken?: string, requ
         const providerState = await adapter.retrieveSubscription(context.subscription.provider_subscription_id)
         if (providerState.scheduleId !== scheduled.scheduleId || providerState.scheduledPlan?.priceId !== context.mapping.provider_price_id ||
           Math.abs(new Date(providerState.scheduledPlan.effectiveAt).getTime() - new Date(scheduled.effectiveAt).getTime()) > 1000) {
-          throw new Error("The scheduled billing change could not be verified with Stripe.")
+          throw new Error("The scheduled billing change could not be verified with the payment provider.")
         }
         const reconciled = await reconcileAfterProviderMutation(context.subscription.provider_subscription_id, membership.workspace_id)
         if (reconciled) {
@@ -1026,7 +1045,7 @@ export async function undoPlanChange(requestKey?: string) {
     try {
       await getBillingProviderAdapter().releaseSchedule(subscription.provider_subscription_id, state.subscription.scheduleId, mutation.id)
       const providerState = await getBillingProviderAdapter().retrieveSubscription(subscription.provider_subscription_id)
-      if (providerState.scheduleId || providerState.scheduledPlan) throw new Error("The scheduled billing change is still active in Stripe.")
+      if (providerState.scheduleId || providerState.scheduledPlan) throw new Error("The scheduled billing change is still active with the payment provider.")
       const reconciled = await reconcileAfterProviderMutation(subscription.provider_subscription_id, membership.workspace_id)
       if (reconciled) {
         const updated = await getCurrentBillingSubscription(membership.workspace_id)
@@ -1055,7 +1074,7 @@ export async function cancelSubscription(reasonCode = "other", feedback = "", re
     if (subscription.provider !== getBillingProviderName() || !subscription.provider_subscription_id) return { success: false, message: "No active billing subscription is available." }
     const state = await getAuthoritativeBillingState(subscription)
     if ((subscription.scheduled_plan_key || state.subscription.scheduledPlan) && !state.subscription.scheduleId) {
-      return { success: false, message: "The pending plan change could not be found in Stripe. Refresh the page and try again." }
+      return { success: false, message: "The pending plan change could not be found with the payment provider. Refresh the page and try again." }
     }
     const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "cancel")
     if (mutation.status === "succeeded") {
@@ -1079,7 +1098,7 @@ export async function cancelSubscription(reasonCode = "other", feedback = "", re
         await adapter.releaseSchedule(subscription.provider_subscription_id, state.subscription.scheduleId, mutation.id, "cancel")
       }
       const updated = await adapter.scheduleCancellation(subscription.provider_subscription_id, mutation.id)
-      if (!updated.cancelAtPeriodEnd) throw new Error("Stripe did not schedule cancellation at the end of the billing period.")
+      if (!updated.cancelAtPeriodEnd) throw new Error("The payment provider did not schedule cancellation at the end of the billing period.")
       await reconcileAfterProviderMutation(subscription.provider_subscription_id, membership.workspace_id)
       const effective = updated.cancelEffectiveAt || effectiveAt
       await finishCanonicalTransition(transitionId, "succeeded", { effectiveAt: effective, providerReference: subscription.provider_subscription_id })

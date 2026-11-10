@@ -988,7 +988,10 @@ function blockedPlanChangeEligibility(targetPlanKey: string, reason: PlanChangeE
 export async function validatePlanChangeEligibility(
   workspaceId: string,
   targetPlanKey: PlanKey,
-  options: EntitlementResolutionOptions = {},
+  options: EntitlementResolutionOptions & {
+    /** Product-owned local limits enforced when devices reconcile the new plan. */
+    limitsReconciledOnDevice?: readonly string[]
+  } = {},
 ): Promise<PlanChangeEligibility> {
   const normalizedTargetPlanKey = validPlanKey(targetPlanKey) || ""
   if (!normalizedTargetPlanKey) return blockedPlanChangeEligibility(normalizedTargetPlanKey, "INVALID_PLAN")
@@ -1017,7 +1020,10 @@ export async function validatePlanChangeEligibility(
   const rawTargetLimits = asRecord(targetPlan.limits)
   const targetLimits = normalizeLimits(targetPlan.limits)
   const capabilities = new Set([...Object.keys(currentEntitlements.limits), ...Object.keys(rawTargetLimits)])
-  const checks = await Promise.all([...capabilities].map(async (capability) => {
+  const usageChecks = [...capabilities].filter((capability) =>
+    !options.limitsReconciledOnDevice?.includes(capability) || !Object.hasOwn(targetLimits, capability),
+  )
+  const checks = await Promise.all(usageChecks.map(async (capability) => {
     if (!Object.prototype.hasOwnProperty.call(targetLimits, capability)) {
       return { capability, targetLimit: undefined, configured: false } as const
     }
