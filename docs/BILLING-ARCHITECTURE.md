@@ -52,6 +52,28 @@ account configuration. Core does not infer Product tax codes or enable
 automatic tax; each consumer must establish its merchant registrations and
 Product classification before activating those Live settings.
 
+## Local Paddle Sandbox checkout
+
+Set `SAAS_CORE_BILLING_PROVIDER=paddle`, `SAAS_CORE_BILLING_MODE=enabled`,
+and `PADDLE_ENVIRONMENT=sandbox` in a development process with a loopback
+application origin and local Supabase URLs. Supply a Sandbox `PADDLE_API_KEY`,
+`NEXT_PUBLIC_PADDLE_CLIENT_TOKEN`, and the destination's `PADDLE_WEBHOOK_SECRET`
+from the local secret store. Register the product's active Sandbox price
+mappings before opening checkout. Stripe is the default provider.
+
+The Workspace owner's checkout action creates and registers a Paddle
+transaction before the browser can open it. Paddle.js opens that transaction
+on the local checkout page after the page verifies the Workspace association.
+The signed `transaction.completed` webhook and the authenticated return path
+both reread the Paddle transaction and its linked subscription. They verify
+customer, Workspace, mutation, environment, and mapped price before applying
+the existing leased subscription projection and settling the checkout.
+
+A test notification destination can forward only the Paddle webhook path
+(`/api/billing/paddle/webhook`) over HTTPS. The lifecycle job drains Paddle
+receipts while the local pilot is enabled. Plan and cycle changes, customer
+portal actions, and Live activation are outside this pilot.
+
 ## Product catalog and copy
 
 The existing catalog remains valid:

@@ -6,7 +6,7 @@ import { AuthorizationError, getCurrentWorkspace, requireUser, requireWorkspaceR
 import { BillingConfigurationError, isBillingDeferred } from "@/lib/billing/config"
 import { getActiveProviderPrice, getProviderPriceByProviderId, isBillingInterval, isPaidPlanKey, type BillingInterval, type PaidPlanKey, type ProviderPriceMapping } from "@/lib/billing/price-mapping"
 import { canResumePendingCheckout } from "@/lib/billing/checkout-resumption"
-import { getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured } from "@/lib/billing/providers"
+import { assertSubscriptionManagementEnabled, getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured, isSubscriptionManagementEnabled } from "@/lib/billing/providers"
 import { getWorkspaceEntitlements, getWorkspaceUsage, validatePlanChangeEligibility } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import type { Json } from "@/types/supabase"
@@ -562,7 +562,7 @@ export async function getPlanUsage() {
         billing: {
           canManage: membership.role === "owner",
           isProviderBacked: subscription.provider === provider && Boolean(subscription.provider_subscription_id),
-          canManageProvider: membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id) && presentation.billingConfigured && !presentation.billingDeferred,
+          canManageProvider: isSubscriptionManagementEnabled() && membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id) && presentation.billingConfigured && !presentation.billingDeferred,
           canUsePortal: membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id && subscription.provider_customer_id) && presentation.billingConfigured && !presentation.billingDeferred,
           billingConfigured: presentation.billingConfigured,
           billingDeferred: presentation.billingDeferred,
@@ -764,6 +764,11 @@ export async function startCheckout(targetPlan: string, billingInterval = "month
       return { success: false, message: "Checkout is already being confirmed. Refresh in a moment to continue." }
     }
 
+    // A Paddle transaction create has no reusable Stripe-style idempotency key.
+    if (provider === "paddle" && !mutation.created) {
+      return { success: false, message: "Checkout is already being confirmed. Refresh in a moment to continue." }
+    }
+
     try {
       const session = await adapter.createCheckoutSession({
         mutationId: mutation.id,
@@ -802,6 +807,7 @@ export async function startCheckout(targetPlan: string, billingInterval = "month
 
 export async function createBillingPortalSession() {
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id) {
@@ -819,6 +825,7 @@ export async function createBillingPortalSession() {
 
 export async function previewPlanChange(targetPlan: string, targetInterval?: string) {
   try {
+    assertSubscriptionManagementEnabled()
     if (!isPaidPlanKey(targetPlan)) return { success: false, message: "That plan is not available." }
     if (targetInterval && !isBillingInterval(targetInterval)) return { success: false, message: "That billing cycle is not available." }
     const context = await getPlanChangeContext(targetPlan as PaidPlanKey, targetInterval as BillingInterval | undefined)
@@ -847,6 +854,7 @@ export async function changePlan(targetPlan: string, previewToken?: string, requ
   let mutation: BillingMutation | null = null
   let transitionId: string | null = null
   try {
+    assertSubscriptionManagementEnabled()
     if (!isPaidPlanKey(targetPlan)) return { success: false, message: "That plan is not available." }
     const membership = await requireCurrentWorkspaceOwner()
     let token = previewToken
@@ -995,6 +1003,7 @@ export async function changePlan(targetPlan: string, previewToken?: string, requ
 export async function undoPlanChange(requestKey?: string) {
   let transitionId: string | null = null
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (!subscription.scheduled_plan_key || !isPaidPlanKey(subscription.plan_key) || !subscription.provider_subscription_id) {
@@ -1039,6 +1048,7 @@ export async function undoPlanChange(requestKey?: string) {
 export async function cancelSubscription(reasonCode = "other", feedback = "", requestKey?: string) {
   let transitionId: string | null = null
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     if (!CANCELLATION_REASONS.has(reasonCode)) return { success: false, message: "Please choose a cancellation reason." }
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
@@ -1088,6 +1098,7 @@ export async function cancelSubscription(reasonCode = "other", feedback = "", re
 export async function resumeSubscription(requestKey?: string) {
   let transitionId: string | null = null
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider !== getBillingProviderName() || !subscription.provider_subscription_id) return { success: false, message: "No active billing subscription is available." }
@@ -1146,6 +1157,7 @@ export async function getBillingTransactions() {
 
 export async function getBillingInvoiceUrl(invoiceId: string) {
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id || !invoiceId.trim()) {

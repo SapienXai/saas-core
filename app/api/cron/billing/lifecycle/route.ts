@@ -1,4 +1,5 @@
-import { expirePaymentGracePeriods, processDueStripeBillingWebhookEvents } from "@/lib/billing/lifecycle"
+import { isBillingProviderConfigured } from "@/lib/billing/providers"
+import { expirePaymentGracePeriods, processDuePaddleBillingWebhookEvents, processDueStripeBillingWebhookEvents } from "@/lib/billing/lifecycle"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -16,7 +17,9 @@ export async function GET(request: Request) {
   try {
     const [gracePeriods, webhooks] = await Promise.all([
       expirePaymentGracePeriods(),
-      processDueStripeBillingWebhookEvents(),
+      process.env.SAAS_CORE_BILLING_PROVIDER === "paddle" && isBillingProviderConfigured()
+        ? processDuePaddleBillingWebhookEvents()
+        : processDueStripeBillingWebhookEvents(),
     ])
     return Response.json({ ok: true, ...gracePeriods, webhooks })
   } catch (error) {
