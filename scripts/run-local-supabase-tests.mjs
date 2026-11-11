@@ -22,7 +22,7 @@ const environment = createLocalSupabaseEnvironment(process.env, status)
 // These integration fixtures intentionally exercise global plan/default state.
 // Vitest's no-file-parallelism still permits multiple workers, so serialize
 // the files to prevent one fixture's catalog reset from racing another.
-const result = spawnSync("./node_modules/.bin/vitest", ["run", "--no-file-parallelism", "--maxWorkers=1", "test/billing-persistence.integration.test.ts", "test/core-rls.integration.test.ts", "test/default-plan.integration.test.ts", "test/domain-foundation.integration.test.ts", "test/entitlement-lock.integration.test.ts", "test/initial-workspace.integration.test.ts", "test/public-workspace.integration.test.ts", "test/plan-catalog.integration.test.ts"], {
+const result = spawnSync("./node_modules/.bin/vitest", ["run", "--no-file-parallelism", "--maxWorkers=1", "test/billing-persistence.integration.test.ts", "test/core-rls.integration.test.ts", "test/default-plan.integration.test.ts", "test/domain-foundation.integration.test.ts", "test/entitlement-lock.integration.test.ts", "test/initial-workspace.integration.test.ts", "test/public-workspace.integration.test.ts", "test/plan-catalog.integration.test.ts", "test/paddle-webhook.integration.test.ts"], {
   stdio: "inherit",
   env: environment,
 })

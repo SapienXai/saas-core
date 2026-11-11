@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { assertBillingMutationsEnabled, getBillingEnvironment, isBillingDeferred, isStripeBillingConfigured } from "../lib/billing/config"
+import { getBillingProviderName, isBillingProviderConfigured } from "../lib/billing/providers"
 import { createStripeBillingAdapter } from "../lib/billing/providers/stripe"
 
 afterEach(() => vi.unstubAllEnvs())
@@ -13,6 +14,16 @@ function configureSandbox() {
 }
 
 describe("billing deployment mode", () => {
+  it("defaults legacy consumers to Stripe and rejects an unknown provider", () => {
+    vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", undefined)
+    expect(getBillingProviderName()).toBe("stripe")
+    vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", "paddle")
+    expect(getBillingProviderName()).toBe("paddle")
+    vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", "unknown")
+    expect(() => getBillingProviderName()).toThrow("Unknown billing provider")
+    expect(isBillingProviderConfigured()).toBe(false)
+  })
+
   it("blocks provider mutations while leaving signed webhook verification enabled", async () => {
     configureSandbox()
     vi.stubEnv("SAAS_CORE_BILLING_MODE", "deferred")

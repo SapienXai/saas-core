@@ -164,17 +164,13 @@ function parseTrustedRequestHost(value: string | null): TrustedRequestHost | nul
   return { hostname, host: parsed.host }
 }
 
-/**
- * Resolve the request host once at the server boundary. Proxies may provide a
- * comma-separated forwarded chain; only its first value is considered, and a
- * malformed forwarded value falls back to the ordinary Host header.
- */
+/** Use the ingress Host unless a trusted reverse proxy is explicitly configured. */
 export function getTrustedHostFromHeaders(headers: Pick<Headers, "get">): TrustedRequestHost | null {
-  for (const header of ["x-forwarded-host", "host"]) {
-    const candidate = parseTrustedRequestHost(firstHeaderValue(headers, header))
-    if (candidate) return candidate
+  if (process.env.SAAS_CORE_TRUST_FORWARDED_HOST === "true") {
+    const forwarded = parseTrustedRequestHost(firstHeaderValue(headers, "x-forwarded-host"))
+    if (forwarded) return forwarded
   }
-  return null
+  return parseTrustedRequestHost(headers.get("host"))
 }
 
 export function getTrustedRequestHost(request: Request) {

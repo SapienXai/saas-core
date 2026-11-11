@@ -1,6 +1,7 @@
 export const CORE_CANONICAL_APP_PATHS = [
   "/app",
   "/manage",
+  "/billing/paddle/checkout",
   "/platform",
   "/login",
   "/signup",

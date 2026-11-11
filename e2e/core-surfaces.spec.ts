@@ -81,7 +81,7 @@ test("@critical public and auth surfaces remain available", async ({ page }) => 
   await expect(page.getByText("Open workspace")).toHaveCount(0)
   await page.goto("/login")
   await expect(page.locator("#login-email")).toBeVisible()
-  await expect(page.getByRole("link", { name: "Register" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Create account" })).toBeVisible()
   await page.goto("/signup")
   await expect(page.locator("#signup-email")).toBeVisible()
   await page.goto("/forgot-password")
@@ -90,22 +90,26 @@ test("@critical public and auth surfaces remain available", async ({ page }) => 
   await expect(page.locator("#new-password")).toBeVisible()
   await expect(page.locator("#new-password-confirmation")).toBeVisible()
   await page.locator("#new-password").fill(password)
-  await page.locator("#new-password").locator("xpath=following-sibling::button").click()
+  await page.getByRole("button", { name: "Show password" }).first().click()
   await expect(page.locator("#new-password")).toHaveAttribute("type", "text")
 })
 
-test("@critical signup confirmation identifies the destination and exposes Mailpit only in development", async ({ page }, testInfo) => {
+test("@critical signup confirmation identifies the destination and delivers to the local inbox", async ({ page, request }, testInfo) => {
   test.skip(testInfo.project.name !== "chromium", "The signup confirmation proof runs once in the desktop project.")
   await page.goto("/signup")
   await page.locator("#signup-email").fill(signupEmail)
   await page.locator("#signup-password").fill(password)
-  await page.locator("#signup-confirmation").fill(password)
   await page.getByRole("button", { name: "Create Account" }).click()
-  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole("heading", { name: "Check your inbox." })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByLabel("Confirmation email destination")).toHaveText(signupEmail)
-  const inbox = page.getByRole("link", { name: "Open Mailpit" })
-  await expect(inbox).toBeVisible()
-  expect(await inbox.getAttribute("href")).toContain("55624")
+  const inbox = process.env.SAAS_CORE_MAIL_URL
+  expect(inbox).toMatch(/^http:\/\/(127\.0\.0\.1|localhost):55624$/)
+  await expect.poll(async () => {
+    const response = await request.get(new URL("/api/v1/search", inbox).href, { params: { query: "to:" + signupEmail } })
+    if (!response.ok()) return false
+    const result = await response.json() as { messages?: Array<{ To: Array<{ Address: string }> }> }
+    return result.messages?.some(message => message.To.some(recipient => recipient.Address === signupEmail)) ?? false
+  }).toBe(true)
   const users = await service!.auth.admin.listUsers({ page: 1, perPage: 1000 })
   signupUserId = users.data.users.find((user) => user.email === signupEmail)?.id || ""
   expect(signupUserId).toBeTruthy()
@@ -136,7 +140,7 @@ test("@critical authenticated shell preserves collapse, persistence, theme, and 
   // The Next development indicator can sit above the shell footer in dev mode;
   // production mode receives a normal pointer event at the same coordinate.
   await sidebar.locator("button").last().click()
-  await page.getByRole("switch", { name: "Light mode" }).click()
+  await page.getByRole("group", { name: "Appearance" }).getByRole("button", { name: "Dark", exact: true }).click()
   await expect(page.locator("body")).toHaveAttribute("data-manage-theme", "dark")
   await page.keyboard.press("Escape")
   await page.locator("header").getByRole("button", { name: "Notifications" }).click()

@@ -1,5 +1,9 @@
 # Reusable billing certification
 
+The 2.7.0 candidate and its Stripe and Paddle evidence are recorded in
+[CORE-2.7.0-READINESS.md](./CORE-2.7.0-READINESS.md). The historical
+certification below applies to 2.5.0.
+
 This document records the local release-boundary review for the coordinated
 SaaS Core runtime/package release `2.5.0` and Core schema compatibility
 coordinate `2.0`. The release delivers the additive, Core-managed migration

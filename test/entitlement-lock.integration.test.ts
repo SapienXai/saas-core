@@ -15,6 +15,10 @@ integration("transactional entitlement lock", () => {
   let currentPlanPriceId = ""
   let targetPlanPriceId = ""
   let thirdPriceId = ""
+  const paidPeriod = {
+    current_period_start_at: new Date(Date.now() - 60_000).toISOString(),
+    current_period_end_at: new Date(Date.now() + 86_400_000).toISOString(),
+  }
 
   const plans = [
     { key: "fixture_free", name: "Fixture Free", sort_order: 100, active: true, features: { projects: true }, limits: { "core.workspaces": 1, "core.members": 1, projects: 2 }, metadata: { fixture: true } },
@@ -128,8 +132,24 @@ integration("transactional entitlement lock", () => {
       unlimited: false,
     })
 
-    const expiredAt = new Date(Date.now() - 60_000)
+    const converted = await service!.from("workspace_subscriptions").update({
+      status: "active", source: "provider", provider: "stripe", provider_environment: "sandbox",
+      provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: currentPlanPriceId,
+      ...paidPeriod,
+    }).eq("workspace_id", workspaceId)
+    expect(converted.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 3 })
+
+    const canceledTrial = await service!.from("workspace_subscriptions").update({
+      status: "canceled", source: "trial", provider: null, provider_environment: null,
+      provider_customer_id: null, provider_subscription_id: null, provider_price_id: null,
+    }).eq("workspace_id", workspaceId)
+    expect(canceledTrial.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
+
+    const expiredAt = new Date(Date.now() - 1_000)
     const expiredTrial = await service!.from("workspace_subscriptions").update({
+      status: "trialing",
       current_period_end_at: expiredAt.toISOString(),
       current_period_end: expiredAt.toISOString().slice(0, 10),
       initial_trial_ends_at: expiredAt.toISOString(),
@@ -146,6 +166,7 @@ integration("transactional entitlement lock", () => {
       plan_key: "fixture_free",
       status: "active",
       source: "system",
+      current_period_start: null,
       current_period_start_at: null,
       current_period_end_at: null,
       current_period_end: null,
@@ -154,8 +175,6 @@ integration("transactional entitlement lock", () => {
     }).eq("workspace_id", workspaceId)
     expect(resetAfterTrial.error).toBeNull()
 
-    const canceled = await service!.from("workspace_subscriptions").update({ status: "canceled" }).eq("workspace_id", workspaceId)
-    expect(canceled.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
 
     const override = await service!.from("subscription_overrides").insert({ workspace_id: workspaceId, plan_key: "fixture_unlimited", reason: "Entitlement lock fixture", created_by: owner.id }).select("id").single()
@@ -167,11 +186,21 @@ integration("transactional entitlement lock", () => {
     expect(missingProviderSubscription.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
 
-    const unlimited = await service!.from("workspace_subscriptions").update({ status: "active", plan_key: "fixture_unlimited", source: "provider", provider: "stripe", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: fixturePriceId }).eq("workspace_id", workspaceId)
+    const missingProviderPeriod = await service!.from("workspace_subscriptions").update({ status: "active", plan_key: "fixture_unlimited", source: "provider", provider: "stripe", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: fixturePriceId }).eq("workspace_id", workspaceId)
+    expect(missingProviderPeriod.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
+
+    const unlimited = await service!.from("workspace_subscriptions").update(paidPeriod).eq("workspace_id", workspaceId)
     expect(unlimited.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_unlimited", capability_configured: true, limit_value: null, unlimited: true })
 
-    const expired = await service!.from("workspace_subscriptions").update({ current_period_start: "2026-08-01", current_period_end: "2026-09-01", current_period_end_at: "2026-09-01T00:00:00.000Z" }).eq("workspace_id", workspaceId)
+    const canceled = await service!.from("workspace_subscriptions").update({ status: "canceled" }).eq("workspace_id", workspaceId)
+    expect(canceled.error).toBeNull()
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
+
+    const expiredStart = new Date(Date.now() - 2 * 86_400_000)
+    const expiredEnd = new Date(Date.now() - 86_400_000)
+    const expired = await service!.from("workspace_subscriptions").update({ status: "active", current_period_start_at: expiredStart.toISOString(), current_period_start: expiredStart.toISOString().slice(0, 10), current_period_end: expiredEnd.toISOString().slice(0, 10), current_period_end_at: expiredEnd.toISOString() }).eq("workspace_id", workspaceId)
     expect(expired.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
 
@@ -183,11 +212,11 @@ integration("transactional entitlement lock", () => {
     const futureSchedule = { scheduled_plan_key: "fixture_starter", scheduled_plan_at: future.toISOString().slice(0, 10), scheduled_effective_at: future.toISOString(), scheduled_provider_price_id: targetPlanPriceId, scheduled_change_action: null, cancel_at_period_end: false, current_period_end: future.toISOString().slice(0, 10), current_period_end_at: future.toISOString() }
     const currentPriceFuture = await service!.from("workspace_subscriptions").update({ plan_key: "fixture_pro", source: "provider", provider: "stripe", provider_environment: "sandbox", provider_customer_id: "cus_fixture", provider_subscription_id: "sub_fixture", provider_price_id: currentPlanPriceId, ...futureSchedule }).eq("workspace_id", workspaceId)
     expect(currentPriceFuture.error).toBeNull()
-    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 1, unlimited: false })
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 3, unlimited: false })
 
     const targetPriceFuture = await service!.from("workspace_subscriptions").update({ provider_price_id: targetPlanPriceId, ...futureSchedule }).eq("workspace_id", workspaceId)
     expect(targetPriceFuture.error).toBeNull()
-    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 1, unlimited: false })
+    await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_pro", limit_value: 3, unlimited: false })
 
     const thirdPriceFuture = await service!.from("workspace_subscriptions").update({ provider_price_id: thirdPriceId, ...futureSchedule }).eq("workspace_id", workspaceId)
     expect(thirdPriceFuture.error).toBeNull()
@@ -243,7 +272,7 @@ integration("transactional entitlement lock", () => {
       plan_key: "fixture_free",
       capability_configured: true,
       feature_enabled: true,
-      limit_value: 1,
+      limit_value: 2,
       unlimited: false,
     })
 
@@ -288,9 +317,9 @@ integration("transactional entitlement lock", () => {
     expect(missingTargetCapability.error).toBeNull()
     await expect(lock("extra")).resolves.toMatchObject({
       plan_key: "fixture_pro",
-      capability_configured: false,
+      capability_configured: true,
       feature_enabled: false,
-      limit_value: null,
+      limit_value: 4,
       unlimited: false,
     })
     const scheduledUpgrade = await service!.from("workspace_subscriptions").update({
@@ -338,6 +367,7 @@ integration("transactional entitlement lock", () => {
   it("guards Core membership writes and rejects a finite member quota", async () => {
     const unlimitedSubscription = await service!.from("workspace_subscriptions").upsert({
       workspace_id: workspaceId,
+      ...paidPeriod,
       plan_key: "fixture_unlimited",
       status: "active",
       source: "provider",
@@ -384,6 +414,7 @@ integration("transactional entitlement lock", () => {
   it("renews only eligible invitations and returns qualified renewal data", async () => {
     const unlimitedSubscription = await service!.from("workspace_subscriptions").upsert({
       workspace_id: workspaceId,
+      ...paidPeriod,
       plan_key: "fixture_unlimited",
       status: "active",
       source: "provider",

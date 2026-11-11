@@ -3,12 +3,13 @@
 import { randomUUID } from "node:crypto"
 import { revalidatePath } from "next/cache"
 import { AuthorizationError, getCurrentWorkspace, requireUser, requireWorkspaceRole } from "@/lib/authorization"
-import { BillingConfigurationError, isBillingDeferred } from "@/lib/billing/config"
+import { BillingConfigurationError, BillingMutationRejectedError, BillingScheduleUnavailableError, isBillingDeferred } from "@/lib/billing/config"
 import { getActiveProviderPrice, getProviderPriceByProviderId, isBillingInterval, isPaidPlanKey, type BillingInterval, type PaidPlanKey, type ProviderPriceMapping } from "@/lib/billing/price-mapping"
 import { canResumePendingCheckout } from "@/lib/billing/checkout-resumption"
-import { getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured } from "@/lib/billing/providers"
+import { assertBillingCheckoutEnabled, canStartBillingCheckout, assertSubscriptionManagementEnabled, getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured, isSubscriptionManagementEnabled } from "@/lib/billing/providers"
 import { getWorkspaceEntitlements, getWorkspaceUsage, validatePlanChangeEligibility } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 import type { Json } from "@/types/supabase"
 import { getConfiguredDefaultPlanKey, getConfiguredFallbackPlanKey, isTerminalBillingSubscription } from "@/lib/billing/reconciliation"
 import { consumeBillingTransition, recordBillingMutationTransition, updateBillingMutationTransition } from "@/lib/billing/persistence"
@@ -131,7 +132,11 @@ async function getAuthoritativeBillingState(subscription: SubscriptionRow): Prom
   const adapter = getBillingProviderAdapter()
   const providerSubscription = await adapter.retrieveSubscription(subscription.provider_subscription_id)
   if (providerSubscription.issueCode === "unmanaged_subscription_schedule" || providerSubscription.issueCode === "unsupported_subscription_schedule") {
-    throw new Error("The Stripe schedule is not in a supported PlaceDJ state; resolve it before changing this subscription.")
+    throw new Error("The payment provider has a schedule that Core cannot manage.")
+  }
+  if (providerSubscription.id !== subscription.provider_subscription_id ||
+      !subscription.provider_customer_id || providerSubscription.customerId !== subscription.provider_customer_id) {
+    throw new Error("Billing customer does not match this Workspace subscription.")
   }
   const workspaceMetadata = providerSubscription.customData.workspace_id || providerSubscription.customData.saas_core_workspace_id
   if (workspaceMetadata && workspaceMetadata !== subscription.workspace_id) throw new Error("Billing subscription belongs to another Workspace.")
@@ -177,7 +182,7 @@ function resultRecord(value: Json): Record<string, Json> {
 }
 
 function friendlyBillingError(error: unknown) {
-  if (error instanceof AuthorizationError) return error.message
+  if (error instanceof AuthorizationError || error instanceof BillingScheduleUnavailableError || error instanceof BillingMutationRejectedError) return error.message
   if (error instanceof BillingConfigurationError && error.code === "BILLING_DEFERRED") return "Billing changes are temporarily unavailable."
   if (error instanceof Error && /not configured|must be set|invalid format/i.test(error.message)) return "Billing is not configured for this environment."
   const providerUnavailable = error instanceof Error && /past_due|cannot change|not change|temporarily unavailable/i.test(error.message)
@@ -354,6 +359,10 @@ async function resumePendingCheckoutSession(input: {
     session.livemode !== (input.environment === "live")) {
     throw new Error("The pending Checkout session does not match this Workspace request.")
   }
+  if (session.status === "expired" && session.paymentStatus === "unpaid" && !session.subscriptionId) {
+    const expired = await reconcileBillingCheckoutSession(session.id, input.workspaceId)
+    if (expired.status === "failed") return null
+  }
   if (session.status !== "open" || !session.url) {
     return { success: false as const, message: "The previous checkout is already being processed. Refresh the page and try again." }
   }
@@ -368,10 +377,24 @@ async function finishCanonicalTransition(transitionId: string, state: "succeeded
 }
 
 async function persistUnknownProviderOutcome(mutation: BillingMutation, transitionId: string | null, error: unknown, operation: string) {
+  if (error instanceof BillingMutationRejectedError || error instanceof BillingScheduleUnavailableError) {
+    const code = error instanceof BillingMutationRejectedError ? "PROVIDER_CHANGE_REJECTED" : "BILLING_SCHEDULE_UNAVAILABLE"
+    if (transitionId) await finishCanonicalTransition(transitionId, "failed", {}, code)
+    await finishBillingMutation(mutation.id, "failed", {}, code)
+    return
+  }
   const reason = error instanceof Error ? error.message : String(error)
   if (transitionId) await finishCanonicalTransition(transitionId, "unknown", { status: "unknown", operation, reason: reason.slice(0, 500) })
   try {
-    await finishBillingMutation(mutation.id, "unknown", { status: "unknown", operation, reason: reason.slice(0, 500) }, "PROVIDER_OUTCOME_UNKNOWN")
+    const db = createServiceRoleClient()
+    const { data: current, error: readError } = await db.from("billing_mutations").select("result,status").eq("id", mutation.id).single()
+    if (readError) throw readError
+    const { error } = await db.from("billing_mutations").update({
+      status: "unknown",
+      result: asJson({ ...resultRecord(current.result), status: "unknown", operation, reason: reason.slice(0, 500) }),
+      error_code: "PROVIDER_OUTCOME_UNKNOWN",
+    }).eq("id", mutation.id).eq("status", "pending")
+    if (error) throw error
   } catch {
     console.error("Could not persist unknown billing mutation outcome", { code: "MUTATION_STATE_WRITE_FAILED" })
   }
@@ -379,6 +402,9 @@ async function persistUnknownProviderOutcome(mutation: BillingMutation, transiti
 
 async function ensureCheckoutEligibility(subscription: SubscriptionRow) {
   if (subscription.provider_subscription_id) {
+    if (subscription.provider !== getBillingProviderName() || subscription.provider_environment !== getBillingProviderEnvironment()) {
+      throw new Error("This Workspace is linked to a different billing provider or environment.")
+    }
     const observedStatus = subscription.provider_status || subscription.status
     if (!isTerminalBillingSubscription(observedStatus)) throw new Error("This workspace already has a billing subscription. Use Manage plan instead.")
     if (subscription.provider === getBillingProviderName()) {
@@ -429,6 +455,9 @@ async function getPlanChangeContext(targetPlan: PaidPlanKey, targetInterval?: Bi
   if (state.subscription.cancelAtPeriodEnd || subscription.cancel_at_period_end) throw new Error("Reactivate the subscription before changing its plan.")
   if (state.subscription.status !== "active" && state.subscription.status !== "trialing") throw new Error("This subscription cannot be changed while its payment status is " + state.subscription.status + ".")
   if (subscription.plan_key === targetPlan && currentInterval === interval) throw new Error("The workspace is already on that plan and billing cycle.")
+  if (adapter.provider === "paddle" && (hasPendingPlan || state.subscription.scheduleId)) {
+    throw new BillingScheduleUnavailableError()
+  }
   if (state.subscription.scheduledPlan?.priceId === mapping.provider_price_id) {
     throw new Error("That plan and billing cycle are already scheduled for the end of this billing period.")
   }
@@ -458,7 +487,7 @@ async function calculatePlanChangePreview(context: PlanChangeContext) {
   const adapter = getBillingProviderAdapter()
   const targetPlan = context.mapping.plan_key
   let providerPreview = null as Awaited<ReturnType<BillingProviderAdapter["previewSubscriptionChange"]>> | null
-  if (context.changeTiming === "immediate") {
+  if (context.changeTiming === "immediate" || adapter.provider === "paddle") {
     const itemId = context.state.subscription.items[0]?.id
     if (!itemId || !context.state.subscription.customerId || !context.subscription.provider_subscription_id) throw new Error("The current subscription item is unavailable.")
     providerPreview = await adapter.previewSubscriptionChange({
@@ -467,6 +496,7 @@ async function calculatePlanChangePreview(context: PlanChangeContext) {
       itemId,
       priceId: context.mapping.provider_price_id,
       prorationDate: context.prorationDate,
+      ...(context.changeTiming === "period_end" && context.currentPeriodEndAt ? { effectiveAt: context.currentPeriodEndAt } : {}),
       ...(context.resetBillingCycle ? { resetBillingCycle: true } : {}),
     })
   }
@@ -483,10 +513,12 @@ async function calculatePlanChangePreview(context: PlanChangeContext) {
     action,
     amount: String(previewAmount),
     currency: providerPreview?.currency || context.mapping.currency,
-    recurringAmount: context.targetPrice.amount === null ? null : String(context.targetPrice.amount),
-    recurringCurrency: context.targetPrice.currency,
+    recurringAmount: providerPreview?.recurringAmount !== undefined ? String(providerPreview.recurringAmount) : context.targetPrice.amount === null ? null : String(context.targetPrice.amount),
+    recurringCurrency: providerPreview?.recurringCurrency || context.targetPrice.currency,
     creditToBalance: String(providerPreview?.creditToBalance || 0),
-    nextBilledAt: context.state.subscription.nextBilledAt,
+    nextBilledAt: adapter.provider === "paddle" && providerPreview?.nextPaymentAttempt
+      ? providerPreview.nextPaymentAttempt
+      : context.state.subscription.nextBilledAt,
     effectiveAt,
     prorationDate: context.prorationDate,
     fingerprint: planChangeFingerprint(context.subscription, context.currentPriceId, context.mapping.provider_price_id),
@@ -548,7 +580,7 @@ export async function getPlanUsage() {
       } catch { currentPriceAmount = null }
     }
     let paymentMethod: { type: string; last4: string | null; expiryMonth: number | null; expiryYear: number | null } | null = null
-    if (subscription.provider === provider && subscription.provider_customer_id && adapter) {
+    if (subscription.provider === provider && subscription.provider_environment === environment && subscription.provider_customer_id && adapter) {
       try { paymentMethod = await adapter.getCustomerPaymentMethod(subscription.provider_customer_id) } catch { paymentMethod = null }
     }
     const resolvedStatus = authoritative?.subscription.providerStatus || subscription.provider_status
@@ -561,9 +593,12 @@ export async function getPlanUsage() {
         workspace, entitlements, usage,
         billing: {
           canManage: membership.role === "owner",
-          isProviderBacked: subscription.provider === provider && Boolean(subscription.provider_subscription_id),
-          canManageProvider: membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id) && presentation.billingConfigured && !presentation.billingDeferred,
-          canUsePortal: membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id && subscription.provider_customer_id) && presentation.billingConfigured && !presentation.billingDeferred,
+          canStartCheckout: membership.role === "owner" && presentation.billingConfigured &&
+            (!subscription.provider_subscription_id || (subscription.provider === provider && subscription.provider_environment === environment)) &&
+            canStartBillingCheckout(membership.workspace_id),
+          isProviderBacked: subscription.provider === provider && subscription.provider_environment === environment && Boolean(subscription.provider_subscription_id),
+          canManageProvider: isSubscriptionManagementEnabled() && membership.role === "owner" && subscription.provider === provider && subscription.provider_environment === environment && Boolean(subscription.provider_subscription_id) && presentation.billingConfigured && !presentation.billingDeferred,
+          canUsePortal: membership.role === "owner" && subscription.provider === provider && subscription.provider_environment === environment && Boolean(subscription.provider_subscription_id && subscription.provider_customer_id) && presentation.billingConfigured && !presentation.billingDeferred,
           billingConfigured: presentation.billingConfigured,
           billingDeferred: presentation.billingDeferred,
           environment: subscription.provider_environment || environment,
@@ -648,6 +683,7 @@ export async function consumeBillingTransitionForCurrentUser(transitionId: strin
 export async function previewCheckout(targetPlan: string, billingInterval = "month") {
   try {
     const membership = await requireCurrentWorkspaceOwner()
+    assertBillingCheckoutEnabled(membership.workspace_id)
     const planKey = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
     if (!isPaidPlanKey(planKey) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
     const environment = getBillingProviderEnvironment()
@@ -707,6 +743,7 @@ export async function startCheckout(targetPlan: string, billingInterval = "month
   let transitionId: string | null = null
   try {
     const membership = await requireCurrentWorkspaceOwner()
+    assertBillingCheckoutEnabled(membership.workspace_id)
     const planKey = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
     if (!isPaidPlanKey(planKey) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
     const environment = getBillingProviderEnvironment()
@@ -764,6 +801,15 @@ export async function startCheckout(targetPlan: string, billingInterval = "month
       return { success: false, message: "Checkout is already being confirmed. Refresh in a moment to continue." }
     }
 
+    // A Paddle transaction create has no reusable Stripe-style idempotency key.
+    if (provider === "paddle" && !mutation.created) {
+      return { success: false, message: "Checkout is already being confirmed. Refresh in a moment to continue." }
+    }
+
+    if (provider === "paddle") {
+      await saveBillingMutationResult(mutation.id, { checkoutPriceId: mapping.provider_price_id, planKey, interval: billingInterval })
+    }
+
     try {
       const session = await adapter.createCheckoutSession({
         mutationId: mutation.id,
@@ -788,7 +834,13 @@ export async function startCheckout(targetPlan: string, billingInterval = "month
         idempotency_key: mutation.id,
         status: "created",
       }).then((result) => result.error)
-      if (checkoutError && checkoutError.code !== "23505") throw new Error(checkoutError.message)
+      if (checkoutError) {
+        if (checkoutError.code !== "23505") throw new Error(checkoutError.message)
+        const { data: recorded, error } = await supabase.from("billing_checkout_sessions").select("provider_transaction_id")
+          .eq("provider", provider).eq("environment", environment).eq("workspace_id", membership.workspace_id)
+          .eq("idempotency_key", mutation.id).maybeSingle()
+        if (error || recorded?.provider_transaction_id !== session.id) throw new Error("Checkout does not match the recorded transaction.")
+      }
       await saveBillingMutationResult(mutation.id, { sessionId: session.id, transitionId, planKey, interval: billingInterval })
       return { success: true, data: { url: session.url, sessionId: session.id, transitionId } }
     } catch (error) {
@@ -802,13 +854,19 @@ export async function startCheckout(targetPlan: string, billingInterval = "month
 
 export async function createBillingPortalSession() {
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id) {
+    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id ||
+        !subscription.provider_subscription_id || subscription.provider_environment !== getBillingProviderEnvironment()) {
       return { success: false, message: "No active billing account is available." }
     }
+    const user = subscription.provider === "paddle" && subscription.provider_environment === "sandbox"
+      ? (await (await createSupabaseServerClient()).auth.getUser()).data.user : null
     const portal = await getBillingProviderAdapter().createPortalSession({
+      confirmedBuyerEmail: user?.email_confirmed_at ? user.email : undefined,
       customerId: subscription.provider_customer_id,
+      subscriptionId: subscription.provider_subscription_id,
       returnUrl: getBillingReturnUrl("/manage/plan"),
     })
     return { success: true, url: portal.url }
@@ -819,6 +877,7 @@ export async function createBillingPortalSession() {
 
 export async function previewPlanChange(targetPlan: string, targetInterval?: string) {
   try {
+    assertSubscriptionManagementEnabled()
     if (!isPaidPlanKey(targetPlan)) return { success: false, message: "That plan is not available." }
     if (targetInterval && !isBillingInterval(targetInterval)) return { success: false, message: "That billing cycle is not available." }
     const context = await getPlanChangeContext(targetPlan as PaidPlanKey, targetInterval as BillingInterval | undefined)
@@ -847,6 +906,7 @@ export async function changePlan(targetPlan: string, previewToken?: string, requ
   let mutation: BillingMutation | null = null
   let transitionId: string | null = null
   try {
+    assertSubscriptionManagementEnabled()
     if (!isPaidPlanKey(targetPlan)) return { success: false, message: "That plan is not available." }
     const membership = await requireCurrentWorkspaceOwner()
     let token = previewToken
@@ -888,7 +948,15 @@ export async function changePlan(targetPlan: string, previewToken?: string, requ
 
     const currentPreview = await calculatePlanChangePreview(context)
     const fieldsToMatch = ["amount", "action", "interval", "isDowngrade", "recurringAmount", "creditToBalance", "currency", "nextBilledAt", "effectiveAt", "changeTiming", "prorationPolicy", "prorationDate"]
-    if (fieldsToMatch.some((field) => currentPreview[field as keyof typeof currentPreview] !== saved[field])) {
+    if (fieldsToMatch.some((field) => {
+      const value = currentPreview[field as keyof typeof currentPreview]
+      // An immediate Paddle interval change starts a new cycle at confirmation
+      // time, so its predicted billing date can move by seconds.
+      if (field === "nextBilledAt" && getBillingProviderName() === "paddle" && context.changeTiming === "immediate") {
+        return String(value || "").slice(0, 10) !== String(saved[field] || "").slice(0, 10)
+      }
+      return value !== saved[field]
+    })) {
       await finishBillingMutation(mutation.id, "failed", {}, "PREVIEW_CHANGED")
       return { success: false, message: "The billing amount changed. Review the new preview before confirming." }
     }
@@ -926,7 +994,7 @@ export async function changePlan(targetPlan: string, previewToken?: string, requ
         const providerState = await adapter.retrieveSubscription(context.subscription.provider_subscription_id)
         if (providerState.scheduleId !== scheduled.scheduleId || providerState.scheduledPlan?.priceId !== context.mapping.provider_price_id ||
           Math.abs(new Date(providerState.scheduledPlan.effectiveAt).getTime() - new Date(scheduled.effectiveAt).getTime()) > 1000) {
-          throw new Error("The scheduled billing change could not be verified with Stripe.")
+          throw new Error("The scheduled billing change could not be verified with the payment provider.")
         }
         const reconciled = await reconcileAfterProviderMutation(context.subscription.provider_subscription_id, membership.workspace_id)
         if (reconciled) {
@@ -995,6 +1063,7 @@ export async function changePlan(targetPlan: string, previewToken?: string, requ
 export async function undoPlanChange(requestKey?: string) {
   let transitionId: string | null = null
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (!subscription.scheduled_plan_key || !isPaidPlanKey(subscription.plan_key) || !subscription.provider_subscription_id) {
@@ -1017,7 +1086,7 @@ export async function undoPlanChange(requestKey?: string) {
     try {
       await getBillingProviderAdapter().releaseSchedule(subscription.provider_subscription_id, state.subscription.scheduleId, mutation.id)
       const providerState = await getBillingProviderAdapter().retrieveSubscription(subscription.provider_subscription_id)
-      if (providerState.scheduleId || providerState.scheduledPlan) throw new Error("The scheduled billing change is still active in Stripe.")
+      if (providerState.scheduleId || providerState.scheduledPlan) throw new Error("The scheduled billing change is still active with the payment provider.")
       const reconciled = await reconcileAfterProviderMutation(subscription.provider_subscription_id, membership.workspace_id)
       if (reconciled) {
         const updated = await getCurrentBillingSubscription(membership.workspace_id)
@@ -1039,13 +1108,14 @@ export async function undoPlanChange(requestKey?: string) {
 export async function cancelSubscription(reasonCode = "other", feedback = "", requestKey?: string) {
   let transitionId: string | null = null
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     if (!CANCELLATION_REASONS.has(reasonCode)) return { success: false, message: "Please choose a cancellation reason." }
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider !== getBillingProviderName() || !subscription.provider_subscription_id) return { success: false, message: "No active billing subscription is available." }
     const state = await getAuthoritativeBillingState(subscription)
     if ((subscription.scheduled_plan_key || state.subscription.scheduledPlan) && !state.subscription.scheduleId) {
-      return { success: false, message: "The pending plan change could not be found in Stripe. Refresh the page and try again." }
+      return { success: false, message: "The pending plan change could not be found with the payment provider. Refresh the page and try again." }
     }
     const mutation = await beginBillingMutation(membership.workspace_id, normalizeRequestKey(requestKey), "cancel")
     if (mutation.status === "succeeded") {
@@ -1069,7 +1139,7 @@ export async function cancelSubscription(reasonCode = "other", feedback = "", re
         await adapter.releaseSchedule(subscription.provider_subscription_id, state.subscription.scheduleId, mutation.id, "cancel")
       }
       const updated = await adapter.scheduleCancellation(subscription.provider_subscription_id, mutation.id)
-      if (!updated.cancelAtPeriodEnd) throw new Error("Stripe did not schedule cancellation at the end of the billing period.")
+      if (!updated.cancelAtPeriodEnd) throw new Error("The payment provider did not schedule cancellation at the end of the billing period.")
       await reconcileAfterProviderMutation(subscription.provider_subscription_id, membership.workspace_id)
       const effective = updated.cancelEffectiveAt || effectiveAt
       await finishCanonicalTransition(transitionId, "succeeded", { effectiveAt: effective, providerReference: subscription.provider_subscription_id })
@@ -1088,6 +1158,7 @@ export async function cancelSubscription(reasonCode = "other", feedback = "", re
 export async function resumeSubscription(requestKey?: string) {
   let transitionId: string | null = null
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
     if (subscription.provider !== getBillingProviderName() || !subscription.provider_subscription_id) return { success: false, message: "No active billing subscription is available." }
@@ -1125,7 +1196,7 @@ export async function getBillingTransactions() {
   try {
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id) return { success: true, data: [] }
+    if (subscription.provider !== getBillingProviderName() || subscription.provider_environment !== getBillingProviderEnvironment() || !subscription.provider_customer_id || (subscription.provider === "paddle" && !subscription.provider_subscription_id)) return { success: true, data: [] }
     const invoices = await getBillingProviderAdapter().listInvoices(subscription.provider_customer_id, subscription.provider_subscription_id)
     return {
       success: true,
@@ -1146,9 +1217,10 @@ export async function getBillingTransactions() {
 
 export async function getBillingInvoiceUrl(invoiceId: string) {
   try {
+    assertSubscriptionManagementEnabled()
     const membership = await requireCurrentWorkspaceOwner()
     const subscription = await getCurrentBillingSubscription(membership.workspace_id)
-    if (subscription.provider !== getBillingProviderName() || !subscription.provider_customer_id || !invoiceId.trim()) {
+    if (subscription.provider !== getBillingProviderName() || subscription.provider_environment !== getBillingProviderEnvironment() || !subscription.provider_customer_id || !invoiceId.trim() || (subscription.provider === "paddle" && !subscription.provider_subscription_id)) {
       return { success: false, message: "Invoice is not available." }
     }
     const invoice = await getBillingProviderAdapter().retrieveInvoice(invoiceId.trim(), subscription.provider_customer_id, subscription.provider_subscription_id)

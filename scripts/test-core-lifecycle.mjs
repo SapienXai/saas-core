@@ -21,6 +21,7 @@ const billingMigrations = [
   "supabase/migrations/20260916120000_saas_core_domain_foundation_v1.sql",
   "supabase/migrations/20261008000523_stripe_billing_provider.sql",
   "supabase/migrations/20261015110000_effective_plan_limits_until_boundary.sql",
+  "supabase/migrations/20261111100704_require_provider_entitlement_period.sql",
 ]
 const runtimePackages = RUNTIME_PACKAGES
 const toolingPackages = TOOLING_PACKAGES
@@ -75,6 +76,9 @@ try {
   const billingManagedFiles = [
     ...billingMigrations,
     "app/api/billing/stripe/webhook/route.ts",
+    "app/api/billing/paddle/webhook/route.ts",
+    "app/billing/paddle/checkout/page.tsx",
+    "app/billing/paddle/checkout/paddle-checkout.tsx",
     "app/api/cron/billing/lifecycle/route.ts",
     "app/manage/plan/actions.ts",
     "app/manage/plan/page.tsx",
@@ -89,6 +93,10 @@ try {
     "lib/billing/price-mapping.ts",
     "lib/billing/provider.ts",
     "lib/billing/providers/stripe.ts",
+    "lib/billing/providers/paddle.ts",
+    "lib/billing/paddle-interval-cutover.ts",
+    "lib/billing/paddle-webhook.ts",
+    "lib/billing/subscription-projection.ts",
     "lib/billing/reconciliation.ts",
     "lib/billing/stripe-webhook.ts",
     "lib/entitlements.ts",

@@ -100,9 +100,8 @@ check, lifecycle/consumer proofs and the user-facing docs together.
 
 ## Release identity
 
-The coordinated package/runtime release is currently `2.6.2`; the schema
-compatibility coordinate is `2.0`. The `saas-core-v2.6.2` tag is the release
-anchor, while `main` may contain post-tag unreleased fixes. Confirm exact
+This branch prepares package/runtime `2.7.0` on schema compatibility `2.0`.
+The latest published release anchor is `saas-core-v2.6.2`. Confirm exact
 identity from `package.json`, `scripts/release-constants.mjs`, package
 manifests, tags and registry checks. Keep runtime/package version and schema
 compatibility as separate coordinates in every report.

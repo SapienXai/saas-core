@@ -363,7 +363,9 @@ export function resolveEffectiveEntitlementPlan(input: EffectiveEntitlementPlanI
   if (purchased !== fallback && !hasTrustedProviderProjection(input)) return fallback
 
   const now = effectiveNow(input.now)
-  if (purchased !== fallback && input.currentPeriodEndAt && (!isValidTimestamp(input.currentPeriodEndAt) || isScheduledPlanEffective(input.currentPeriodEndAt, now))) return fallback
+  if (purchased !== fallback &&
+      ((input.source === "provider" || input.currentPeriodEndAt) &&
+        (!isValidTimestamp(input.currentPeriodEndAt) || isScheduledPlanEffective(input.currentPeriodEndAt, now)))) return fallback
   if (status === "past_due") {
     // A past-due subscription without a valid boundary cannot grant an
     // unbounded grace period.

@@ -127,8 +127,8 @@ switch (subscription.status) {
 }
 
 let schedule = typeof subscription.schedule === "object" ? subscription.schedule : null
-if (schedule?.status === "active" && (schedule.metadata?.billing_provider !== "stripe" || schedule.metadata?.billing_integration !== "placedj")) {
-  console.error("Stripe subscription has a schedule that is not managed by PlaceDJ. No local state was changed.")
+if (schedule?.status === "active" && (schedule.metadata?.billing_provider !== "stripe" || !["saas-core", "placedj"].includes(schedule.metadata?.billing_integration))) {
+  console.error("Stripe subscription has a schedule that is not managed by SaaS Core. No local state was changed.")
   process.exit(1)
 }
 if (schedule?.status !== "active") schedule = null
@@ -137,7 +137,7 @@ const futurePhase = currentPhase ? schedule.phases.find((phase) => phase.start_d
 let scheduledPlan = null
 if (futurePhase) {
   if (futurePhase.items.length !== 1 || (futurePhase.items[0]?.quantity ?? 1) !== 1) {
-    console.error("The PlaceDJ schedule contains an unsupported future phase. No local state was changed.")
+    console.error("The Stripe schedule contains an unsupported future phase. No local state was changed.")
     process.exit(1)
   }
   const targetPrice = futurePhase.items[0].price

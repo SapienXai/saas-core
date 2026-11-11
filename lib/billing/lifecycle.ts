@@ -3,7 +3,10 @@ import "server-only"
 import { createServiceRoleClient } from "@/lib/supabase"
 import { getConfiguredFallbackPlanKey } from "./reconciliation"
 import { finalizeBillingWebhookEvent } from "./persistence"
+import { processStoredPaddleWebhookEvent } from "./paddle-webhook"
 import { processStoredStripeWebhookEvent } from "./stripe-webhook"
+import { getBillingEnvironment } from "./config"
+import { getPaddleConfig } from "./providers/paddle"
 
 export const PAYMENT_GRACE_PERIOD_DAYS = 14
 export const STRIPE_WEBHOOK_DRAIN_BATCH_SIZE = 4
@@ -69,22 +72,22 @@ export async function expirePaymentGracePeriods(now = new Date()) {
   }
 }
 
-/** Drain durable Stripe webhook receipts after an interrupted after() task. */
-export async function processDueStripeBillingWebhookEvents(limit = 50, now = new Date()) {
+/** Drain durable billing webhook receipts after an interrupted after() task. */
+async function processDueBillingWebhookEvents(provider: "stripe" | "paddle", limit: number, now: Date) {
   const db = createServiceRoleClient() as any
   const batchLimit = getStripeWebhookDrainBatchLimit(limit)
   const nowIso = now.toISOString()
+  const environment = provider === "paddle" ? getPaddleConfig().environment : getBillingEnvironment()
+  const receipts = () => db.from("billing_webhook_events")
+    .select("id, attempts, max_attempts, lease_token, lease_until, received_at")
+    .eq("provider", provider).eq("environment", environment)
   const [waiting, expiredLeases] = await Promise.all([
-    db.from("billing_webhook_events")
-      .select("id, attempts, max_attempts, received_at")
-      .eq("provider", "stripe")
+    receipts()
       .in("status", ["received", "failed"])
-      .or("next_attempt_at.is.null,next_attempt_at.lte." + nowIso)
+      .or("status.eq.received,next_attempt_at.lte." + nowIso)
       .order("received_at", { ascending: true })
       .limit(batchLimit),
-    db.from("billing_webhook_events")
-      .select("id, attempts, max_attempts, lease_token, lease_until, received_at")
-      .eq("provider", "stripe")
+    receipts()
       .eq("status", "processing")
       .lte("lease_until", nowIso)
       .order("received_at", { ascending: true })
@@ -111,7 +114,7 @@ export async function processDueStripeBillingWebhookEvents(limit = 50, now = new
   )
   const results: Array<{ id: string; status: string }> = []
   for (const row of candidates) {
-    const status = await processStoredStripeWebhookEvent(row.id)
+    const status = provider === "paddle" ? await processStoredPaddleWebhookEvent(row.id) : await processStoredStripeWebhookEvent(row.id)
     results.push({ id: row.id, status })
   }
   return {
@@ -121,4 +124,12 @@ export async function processDueStripeBillingWebhookEvents(limit = 50, now = new
     skipped: results.filter((row) => row.status !== "processed" && row.status !== "failed").length,
     exhausted,
   }
+}
+
+export function processDueStripeBillingWebhookEvents(limit = 50, now = new Date()) {
+  return processDueBillingWebhookEvents("stripe", limit, now)
+}
+
+export function processDuePaddleBillingWebhookEvents(limit = 50, now = new Date()) {
+  return processDueBillingWebhookEvents("paddle", limit, now)
 }

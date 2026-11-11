@@ -35,12 +35,11 @@ function localSupabaseStatus() {
 }
 
 function localDbContainer() {
-  try {
-    const names = execFileSync("docker", ["ps", "--format", "{{.Names}}"], { encoding: "utf8" }).trim().split("\n").filter(Boolean)
-    return names.find((name) => /saas[-_]core/i.test(name) && /db/i.test(name)) || names.find((name) => /supabase.*db/i.test(name)) || null
-  } catch {
-    return null
-  }
+  const name = execFileSync("docker", [
+    "ps", "--filter", "label=com.supabase.cli.project=saas-core-dev",
+    "--filter", "name=^/supabase_db_saas-core-dev$", "--format", "{{.Names}}",
+  ], { encoding: "utf8" }).trim()
+  return name === "supabase_db_saas-core-dev" ? name : null
 }
 
 function mutateMetadata(container, sql) {
@@ -76,6 +75,7 @@ try {
   if (!status?.API_URL || !status.SERVICE_ROLE_KEY) {
     console.log(JSON.stringify({ status: "PASS", credentialsWarning: true, liveDatabase: "SKIPPED_LOCAL_SUPABASE_NOT_RUNNING" }))
   } else {
+    assert(/^https?:\/\/(127\.0\.0\.1|localhost):55621$/.test(status.API_URL), "Refusing schema doctor mutations outside the isolated Core project.")
     const liveEnvironment = { ...withoutDatabaseCredentials(), SUPABASE_URL: status.API_URL, SUPABASE_SERVICE_ROLE_KEY: status.SERVICE_ROLE_KEY }
     const healthy = runDoctor(liveEnvironment)
     assert(healthy.status === 0, healthy.stderr || healthy.stdout || "doctor rejected matching Core schema metadata")
@@ -84,17 +84,19 @@ try {
 
     const container = localDbContainer()
     assert(container, "Local Supabase is running but its database container could not be identified for schema metadata tests.")
-    mutateMetadata(container, "update private.core_schema_metadata set schema_version = '1.0', runtime_major = 1 where singleton;")
-    const mismatch = runDoctor(liveEnvironment)
-    assert(mismatch.status !== 0, "doctor accepted an incompatible database schema")
-    assert(JSON.parse(mismatch.stdout).checks.some((check) => check.category === "DATABASE" && check.status === "ERROR" && check.detail.includes("incompatible")), "doctor did not report the schema mismatch")
+    try {
+      mutateMetadata(container, "update private.core_schema_metadata set schema_version = '1.0', runtime_major = 1 where singleton;")
+      const mismatch = runDoctor(liveEnvironment)
+      assert(mismatch.status !== 0, "doctor accepted an incompatible database schema")
+      assert(JSON.parse(mismatch.stdout).checks.some((check) => check.category === "DATABASE" && check.status === "ERROR" && check.detail.includes("incompatible")), "doctor did not report the schema mismatch")
 
-    mutateMetadata(container, "update private.core_schema_metadata set schema_version = '2.0', runtime_major = 2 where singleton;")
-    mutateMetadata(container, "delete from private.core_schema_metadata where singleton;")
-    const missing = runDoctor(liveEnvironment)
-    assert(missing.status !== 0, "doctor accepted missing schema metadata")
-    assert(JSON.parse(missing.stdout).checks.some((check) => check.category === "DATABASE" && check.status === "ERROR"), "doctor did not report missing schema metadata")
-    mutateMetadata(container, "insert into private.core_schema_metadata (singleton, schema_version, runtime_major) values (true, '2.0', 2) on conflict (singleton) do update set schema_version = excluded.schema_version, runtime_major = excluded.runtime_major, updated_at = now();")
+      mutateMetadata(container, "delete from private.core_schema_metadata where singleton;")
+      const missing = runDoctor(liveEnvironment)
+      assert(missing.status !== 0, "doctor accepted missing schema metadata")
+      assert(JSON.parse(missing.stdout).checks.some((check) => check.category === "DATABASE" && check.status === "ERROR"), "doctor did not report missing schema metadata")
+    } finally {
+      mutateMetadata(container, "insert into private.core_schema_metadata (singleton, schema_version, runtime_major) values (true, '2.0', 2) on conflict (singleton) do update set schema_version = excluded.schema_version, runtime_major = excluded.runtime_major, updated_at = now();")
+    }
 
     console.log(JSON.stringify({ status: "PASS", credentialsWarning: true, matchingSchema: true, mismatchRejected: true, missingMetadataRejected: true }))
   }

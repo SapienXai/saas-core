@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { classifyHostname, getRequestHostname, getTrustedRequestHost } from "../lib/domains/hostname"
 import { getAuthRedirectOrigin, getAuthRedirectUrl, getRequestUrl } from "../lib/request-url"
 
@@ -7,10 +7,12 @@ const environment = process.env as Record<string, string | undefined>
 
 afterEach(() => {
   environment.NODE_ENV = originalNodeEnv
+  vi.unstubAllEnvs()
 })
 
 describe("trusted request hostname boundary", () => {
-  it("uses the first forwarded host and preserves its port for development URLs", () => {
+  it("uses the first forwarded host when a trusted proxy is configured", () => {
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "true")
     const request = new Request("http://0.0.0.0:3000/app?next=%2Fapp", {
       headers: {
         host: "fallback.example.com",
@@ -25,6 +27,7 @@ describe("trusted request hostname boundary", () => {
   })
 
   it("falls back to Host when the forwarded value is malformed", () => {
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "true")
     const request = new Request("http://0.0.0.0:3000/", {
       headers: {
         host: "alpha.example.com",
@@ -32,6 +35,14 @@ describe("trusted request hostname boundary", () => {
       },
     })
 
+    expect(getRequestHostname(request)).toBe("alpha.example.com")
+  })
+
+  it("ignores an injected forwarded hostname by default", () => {
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "")
+    const request = new Request("http://localhost/", {
+      headers: { host: "alpha.example.com", "x-forwarded-host": "other.example.com" },
+    })
     expect(getRequestHostname(request)).toBe("alpha.example.com")
   })
 

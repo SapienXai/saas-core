@@ -19,7 +19,7 @@ describe("public hostname route ownership in proxy", () => {
   it("redirects tenant app/auth paths to the canonical app origin, including /app", async () => {
     process.env.SAAS_CORE_ROOT_DOMAIN = "example.com"
     process.env.SAAS_CORE_APP_DOMAIN = "app.example.com"
-    const cases = ["/app", "/app/team", "/manage", "/platform", "/login", "/setup", "/auth/callback"]
+    const cases = ["/app", "/app/team", "/manage", "/billing/paddle/checkout", "/platform", "/login", "/setup", "/auth/callback"]
 
     for (const pathname of cases) {
       const request = new NextRequest(`https://alpha.example.com${pathname}?ref=instagram`, { headers: { host: "alpha.example.com" } })

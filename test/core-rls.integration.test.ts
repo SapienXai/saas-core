@@ -94,4 +94,31 @@ integration("clean Core tenancy and RLS", () => {
     const replay = await memberClient.rpc("accept_workspace_invitation", { target_token_hash: tokenHash })
     expect(replay.error).not.toBeNull()
   })
+
+  it("denies staff and anonymous callers direct billing and site mutations", async () => {
+    const staff = await service!.from("workspace_members").update({ role: "staff" })
+      .eq("workspace_id", workspaceId).eq("user_id", member.id).select("id").single()
+    expect(staff.error).toBeNull()
+    const publicClient = createClient(url!, anonKey!, { auth: { persistSession: false, autoRefreshToken: false } })
+    const [invite, providerMutation, publicWrite, invalidWorkspace] = await Promise.all([
+      memberClient.rpc("create_workspace_invitation", {
+        target_workspace_id: workspaceId,
+        target_email: "unauthorized@example.test",
+        target_role: "owner",
+        target_token_hash: "unauthorized-token",
+      }),
+      memberClient.from("workspace_subscriptions").update({ status: "canceled" }).eq("workspace_id", workspaceId).select("workspace_id"),
+      publicClient.from("public_sites").insert({ workspace_id: workspaceId, product_key: "unauthorized" }),
+      ownerClient.rpc("create_workspace_invitation", {
+        target_workspace_id: "not-a-uuid",
+        target_email: "unauthorized@example.test",
+        target_role: "staff",
+        target_token_hash: "unauthorized-token",
+      }),
+    ])
+    expect(invite.error?.message).toContain("FORBIDDEN")
+    expect(providerMutation.error || providerMutation.data?.length === 0).toBeTruthy()
+    expect(publicWrite.error).not.toBeNull()
+    expect(invalidWorkspace.error?.code).toBe("22P02")
+  })
 })

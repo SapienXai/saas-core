@@ -1,6 +1,6 @@
 # @sapienx/saas-core-ui
 
-Current package release: `2.6.2`; Core schema compatibility coordinate remains
+Package coordinate: `2.7.0` candidate; Core schema compatibility coordinate remains
 `2.0`. The coordinated release also delivers the additive, Core-managed
 billing sources through the application template and CLI; this UI package does
 not execute SQL.
