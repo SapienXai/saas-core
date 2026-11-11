@@ -3,7 +3,7 @@
 Build the product customers remember on top of the Workspace platform every
 SaaS needs.
 
-SaaS Core is a source-derived Next.js and Supabase foundation for products
+SaaS Core is a Next.js and PostgreSQL foundation for products
 that need authenticated accounts, multi-workspace tenancy, membership and
 roles, server-backed entitlements, billing persistence, workspace-owned
 domains, PWA, email, push, Platform administration and an agent surface. A
@@ -11,11 +11,10 @@ product receives the real application shell and consumes Core's canonical
 `hostname → Domain → PublicSite → Workspace → productKey` contract; it does
 not own hostname mappings.
 
-> This branch prepares runtime and packages `2.8.0` on Core schema `2.0`.
-> The latest published release is `2.6.2` at tag `saas-core-v2.6.2`.
-> This checkout's `main` branch is ahead of that tag and may contain unreleased
-> changes. Treat package metadata, release constants, tags and registry checks
-> as authority—not a historical paragraph in a release note.
+> The latest published release is `2.8.0` at tag `saas-core-v2.8.0`.
+> The Core schema compatibility coordinate is `2.0`. Clean installations can
+> use Neon for accounts, sessions and application data. Existing Supabase
+> consumers can retain their backend until they plan their data migration.
 
 ## The shape of the platform
 
@@ -23,7 +22,7 @@ not own hostname mappings.
 flowchart LR
   Browser[Browser] --> Product[Product experience]
   Product --> Shell[Core management shell]
-  Shell --> Auth[Supabase Auth]
+  Shell --> Auth[Better Auth on Neon or Supabase Auth]
   Shell --> Tenant[Workspace tenancy and roles]
   Tenant --> RLS[(Postgres + RLS)]
   RLS --> Domain[Core public domains and product tables]
@@ -38,7 +37,7 @@ hostname ownership, tenancy or security infrastructure.
 
 | Foundation | Product-ready surface |
 | --- | --- |
-| Supabase Auth and session-aware routing | A complete Next.js app template |
+| Authentication and session-aware routing on Neon or Supabase | A complete Next.js app template |
 | Workspace creation, switching, membership and roles | Auth, onboarding and management screens |
 | Server-side authorization and Postgres RLS primitives | Plan, entitlement and usage surfaces |
 | Durable billing and webhook persistence boundaries | PWA, domains, email and push configuration |
@@ -50,21 +49,18 @@ it into the product repository and records a manifest of Core-managed hashes.
 
 ## Build a product
 
-For clean Neon installations, follow [Neon setup](docs/NEON.md). The registry example below uses the published Supabase-compatible release:
+Create a consumer from the published template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.6.2 @sapienx/saas-core-config@^2.6.2 @sapienx/saas-core-ui@^2.6.2
-pnpm add -D @sapienx/saas-core-cli@^2.6.2
-pnpm exec saas-core init "My Product" ./my-product
+pnpm dlx @sapienx/saas-core-cli@2.8.0 init "My Product" ./my-product
 cd my-product
 pnpm install
 cp .env.example .env.local
-pnpm db:start
-pnpm exec supabase status --workdir . -o env
-pnpm db:reset
-pnpm db:types
-pnpm dev
 ```
+
+Follow [Neon setup](docs/NEON.md) to configure the database, auth and data
+endpoint, then run `pnpm dev`. For an existing Supabase consumer, use the
+backend and database workflow already configured in that project.
 
 `init` creates the product-specific `README.md`, `AGENTS.md`, `.env.example`,
 `.gitignore`, `package.json`, manifest, neutral starter catalog and server-only usage
@@ -91,13 +87,13 @@ and product-consumer journeys.
 
 Tenant-owned product rows must carry a `workspace_id` foreign key, an index and
 explicit RLS policies. Core tables, private settings, billing persistence,
-Platform tables and email outbox state are not product tables. Product
-migrations belong under `supabase/migrations/product/**`.
+Platform tables and email outbox state are not product tables. Product-owned
+SQL migrations are direct children of `supabase/migrations/`.
 
 The CLI copies and hashes Core migration source; it never runs SQL, resets a
-database or overwrites a product migration. Apply source through the
-consumer's controlled Supabase workflow, then regenerate and review
-`types/supabase.ts`.
+database or overwrites a product migration. Apply migrations through the
+consumer's chosen backend workflow. Supabase consumers regenerate and review
+`types/supabase.ts` after schema changes.
 
 See [`docs/DATABASE.md`](docs/DATABASE.md) for the model, table inventory, RLS
 principles and a safe first-table recipe.
@@ -184,8 +180,8 @@ source-map policy before a release can proceed.
 - [Security](docs/SECURITY.md)
 - [UI system](docs/UI-SYSTEM.md)
 - [Consumer upgrades](docs/UPGRADING.md)
-- [Latest published release](docs/RELEASE-2.6.2.md)
-- [2.7.0 candidate](docs/RELEASE-2.7.0.md)
+- [Neon setup](docs/NEON.md)
+- [Latest published release](docs/RELEASE-2.8.0.md)
 
 ## Principles
 

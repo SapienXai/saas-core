@@ -5,13 +5,11 @@ The old SaaS Core implementation is preserved locally on
 `archive/pre-reservevia-rebuild`; the production ReserveVia checkout remains
 the read-only canonical source used for extraction.
 
-The current coordinated runtime and package release is tag `saas-core-v2.6.2`
-on Core schema compatibility coordinate `2.0`. Its packed consumer contract
-delivers the additive billing sources listed in
-[`RELEASE-2.6.0.md`](./RELEASE-2.6.0.md) plus the Checkout lifecycle and
-scheduled-downgrade runtime fixes documented in
-[`RELEASE-2.6.2.md`](./RELEASE-2.6.2.md). The tag identifies the published source set. Package packing and CLI `init`/`update` deliver sources but never
-execute SQL; each consumer owns the controlled apply and verification
+The coordinated runtime and package release is `2.8.0` at tag
+`saas-core-v2.8.0`, on Core schema compatibility coordinate `2.0`. See
+[the release notes](./RELEASE-2.8.0.md) for the verified Neon setup. The tag
+identifies the published source set. Package packing and CLI `init`/`update`
+deliver sources. Each consumer owns the controlled SQL apply and verification
 workstream. The Plan Catalog guide is shipped in the Core package as
 `docs/PLAN-CATALOG.md`. The release evidence and certification boundary are
 recorded in the versioned release notes, with the prior release retained in
@@ -20,13 +18,13 @@ recorded in the versioned release notes, with the prior release retained in
 
 ## Upgrade to 2.8.0
 
-Neon mode uses Better Auth and the Neon Data API. It needs a clean database
-and explicit backend configuration. An update copies the setup script and SQL
+Neon mode uses Better Auth on Neon Postgres and a PostgREST endpoint. It needs
+a clean database and explicit backend configuration. An update copies the setup script and SQL
 sources. Run them separately only on the intended Neon target. Existing
 Supabase consumers can keep their current backend setting and credentials.
 See [Neon setup](./NEON.md) for rollout and for boundaries on transferring users.
 
-## Upgrade to the 2.7.0 candidate
+## Billing changes carried forward from 2.7.0
 
 Post-2.6.2 source adds a fail-closed fast path for Checkout returns: it reuses
 the local subscription only when Workspace, Stripe environment, subscription,
@@ -37,7 +35,7 @@ already verified Checkout snapshot through validation instead of retrieving
 the same Session twice. This does not change the database schema or grant
 entitlement from browser state. The shared billing success experience now uses
 Radix's managed dialog layer, keeping close and action controls inside the
-active modal's pointer and focus boundary when shown above another dialog. The 2.7.0 candidate carries these post-tag changes.
+active modal's pointer and focus boundary when shown above another dialog. These changes ship in 2.8.0.
 
 Review `saas-core diff` and `saas-core update --dry-run` against the candidate
 source or packed CLI. Apply the managed source update and then apply the new
@@ -92,9 +90,7 @@ The normal consumer path installs the coordinated packages from npm. A fresh
 consumer uses the registry-published CLI to materialize the packed template:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.6.2 @sapienx/saas-core-config@^2.6.2 @sapienx/saas-core-ui@^2.6.2
-pnpm add -D @sapienx/saas-core-cli@^2.6.2
-pnpm exec saas-core init "My Product" ./my-product
+pnpm dlx @sapienx/saas-core-cli@2.8.0 init "My Product" ./my-product
 pnpm install --dir ./my-product
 ```
 
@@ -282,15 +278,12 @@ For every schema update:
 5. scan the generated consumer for absolute paths, `file:` dependencies, and
    product vocabulary.
 
-Core runtime version and schema compatibility coordinate are separate. The
-candidate runtime is `2.7.0` and the compatibility coordinate remains `2.0` even
-though the release delivers additive billing, entitlement, and plan-catalog
-sources. `doctor`
+Core runtime version `2.8.0` and schema compatibility coordinate `2.0` are
+separate. `doctor`
 reports Core source readiness, consumer presence/hash readiness, and manifest
-ownership/readiness separately. It verifies actual schema metadata only when
-`SUPABASE_URL` and a server-only `SUPABASE_SERVICE_ROLE_KEY` are available;
-absent credentials produce a database warning, while missing or mismatched
-metadata is an error. A consumer must apply and verify the delivered migration
+ownership/readiness separately. It verifies schema metadata with the selected
+backend's server credentials. Absent credentials produce a database warning;
+missing or mismatched metadata is an error. A consumer must apply and verify the delivered migration
 through its own controlled process. Changing a product catalog, default plan,
 or usage metric does not alter the Core schema or migration source.
 
@@ -349,7 +342,9 @@ evidence remains the prior release baseline; the coordinated `2.6.0` boundary ad
 target-plan downgrade eligibility and confirmation-time revalidation while
 retaining the controlled legacy-consumer upgrade, packed exports, managed
 billing/plan-catalog delivery, product-owned preservation, relocation, and a
-second frozen install/build. The current `2.6.2` patch also carries the Checkout-session expiry, terminal Stripe status, and scheduled-downgrade runtime fixes described in `RELEASE-2.6.2.md`. The final release should include
+second frozen install/build. The `2.6.2` patch added Checkout-session expiry,
+terminal Stripe status, and scheduled-downgrade runtime fixes as described in
+`RELEASE-2.6.2.md`. The release check includes
 `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, clean DB tests,
 browser tests, build, `pnpm pack`, a fresh consumer, relocation, and a second
 frozen install/build.

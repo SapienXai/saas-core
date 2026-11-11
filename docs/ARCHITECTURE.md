@@ -27,8 +27,11 @@ venue, account type, or other product entity.
 
 ## Request and session flow
 
-`proxy.ts` handles trusted-origin route boundaries. Server components and
-actions call `lib/supabase/server.ts`, which persists Supabase SSR cookies.
+`proxy.ts` handles trusted-origin route boundaries. In Neon mode, Better Auth
+stores accounts and sessions in Neon Postgres. Core queries go through a
+PostgREST endpoint with a server-signed token for the verified user or service
+role. In Supabase mode, the legacy server adapter uses Supabase Auth and SSR
+cookies. See [Neon setup](./NEON.md) for the endpoint and role configuration.
 `lib/auth-utils.ts` resolves the current user, platform membership, and
 workspace memberships. `lib/authorization.ts` is the server-side permission
 boundary; UI visibility is only a convenience and never the authorization
