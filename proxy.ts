@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { classifyHostname, getRequestHostname, getTrustedPlatformOrigin, getTrustedRequestHost } from "@/lib/domains/hostname"
+import { usesNeonBackend } from "@/lib/backend"
 import { getRequestUrl } from "@/lib/request-url"
 import { isCanonicalAppPath, normalizeRequestPathname } from "@/lib/route-ownership"
 
@@ -40,6 +41,10 @@ export async function proxy(request: NextRequest) {
   // Public entry and auth pages do not need a session lookup. Avoiding the
   // Supabase roundtrip here keeps the unauthenticated surface responsive.
   if (!needsSession) return NextResponse.next()
+
+  // In Neon mode the protected layouts and actions verify the Better Auth
+  // session. Proxy keeps host routing independent of the database connection.
+  if (usesNeonBackend()) return NextResponse.next()
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY

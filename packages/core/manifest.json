@@ -1,6 +1,6 @@
 {
   "name": "@sapienx/saas-core",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "ownership": "core",
   "capabilities": ["auth", "workspace", "membership", "billing", "domains", "pwa", "platform", "audit", "email", "push", "agent-surface"]
 }

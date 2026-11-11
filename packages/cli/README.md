@@ -1,6 +1,6 @@
 # @sapienx/saas-core-cli
 
-Package coordinate: `2.7.0` candidate; Core schema compatibility coordinate remains
+Package coordinate: `2.8.0` candidate; Core schema compatibility coordinate remains
 `2.0`. The CLI is the source-delivery and readiness boundary for the
 coordinated release. It carries the Core-managed billing persistence,
 entitlement-lock, and plan-catalog sources through package packing, `init`, and

@@ -5,6 +5,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { getAccountState, safeInternalRedirect } from "@/lib/account-state"
 import { getCurrentUserAccess } from "@/lib/auth-utils"
 import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
+import { usesNeonBackend } from "@/lib/backend"
 import { getRequestUrl } from "@/lib/request-url"
 import { getProductOnboardingPath, isDeferredWorkspaceProvisioning } from "@/lib/product-config"
 
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
     invalidConfirmationUrl.searchParams.set("error", "invalid_confirmation")
   }
 
-  if (!tokenHash && !code) {
+  if (usesNeonBackend() || (!tokenHash && !code)) {
     return NextResponse.redirect(invalidConfirmationUrl)
   }
 

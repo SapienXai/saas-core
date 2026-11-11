@@ -17,6 +17,7 @@ const parityFiles = [
   "vitest.config.mjs",
   "test/server-only-shim.ts",
   "scripts/billing-sync-catalog.mjs",
+  "scripts/setup-neon.mjs",
   "scripts/generate-local-types.mjs",
 ]
 const failures = []

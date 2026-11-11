@@ -36,4 +36,13 @@ export const getPublicPwaBranding = cache(async function getPublicPwaBranding(wo
   return workspace ? buildEffectivePwaBranding({ workspaceId, workspaceName: workspace.name, settings, customBrandingEnabled: await can(workspaceId, "customPWA") }) : null
 })
 export function getGenericPwaBranding(): EffectivePwaBranding { return buildEffectivePwaBranding({ workspaceId: null }) }
-export function storagePathFromPublicUrl(value: string | null | undefined) { const marker = "/storage/v1/object/public/workspace-assets/"; if (!value) return null; const index = value.indexOf(marker); return index >= 0 ? decodeURIComponent(value.slice(index + marker.length)) : null }
+export function storagePathFromPublicUrl(value: string | null | undefined) {
+  if (!value) return null
+  if (value.startsWith("/api/core-data/icon?")) {
+    return new URL(value, "http://localhost").searchParams.get("path")
+  }
+  const marker = "/storage/v1/object/public/workspace-assets/"
+  const index = value.indexOf(marker)
+  if (index < 0) return null
+  try { return decodeURIComponent(value.slice(index + marker.length)) } catch { return null }
+}

@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = "2.7.0"
+export const RELEASE_VERSION = "2.8.0"
 export const SCHEMA_VERSION = "2.0"
 export const RUNTIME_PACKAGES = [
   "@sapienx/saas-core",

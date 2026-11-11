@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { usesNeonBackend } from "@/lib/backend"
+import { neonAuthOrigin, neonAuthPost } from "@/lib/neon/auth"
+import { safeInternalRedirect } from "@/lib/account-state"
 import { getAuthRedirectUrl } from "@/lib/request-url"
 
 type ResendBody = {
   email?: unknown
   redirect?: unknown
-}
-
-function safeRedirect(value: unknown) {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//")
-    ? value
-    : "/onboarding"
 }
 
 export async function POST(request: Request) {
@@ -25,7 +22,13 @@ export async function POST(request: Request) {
   if (!email) return NextResponse.json({ error: "invalid_request" }, { status: 400 })
 
   const origin = getAuthRedirectUrl(request).origin
-  const redirect = safeRedirect(body.redirect)
+  const redirect = safeInternalRedirect(typeof body.redirect === "string" ? body.redirect : null, "/onboarding")
+  if (usesNeonBackend()) {
+    const callbackURL = new URL(`/auth/continue?redirect=${encodeURIComponent(redirect)}`, neonAuthOrigin()).href
+    const result = await neonAuthPost(request, "send-verification-email", { email, callbackURL })
+    if (!result.ok) return NextResponse.json({ error: result.status === 429 ? "email_rate_limited" : "resend_failed" }, { status: result.status === 429 ? 429 : 400 })
+    return NextResponse.json({ ok: true })
+  }
   const supabase = await createSupabaseServerClient()
   const { error } = await supabase.auth.resend({
     type: "signup",

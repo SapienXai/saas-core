@@ -42,7 +42,12 @@ jobs:
           pnpm --version
           test "$(npm --version)" = "$RELEASE_NPM_VERSION"
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Install and check Chromium
+        run: |
+          pnpm exec playwright install chromium
+          if ! node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close()'; then
+            pnpm exec playwright install-deps chromium
+          fi
       - run: pnpm run release:check
       - uses: actions/upload-artifact@v4
         if: always()

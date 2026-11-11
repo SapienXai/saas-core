@@ -1,18 +1,15 @@
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { usesNeonBackend } from "@/lib/backend"
+import { copyAuthCookies, neonAuthPost } from "@/lib/neon/auth"
+import { safeInternalRedirect } from "@/lib/account-state"
 import { getRequestUrl } from "@/lib/request-url"
 
 type SignInBody = {
   email?: unknown
   password?: unknown
   redirect?: unknown
-}
-
-function safeRedirect(value: unknown) {
-  return typeof value === "string" && value.startsWith("/") && !value.startsWith("//")
-    ? value
-    : "/app"
 }
 
 export async function POST(request: Request) {
@@ -28,11 +25,24 @@ export async function POST(request: Request) {
 
   const email = typeof body.email === "string" ? body.email.trim() : ""
   const password = typeof body.password === "string" ? body.password : ""
-  const redirect = safeRedirect(body.redirect)
+  const redirect = safeInternalRedirect(typeof body.redirect === "string" ? body.redirect : null, "/app")
   const requestUrl = getRequestUrl(request)
   if (!email || !password) {
     if (isFormRequest) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=invalid_request`, requestUrl), 303)
     return NextResponse.json({ error: "invalid_request" }, { status: 400 })
+  }
+
+  if (usesNeonBackend()) {
+    const result = await neonAuthPost(request, "sign-in/email", { email, password })
+    if (!result.ok) {
+      const payload = await result.json().catch(() => null)
+      const code = payload?.code === "EMAIL_NOT_VERIFIED" ? "email_not_confirmed" : "invalid_credentials"
+      if (isFormRequest) return NextResponse.redirect(new URL(`/login?redirect=${encodeURIComponent(redirect)}&error=${code}`, requestUrl), 303)
+      return NextResponse.json({ error: code }, { status: result.status === 429 ? 429 : 401 })
+    }
+    return copyAuthCookies(result, isFormRequest
+      ? NextResponse.redirect(new URL(`/auth/continue?redirect=${encodeURIComponent(redirect)}`, requestUrl), 303)
+      : NextResponse.json({ ok: true }))
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL

@@ -54,21 +54,30 @@ if (!product || ("deleted" in product && product.deleted) || !product.active) {
   process.exit(1)
 }
 
-let status
-try {
-  status = JSON.parse(execFileSync("supabase", ["status", "--workdir", ".", "-o", "json"], { encoding: "utf8" }))
-} catch {
-  console.error("Could not read local Supabase status. Start the isolated project with npm run db:start first.")
-  process.exit(1)
+async function getLocalBillingData() {
+  if (process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon") {
+    if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+\/?$/.test(process.env.NEON_DATA_API_URL || "")) {
+      throw new Error("Refusing to modify a non-local database.")
+    }
+    return (await import("@sapienx/saas-core/postgres")).createNeonDataClient({ role: "service_role" })
+  }
+  let status
+  try {
+    status = JSON.parse(execFileSync("supabase", ["status", "--workdir", ".", "-o", "json"], { encoding: "utf8" }))
+  } catch {
+    throw new Error("Could not read local Supabase status. Start the isolated project with npm run db:start first.")
+  }
+  if (!/^https?:\/\/(127\.0\.0\.1|localhost):55621$/.test(status.API_URL || "")) {
+    throw new Error("Refusing to modify a non-local Supabase project.")
+  }
+  return createClient(status.API_URL, status.SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 }
 
-if (!/^https?:\/\/(127\.0\.0\.1|localhost):55621$/.test(status.API_URL || "")) {
-  console.error("Refusing to modify a non-local Supabase project.")
+const supabase = await getLocalBillingData().catch(error => {
+  console.error(error.message)
   process.exit(1)
-}
-
-const supabase = createClient(status.API_URL, status.SERVICE_ROLE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
 })
 
 const { error: deactivateError } = await supabase

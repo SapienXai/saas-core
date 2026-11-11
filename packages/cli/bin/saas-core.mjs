@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process"
 import { access, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import {
   DEFAULT_PRODUCT_OWNED_PATHS,
   classifyMigrationPath,
@@ -426,6 +426,7 @@ async function writeConsumerPackage(directory, slug, sourceRoot) {
       "db:stop": "supabase stop --workdir .",
       "db:reset": "supabase db reset --local --workdir .",
       "db:types": "node scripts/generate-local-types.mjs",
+      "db:setup:neon": "node --env-file-if-exists=.env.local scripts/setup-neon.mjs",
       "billing:sync-catalog": "node --env-file-if-exists=.env.local scripts/billing-sync-catalog.mjs",
       verify: "pnpm run lint && pnpm run typecheck && pnpm run test:run && pnpm run build",
       "saas-core": "saas-core",
@@ -493,7 +494,26 @@ function productConfigValid(directory) {
   } catch { return { status: "ERROR", detail: "product.catalog.json is not valid JSON." } }
 }
 
-async function databaseSchemaCheck() {
+async function databaseSchemaCheck(directory) {
+  if (process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon") {
+    if (!process.env.NEON_DATA_API_URL || !process.env.SAAS_CORE_DATA_SIGNING_KEY || !process.env.SAAS_CORE_DATA_AUDIENCE) {
+      return { status: "WARNING", detail: "Neon database schema could not be verified because server credentials are not configured." }
+    }
+    try {
+      const runtime = path.join(directory, "node_modules", "@sapienx", "saas-core", "dist", "postgres.js")
+      if (!existsSync(runtime)) return { status: "WARNING", detail: "Install the Core runtime before verifying the Neon database." }
+      const { createNeonDataClient } = await import(pathToFileURL(runtime).href)
+      const { data, error } = await createNeonDataClient({ role: "service_role" }).rpc("get_core_schema_metadata")
+      const metadata = Array.isArray(data) ? data[0] : data
+      if (error || metadata?.schema_version !== SCHEMA_VERSION || metadata.runtime_major !== 2) {
+        return { status: "ERROR", detail: `Neon did not return compatible Core schema ${SCHEMA_VERSION}.` }
+      }
+      return { status: "INFO", detail: `Core schema ${SCHEMA_VERSION} verified on Neon.` }
+    } catch {
+      return { status: "ERROR", detail: "Neon database schema verification failed." }
+    }
+  }
+
   const url = process.env.SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !serviceKey || /publishable|anon/i.test(serviceKey)) return { status: "WARNING", detail: "Database schema could not be verified because server credentials are not configured." }
@@ -577,7 +597,7 @@ async function healthChecks(directory, manifest, sourceRoot = DEFAULT_TEMPLATE_R
     if (!existsSync(path.join(directory, PRODUCT_PLATFORM_ADMIN_EXTENSION))) add("PRODUCT", "ERROR", `Product platform workspace extension is missing: ${PRODUCT_PLATFORM_ADMIN_EXTENSION}`)
     else add("PRODUCT", "INFO", `Product platform workspace extension is present and product-owned: ${PRODUCT_PLATFORM_ADMIN_EXTENSION}`)
   }
-  const database = await databaseSchemaCheck()
+  const database = await databaseSchemaCheck(directory)
   add("DATABASE", database.status, database.detail)
   const catalog = productConfigValid(directory)
   add("PRODUCT", catalog.status, catalog.detail)

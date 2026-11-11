@@ -74,12 +74,14 @@ function normalizeCatalog(value) {
 }
 
 const catalog = normalizeCatalog(JSON.parse(await readFile(catalogPath, "utf8")))
+const neon = process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon"
 const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-if (!url || !serviceKey) fail("Catalog sync requires server-only SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
-if (/publishable|anon/i.test(serviceKey)) fail("Refusing a client/public Supabase key. Catalog sync requires the service-role key.")
-
-const supabase = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
+if (!neon && (!url || !serviceKey)) fail("Catalog sync requires server-only SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
+if (!neon && /publishable|anon/i.test(serviceKey)) fail("Catalog sync requires a service role key, never a publishable/anon key.")
+const supabase = neon
+  ? (await import("@sapienx/saas-core/postgres")).createNeonDataClient({ role: "service_role" })
+  : createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
 const existingResult = await supabase.from("plans").select("key, metadata, active")
 if (existingResult.error) fail(`Could not read the Core plan catalog: ${existingResult.error.message}`)
 const existing = new Map((existingResult.data || []).map((plan) => [plan.key, plan]))

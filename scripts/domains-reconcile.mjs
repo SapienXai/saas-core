@@ -15,14 +15,17 @@ if (process.env.NODE_ENV === "production" && process.env.DOMAINS_ALLOW_PRODUCTIO
 const token = process.env.VERCEL_API_TOKEN
 const projectId = process.env.VERCEL_PROJECT_ID
 const teamId = process.env.VERCEL_TEAM_ID || undefined
+const neon = process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon"
 const supabaseUrl = process.env.SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-if (!token || !projectId || !supabaseUrl || !serviceRoleKey) {
-  console.error("Vercel and server-only Supabase environment variables are required.")
+if (!token || !projectId || (!neon && (!supabaseUrl || !serviceRoleKey))) {
+  console.error("Vercel and server-only database configuration are required.")
   process.exit(1)
 }
 
-const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+const supabase = neon
+  ? (await import("@sapienx/saas-core/postgres")).createNeonDataClient({ role: "service_role" })
+  : createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
 const { data: workspace, error: workspaceError } = await supabase
   .from("workspaces")
   .select("id, slug")

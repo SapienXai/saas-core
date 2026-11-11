@@ -1,6 +1,6 @@
 {
   "name": "saas-core",
-  "version": "2.7.0",
+  "version": "2.8.0",
   "private": true,
   "packageManager": "pnpm@11.21.0",
   "engines": {
@@ -19,6 +19,7 @@
     "db:start:ci": "node scripts/start-local-supabase-ci.mjs",
     "db:stop": "supabase stop --workdir .",
     "db:reset": "supabase db reset --local --workdir .",
+    "db:setup:neon": "node --env-file-if-exists=.env.local scripts/setup-neon.mjs",
     "db:types": "node scripts/generate-local-types.mjs",
     "db:test:schema": "node scripts/test-core-schema.mjs",
     "db:test": "node scripts/run-local-supabase-tests.mjs",

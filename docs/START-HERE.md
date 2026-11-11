@@ -6,10 +6,10 @@ of you.
 
 ## Coordinates and release truth
 
-The candidate runtime and package coordinate in this checkout is `2.7.0`.
+The candidate runtime and package coordinate in this checkout is `2.8.0`.
 The Core schema compatibility coordinate is `2.0`. Registry install examples
 still use the published `2.6.2` release anchored by `saas-core-v2.6.2`.
-See [RELEASE-2.7.0.md](./RELEASE-2.7.0.md) for local candidate installation.
+See [RELEASE-2.8.0.md](./RELEASE-2.8.0.md) for local candidate installation.
 
 ```mermaid
 flowchart LR
