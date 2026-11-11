@@ -4,17 +4,18 @@ import { createServiceRoleClient } from "@/lib/supabase"
 import { reconcilePaddleSubscription } from "./paddle-webhook"
 import { getProviderPriceByProviderId } from "./price-mapping"
 import { deferredIntervalResumeRequestKey } from "./provider"
-import { getPaddleSandboxConfig, readPaddleIntervalApproval, resumePaddleDeferredInterval, retrievePaddleSubscription, stagePaddleDeferredInterval } from "./providers/paddle"
+import { getPaddleConfig, readPaddleIntervalApproval, resumePaddleDeferredInterval, retrievePaddleSubscription, stagePaddleDeferredInterval } from "./providers/paddle"
 import { BillingProjectionError, claimWorkspaceProjection, releaseWorkspaceProjection } from "./subscription-projection"
 
 type Database = ReturnType<typeof createServiceRoleClient>
 
 async function cutOverWorkspace(db: Database, workspaceId: string, now: Date) {
+  const { environment } = getPaddleConfig()
   const lease = await claimWorkspaceProjection(db, workspaceId, 120)
   try {
     const { data: row, error } = await db.from("workspace_subscriptions")
       .select("provider_subscription_id,provider_customer_id,scheduled_change_at")
-      .eq("workspace_id", workspaceId).eq("provider", "paddle").eq("provider_environment", "sandbox")
+      .eq("workspace_id", workspaceId).eq("provider", "paddle").eq("provider_environment", environment)
       .eq("scheduled_change_action", "pause").lte("scheduled_change_at", now.toISOString()).maybeSingle()
     if (error) throw new Error(error.message)
     if (!row?.provider_subscription_id || !row.provider_customer_id || !row.scheduled_change_at) return null
@@ -22,7 +23,7 @@ async function cutOverWorkspace(db: Database, workspaceId: string, now: Date) {
     const subscriptionId = row.provider_subscription_id
     const remote = await retrievePaddleSubscription(subscriptionId)
     if (remote.customerId !== row.provider_customer_id || remote.customData.workspace_id !== workspaceId ||
-        remote.customData.billing_environment !== "sandbox" || remote.customData.billing_provider !== "paddle") {
+        remote.customData.billing_environment !== environment || remote.customData.billing_provider !== "paddle") {
       throw new Error("Paddle interval change does not match the Workspace subscription.")
     }
     const change = remote.deferredIntervalChange
@@ -50,7 +51,7 @@ async function cutOverWorkspace(db: Database, workspaceId: string, now: Date) {
       return null
     }
 
-    const target = await getProviderPriceByProviderId("paddle", change.targetPriceId, "sandbox")
+    const target = await getProviderPriceByProviderId("paddle", change.targetPriceId, environment)
     if (!target || target.billing_interval !== "month" || target.plan_key !== change.targetPlanKey ||
         target.provider_product_id !== remote.items[0]?.productId) throw new Error("Paddle monthly price is no longer mapped.")
 
@@ -89,12 +90,12 @@ async function markResumeUnknown(db: Database, id: string) {
   if (error) throw new Error(error.message)
 }
 
-/** Drain only owner-approved Sandbox changes that have reached the recorded boundary. */
+/** Drain only owner-approved Paddle changes that have reached the recorded boundary. */
 export async function processDuePaddleIntervalChanges(now = new Date()) {
-  getPaddleSandboxConfig()
+  const { environment } = getPaddleConfig()
   const db = createServiceRoleClient()
   const { data, error } = await db.from("workspace_subscriptions").select("workspace_id")
-    .eq("provider", "paddle").eq("provider_environment", "sandbox")
+    .eq("provider", "paddle").eq("provider_environment", environment)
     .eq("scheduled_change_action", "pause").lte("scheduled_change_at", now.toISOString())
     .order("updated_at", { ascending: true }).order("workspace_id").limit(3)
   if (error) throw new Error(error.message)

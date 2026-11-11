@@ -2,36 +2,86 @@ import "server-only"
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { createServiceRoleClient } from "@/lib/supabase"
-import { BillingConfigurationError, BillingMutationRejectedError, BillingScheduleUnavailableError } from "../config"
+import { BillingConfigurationError, BillingMutationRejectedError, BillingScheduleUnavailableError, assertBillingMutationsEnabled, isBillingDeferred } from "../config"
 import { getProviderPriceByProviderId } from "../price-mapping"
-import type { BillingProviderAdapter, ProviderCheckoutSession, ProviderInvoiceSummary, ProviderSubscriptionSnapshot } from "../provider"
+import type { BillingProviderAdapter, BillingProviderEnvironment, ProviderCheckoutSession, ProviderInvoiceSummary, ProviderSubscriptionSnapshot } from "../provider"
 
-const apiOrigin = "https://sandbox-api.paddle.com"
 const provider = "paddle"
-const environment = "sandbox" as const
+const checkoutPath = "/billing/paddle/checkout"
 
-function loopbackOrigin(value: string | undefined) {
+function configuredOrigin(value: string | undefined, environment: BillingProviderEnvironment) {
   try {
     const url = new URL(value || "")
-    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && url.protocol === "http:" ? url.origin : null
+    if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) return null
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+    return (environment === "sandbox" ? loopback && url.protocol === "http:" : !loopback && url.protocol === "https:" && !url.port)
+      ? url.origin : null
   } catch {
     return null
   }
 }
 
-export function getPaddleSandboxConfig() {
+export function getPaddleConfig() {
+  const environment = process.env.PADDLE_ENVIRONMENT
   const apiKey = process.env.PADDLE_API_KEY?.trim()
   const clientToken = process.env.NEXT_PUBLIC_PADDLE_CLIENT_TOKEN?.trim()
   const webhookSecret = process.env.PADDLE_WEBHOOK_SECRET?.trim()
-  const siteOrigin = loopbackOrigin(process.env.NEXT_PUBLIC_SITE_URL)
-  if (process.env.NODE_ENV !== "development" || process.env.SAAS_CORE_BILLING_PROVIDER !== provider ||
-      process.env.SAAS_CORE_BILLING_MODE !== "enabled" ||
-      process.env.PADDLE_ENVIRONMENT !== environment || !siteOrigin ||
-      !loopbackOrigin(process.env.SUPABASE_URL) || !loopbackOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL) ||
-      !apiKey?.startsWith("pdl_sdbx_") || !clientToken?.startsWith("test_") || !webhookSecret) {
-    throw new BillingConfigurationError("Paddle checkout requires a local Paddle Sandbox configuration.")
+  if (process.env.SAAS_CORE_BILLING_PROVIDER !== provider || (environment !== "sandbox" && environment !== "live")) {
+    throw new BillingConfigurationError("Paddle environment is not configured.")
   }
-  return { apiKey, clientToken, webhookSecret, siteOrigin, environment }
+  const live = environment === "live"
+  const siteOrigin = configuredOrigin(live ? process.env.PADDLE_APP_ORIGIN : process.env.NEXT_PUBLIC_SITE_URL, environment)
+  const accountId = process.env.PADDLE_ACCOUNT_ID?.trim()
+  if (!siteOrigin || !webhookSecret || !apiKey?.startsWith(live ? "pdl_live_" : "pdl_sdbx_") ||
+      !clientToken?.startsWith(live ? "live_" : "test_")) {
+    throw new BillingConfigurationError("Paddle credentials or checkout origin do not match the environment.")
+  }
+  if (live ? process.env.NODE_ENV !== "production" ||
+      (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") ||
+      siteOrigin !== configuredOrigin(process.env.APP_URL, "live") ||
+      !configuredOrigin(process.env.SUPABASE_URL, "live") ||
+      configuredOrigin(process.env.SUPABASE_URL, "live") !== configuredOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL, "live") ||
+      !/^slr_[a-z0-9]{26}$/.test(accountId || "")
+    : process.env.NODE_ENV !== "development" || process.env.SAAS_CORE_BILLING_MODE !== "enabled" ||
+      !configuredOrigin(process.env.SUPABASE_URL, environment) || !configuredOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL, environment)) {
+    throw new BillingConfigurationError("Paddle configuration does not match this deployment.")
+  }
+  return {
+    apiKey, clientToken, webhookSecret, siteOrigin, environment, accountId,
+    apiOrigin: live ? "https://api.paddle.com" : "https://sandbox-api.paddle.com",
+  } as const
+}
+
+export function canStartPaddleCheckout(workspaceId: string) {
+  const { environment } = getPaddleConfig()
+  if (isBillingDeferred()) return false
+  if (environment === "sandbox") return true
+  return process.env.PADDLE_LIVE_CHECKOUT_MODE === "enabled" ||
+    (process.env.PADDLE_LIVE_CHECKOUT_MODE === "pilot" && process.env.PADDLE_LIVE_CHECKOUT_WORKSPACE_ID === workspaceId)
+}
+
+type PaddleConfig = ReturnType<typeof getPaddleConfig>
+type PaddleApiRoot = { api: { environment: string }; caller: { auth_type: string; account: { id: string } | null } }
+let liveAccountVerification: { key: string; accountId: string; result: Promise<void> } | undefined
+
+async function assertPaddleLiveAccount(config: PaddleConfig) {
+  const accountId = config.accountId
+  if (config.environment !== "live" || !accountId) return
+  if (liveAccountVerification?.key === config.apiKey && liveAccountVerification.accountId === accountId) {
+    return liveAccountVerification.result
+  }
+  const result = sendPaddleRequest<PaddleApiRoot>(config, "/").then(data => {
+    if (data.api.environment !== "production" || data.caller.auth_type !== "api_key" || data.caller.account?.id !== accountId) {
+      throw new BillingConfigurationError("Paddle API key belongs to another account.", "BILLING_ACCOUNT_MISMATCH")
+    }
+  })
+  liveAccountVerification = { key: config.apiKey, accountId, result }
+  try {
+    await result
+  } catch (error) {
+    if (liveAccountVerification?.result === result) liveAccountVerification = undefined
+    throw error
+  }
 }
 
 type PaddlePrice = {
@@ -89,7 +139,12 @@ function paddlePath(kind: "prices" | "transactions" | "subscriptions", id: strin
 }
 
 async function paddleRequest<T>(path: string, body?: object, method = "GET"): Promise<T> {
-  const { apiKey } = getPaddleSandboxConfig()
+  const config = getPaddleConfig()
+  await assertPaddleLiveAccount(config)
+  return sendPaddleRequest<T>(config, path, body, method)
+}
+
+async function sendPaddleRequest<T>({ apiOrigin, apiKey }: PaddleConfig, path: string, body?: object, method = "GET"): Promise<T> {
   const updatesSubscription = method === "PATCH" && /^\/subscriptions\/sub_[a-z0-9]{26}$/.test(path)
   const pausesSubscription = method === "POST" && /^\/subscriptions\/sub_[a-z0-9]{26}\/pause$/.test(path)
   const resumesSubscription = method === "POST" && /^\/subscriptions\/sub_[a-z0-9]{26}\/resume$/.test(path)
@@ -107,10 +162,10 @@ async function paddleRequest<T>(path: string, body?: object, method = "GET"): Pr
         [400, 402, 403, 404, 409, 422].includes(response.status)) {
       throw new BillingMutationRejectedError(code)
     }
-    throw new Error(`Paddle Sandbox request failed (${response.status}${code ? ` ${code}` : ""}).`)
+    throw new Error(`Paddle request failed (${response.status}${code ? ` ${code}` : ""}).`)
   }
   const result = await response.json() as { data?: T }
-  if (!result.data) throw new Error("Paddle Sandbox returned no data.")
+  if (!result.data) throw new Error("Paddle returned no data.")
   return result.data
 }
 
@@ -133,13 +188,13 @@ export function getPaddleReturnPath(value: string | undefined, siteOrigin: strin
   return url.pathname + url.search + url.hash
 }
 
-function checkoutSnapshot(transaction: PaddleTransaction): ProviderCheckoutSession {
+function checkoutSnapshot(transaction: PaddleTransaction, environment: BillingProviderEnvironment): ProviderCheckoutSession {
   const metadata = stringMetadata(transaction.custom_data)
   const open = transaction.status === "draft" || transaction.status === "ready"
   return {
     id: transaction.id,
     url: open && isPaddleTransactionId(transaction.id) ? "/billing/paddle/checkout?transaction=" + transaction.id : null,
-    livemode: false,
+    livemode: environment === "live",
     status: open ? "open" : transaction.status === "completed" ? "complete" : transaction.status === "canceled" ? "expired" : "unknown",
     paymentStatus: transaction.status === "completed" || transaction.status === "paid" ? "paid" : open || transaction.status === "canceled" ? "unpaid" : "unknown",
     customerId: transaction.customer_id,
@@ -153,7 +208,7 @@ function checkoutSnapshot(transaction: PaddleTransaction): ProviderCheckoutSessi
 export async function retrievePaddleTransaction(id: string) {
   const transaction = await paddleRequest<PaddleTransaction>(paddlePath("transactions", id))
   if (transaction.id !== id) throw new Error("Paddle returned another transaction.")
-  return { session: checkoutSnapshot(transaction), items: transaction.items }
+  return { session: checkoutSnapshot(transaction, getPaddleConfig().environment), items: transaction.items, origin: transaction.origin, status: transaction.status }
 }
 
 async function getPaddleSubscription(id: string) {
@@ -229,7 +284,7 @@ function getPaddleSchedule(subscription: PaddleSubscription) {
   return { id: data.billing_schedule_mutation_id, priceId, currentPriceId, currentProductId, effectiveAt }
 }
 
-export function normalizePaddleSubscription(subscription: PaddleSubscription): ProviderSubscriptionSnapshot {
+export function normalizePaddleSubscription(subscription: PaddleSubscription, environment: BillingProviderEnvironment = "sandbox"): ProviderSubscriptionSnapshot {
   const item = subscription.items.length === 1 ? subscription.items[0] : null
   if (!item?.price || item.quantity !== 1) throw new Error("Unsupported Paddle subscription items.")
   const status = subscription.status
@@ -248,7 +303,7 @@ export function normalizePaddleSubscription(subscription: PaddleSubscription): P
     status: status === "active" || status === "trialing" || status === "past_due" || status === "paused" || status === "canceled" ? status : "unpaid",
     providerStatus: status,
     issueCode: null,
-    livemode: false,
+    livemode: environment === "live",
     customerId: subscription.customer_id,
     nextBilledAt: subscription.next_billed_at,
     currentBillingPeriod: !staged && subscription.current_billing_period
@@ -267,7 +322,7 @@ export function normalizePaddleSubscription(subscription: PaddleSubscription): P
 }
 
 export async function retrievePaddleSubscription(id: string) {
-  return normalizePaddleSubscription(await getPaddleSubscription(id))
+  return normalizePaddleSubscription(await getPaddleSubscription(id), getPaddleConfig().environment)
 }
 
 function minorAmount(value: unknown): number | null {
@@ -311,6 +366,7 @@ function assertCanScheduleIntervalChange(subscription: PaddleSubscription, effec
 }
 
 async function assertSamePlanIntervalChange(current: PaddleSubscription, targetPriceId: string) {
+  const { environment } = getPaddleConfig()
   const [annual, monthly] = await Promise.all([
     getProviderPriceByProviderId(provider, current.items[0].price.id, environment, false),
     getProviderPriceByProviderId(provider, targetPriceId, environment),
@@ -320,6 +376,7 @@ async function assertSamePlanIntervalChange(current: PaddleSubscription, targetP
 }
 
 export async function readPaddleIntervalApproval(workspaceId: string, scheduleId: string, planKey: string, effectiveAt: string) {
+  const { environment } = getPaddleConfig()
   const { data, error } = await createServiceRoleClient().from("billing_mutation_transitions")
     .select("state,from_plan_key,to_plan_key,effective_at")
     .eq("workspace_id", workspaceId).eq("mutation_id", scheduleId)
@@ -342,6 +399,7 @@ type DeferredPaddleBinding = {
 }
 
 function assertPausedPaddleBinding(subscription: PaddleSubscription, binding: DeferredPaddleBinding) {
+  const { environment } = getPaddleConfig()
   const change = getDeferredIntervalChange(subscription)
   const data = subscription.custom_data
   if (change?.phase !== "paused" || change.scheduleId !== binding.scheduleId || change.targetPriceId !== binding.targetPriceId ||
@@ -409,7 +467,7 @@ export function matchesPaidPaddleRenewal(transaction: Pick<PaddleTransaction, "o
     transaction.items.some(row => row.price.id === item.priceId && row.quantity === item.quantity))
 }
 
-export function verifyPaddleSandboxWebhook(rawBody: string, signature: string, secret: string, now = Date.now()) {
+export function verifyPaddleWebhook(rawBody: string, signature: string, secret: string, now = Date.now()) {
   const parts = signature.split(";").map(part => part.trim())
   const timestamps = parts.filter(part => /^ts=\d+$/.test(part))
   if (timestamps.length !== 1) throw new Error("Invalid Paddle signature.")
@@ -422,15 +480,18 @@ export function verifyPaddleSandboxWebhook(rawBody: string, signature: string, s
   return JSON.parse(rawBody) as unknown
 }
 
-export function createPaddleSandboxAdapter(): BillingProviderAdapter {
-  const config = getPaddleSandboxConfig()
+export function createPaddleAdapter(): BillingProviderAdapter {
+  const config = getPaddleConfig()
+  const { environment } = config
   return {
     provider,
     environment,
     async createCheckoutSession(request) {
+      if (!canStartPaddleCheckout(request.workspaceId)) throw new BillingConfigurationError("Checkout is temporarily unavailable.", "BILLING_DEFERRED")
       const transaction = await paddleRequest<PaddleTransaction>("/transactions", {
         items: [{ price_id: request.priceId, quantity: 1 }],
         collection_mode: "automatic",
+        ...(environment === "live" && { checkout: { url: config.siteOrigin + checkoutPath } }),
         custom_data: {
           workspace_id: request.workspaceId,
           billing_mutation_id: request.mutationId,
@@ -443,16 +504,17 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
           cancel_url: request.cancelUrl,
         },
       }, "POST")
-      return checkoutSnapshot(transaction)
+      return checkoutSnapshot(transaction, environment)
     },
     async retrieveCheckoutSession(id) {
       return (await retrievePaddleTransaction(id)).session
     },
     async expireCheckoutSession(id) {
+      assertBillingMutationsEnabled()
       const { session } = await retrievePaddleTransaction(id)
       if (session.status !== "open" || session.paymentStatus !== "unpaid" || session.subscriptionId) return session
       const transaction = await paddleRequest<PaddleTransaction>(paddlePath("transactions", id), { status: "canceled" }, "PATCH")
-      return checkoutSnapshot(transaction)
+      return checkoutSnapshot(transaction, environment)
     },
     retrieveSubscription: retrievePaddleSubscription,
     async retrievePrice(id) {
@@ -460,11 +522,11 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
       if (price.id !== id || price.status !== "active") throw new Error("Paddle price is unavailable.")
       return {
         id: price.id, productId: price.product_id, amount: Number(price.unit_price.amount), currency: price.unit_price.currency_code,
-        interval: price.billing_cycle?.interval ?? null, intervalCount: price.billing_cycle?.frequency ?? null, livemode: false,
+        interval: price.billing_cycle?.interval ?? null, intervalCount: price.billing_cycle?.frequency ?? null, livemode: environment === "live",
       }
     },
     async verifyWebhook(rawBody, signature) {
-      return verifyPaddleSandboxWebhook(rawBody, signature, config.webhookSecret)
+      return verifyPaddleWebhook(rawBody, signature, config.webhookSecret)
     },
     async getCustomerPaymentMethod() { return null },
     async listInvoices(customerId, subscriptionId) {
@@ -491,6 +553,10 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
       const customer = customerPath(customerId)
       if (!subscriptionId || (await getPaddleSubscription(subscriptionId)).customer_id !== customerId) {
         throw new Error("Paddle customer does not match this subscription.")
+      }
+      if (environment === "live") {
+        // The shared seller's authenticated portal session covers all purchases for the buyer.
+        return { url: "https://buyer-portal.paddle.com" + paddlePath("subscriptions", subscriptionId) + "/view-subscription" }
       }
       const session = await paddleRequest<{ customer_id: string; urls: { general: { overview: string } } }>(
         customer + "/portal-sessions", { subscription_ids: [subscriptionId] }, "POST",
@@ -534,6 +600,7 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
       }
     },
     async updateSubscriptionPrice({ subscriptionId, itemId, priceId, metadata }) {
+      assertBillingMutationsEnabled()
       const current = await getPaddleSubscription(subscriptionId)
       const path = paddlePath("subscriptions", subscriptionId)
       if (current.items.length !== 1 || current.items[0]?.price.id !== itemId || getPaddleSchedule(current)) {
@@ -543,9 +610,10 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
         ...changeItems(priceId), custom_data: { ...withoutSchedule(current.custom_data), ...metadata },
         on_payment_failure: "prevent_change",
       }, "PATCH")
-      return normalizePaddleSubscription(updated)
+      return normalizePaddleSubscription(updated, environment)
     },
     async schedulePlanChange(input) {
+      assertBillingMutationsEnabled()
       const current = await getPaddleSubscription(input.subscriptionId)
       if (getDeferredIntervalChange(current)?.phase === "scheduled") throw new BillingScheduleUnavailableError()
       const schedule = getPaddleSchedule(current)
@@ -592,6 +660,7 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
       return { scheduleId: input.mutationId, effectiveAt }
     },
     async releaseSchedule(subscriptionId, scheduleId, mutationId, mutationKind = "undo_plan_change") {
+      assertBillingMutationsEnabled()
       const current = await getPaddleSubscription(subscriptionId)
       const schedule = getPaddleSchedule(current)
       if (!schedule || schedule.id !== scheduleId) throw new Error("Paddle schedule changed before it could be undone.")
@@ -615,15 +684,17 @@ export function createPaddleSandboxAdapter(): BillingProviderAdapter {
       if (updated.items[0]?.price.id !== schedule.currentPriceId || getPaddleSchedule(updated)) throw new Error("Paddle did not undo the scheduled price.")
     },
     async scheduleCancellation(subscriptionId) {
+      assertBillingMutationsEnabled()
       const path = paddlePath("subscriptions", subscriptionId)
-      return normalizePaddleSubscription(await paddleRequest<PaddleSubscription>(path + "/cancel", { effective_from: "next_billing_period" }, "POST"))
+      return normalizePaddleSubscription(await paddleRequest<PaddleSubscription>(path + "/cancel", { effective_from: "next_billing_period" }, "POST"), environment)
     },
     async undoScheduledCancellation(subscriptionId) {
+      assertBillingMutationsEnabled()
       // Paddle requires scheduled_change to be cleared in its own request.
       const updated = await paddleRequest<PaddleSubscription>(
         paddlePath("subscriptions", subscriptionId), { scheduled_change: null }, "PATCH",
       )
-      return normalizePaddleSubscription(updated)
+      return normalizePaddleSubscription(updated, environment)
     },
     async hasPaidRenewal(subscription) {
       paddlePath("subscriptions", subscription.id)

@@ -1,7 +1,7 @@
 import { after } from "next/server"
 import { BillingConfigurationError } from "@/lib/billing/config"
-import { createPaddleSandboxAdapter } from "@/lib/billing/providers/paddle"
-import { normalizePaddleSandboxEvent, processStoredPaddleWebhookEvent, recordPaddleSandboxEvent } from "@/lib/billing/paddle-webhook"
+import { createPaddleAdapter } from "@/lib/billing/providers/paddle"
+import { normalizePaddleEvent, processStoredPaddleWebhookEvent, recordPaddleEvent } from "@/lib/billing/paddle-webhook"
 
 export const runtime = "nodejs"
 
@@ -10,14 +10,14 @@ export async function POST(request: Request) {
   if (!signature) return Response.json({ error: "Missing Paddle signature." }, { status: 400 })
   let event
   try {
-    const adapter = createPaddleSandboxAdapter()
-    event = normalizePaddleSandboxEvent(await adapter.verifyWebhook(await request.text(), signature))
+    const adapter = createPaddleAdapter()
+    event = normalizePaddleEvent(await adapter.verifyWebhook(await request.text(), signature))
   } catch (error) {
     const status = error instanceof BillingConfigurationError ? 503 : 400
     return Response.json({ error: "Paddle webhook was not accepted." }, { status })
   }
   try {
-    const receipt = await recordPaddleSandboxEvent(event)
+    const receipt = await recordPaddleEvent(event)
     after(async () => {
       try {
         await processStoredPaddleWebhookEvent(receipt.id)

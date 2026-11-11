@@ -117,6 +117,30 @@ checks protect invoice downloads. PlaceDJ keeps server-verified resource limits
 in downgrade eligibility and applies its device-local cache limit through
 Player reconciliation at the plan boundary.
 
+## Paddle Live configuration
+
+Set the production environment to `SAAS_CORE_BILLING_PROVIDER=paddle`
+and `PADDLE_ENVIRONMENT=live`. `PADDLE_APP_ORIGIN` must be the approved
+HTTPS application origin and match `APP_URL`. Set `PADDLE_ACCOUNT_ID` to
+the selected Live seller ID. Core checks the seller ID against the Paddle
+API before using the configured server key. Production and Sandbox use
+separate API keys, client-side tokens, webhook secrets, and price mappings.
+
+`PADDLE_LIVE_CHECKOUT_MODE` defaults to `disabled`. Set it to `pilot` with
+`PADDLE_LIVE_CHECKOUT_WORKSPACE_ID` to open new checkout for one Workspace
+owner. Set it to `enabled` to open checkout to eligible Workspace owners.
+Closing new checkout leaves webhook delivery, recurring payment
+reconciliation, and previously approved billing changes active.
+
+Each PlaceDJ checkout transaction supplies its approved checkout URL.
+The checkout page recognizes Paddle payment links and verifies the
+transaction against the signed-in owner's Workspace before opening it.
+On Live, the subscription link lets Paddle authenticate the buyer by
+email, which keeps the shared seller's customer-wide portal session out
+of the Workspace. A verified canceled Stripe Sandbox subscription can be replaced by the
+Workspace's first verified Paddle Live checkout. The old Checkout and
+provider event records remain available for audit.
+
 ## Product catalog and copy
 
 The existing catalog remains valid:

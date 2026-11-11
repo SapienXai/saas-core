@@ -1,9 +1,12 @@
 import { createHmac } from "node:crypto"
-import { normalizePaddleSandboxEvent } from "../lib/billing/paddle-webhook"
+import { normalizePaddleEvent } from "../lib/billing/paddle-webhook"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { getPaddleReturnPath, getPaddleSandboxConfig, matchesPaidPaddleRenewal, normalizePaddleSubscription, verifyPaddleSandboxWebhook } from "../lib/billing/providers/paddle"
+import { canStartPaddleCheckout, createPaddleAdapter, getPaddleReturnPath, getPaddleConfig, matchesPaidPaddleRenewal, normalizePaddleSubscription, verifyPaddleWebhook } from "../lib/billing/providers/paddle"
 
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
+})
 
 describe("Paddle Sandbox checkout", () => {
   it("requires a local development database and Sandbox credentials", () => {
@@ -18,15 +21,15 @@ describe("Paddle Sandbox checkout", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:58521")
     vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:58521")
 
-    expect(getPaddleSandboxConfig().environment).toBe("sandbox")
+    expect(getPaddleConfig().environment).toBe("sandbox")
     vi.stubEnv("SUPABASE_URL", "https://test.supabase.co")
-    expect(() => getPaddleSandboxConfig()).toThrow()
+    expect(() => getPaddleConfig()).toThrow()
     vi.stubEnv("SUPABASE_URL", "http://127.0.0.1:58521")
     vi.stubEnv("PADDLE_ENVIRONMENT", "live")
-    expect(() => getPaddleSandboxConfig()).toThrow()
+    expect(() => getPaddleConfig()).toThrow()
     vi.stubEnv("PADDLE_ENVIRONMENT", "sandbox")
     vi.stubEnv("NODE_ENV", "production")
-    expect(() => getPaddleSandboxConfig()).toThrow()
+    expect(() => getPaddleConfig()).toThrow()
   })
 
   it("binds the webhook signature to the raw body and recent timestamp", () => {
@@ -34,9 +37,9 @@ describe("Paddle Sandbox checkout", () => {
     const secret = "test-webhook-secret"
     const ts = 1_780_000_000
     const signature = `ts=${ts};h1=${createHmac("sha256", secret).update(`${ts}:${raw}`).digest("hex")}`
-    expect(verifyPaddleSandboxWebhook(raw, signature, secret, ts * 1000)).toEqual({ data: { status: "completed" } })
-    expect(() => verifyPaddleSandboxWebhook(raw + " ", signature, secret, ts * 1000)).toThrow()
-    expect(() => verifyPaddleSandboxWebhook(raw, signature, secret, ts * 1000 + 5001)).toThrow()
+    expect(verifyPaddleWebhook(raw, signature, secret, ts * 1000)).toEqual({ data: { status: "completed" } })
+    expect(() => verifyPaddleWebhook(raw + " ", signature, secret, ts * 1000)).toThrow()
+    expect(() => verifyPaddleWebhook(raw, signature, secret, ts * 1000 + 5001)).toThrow()
   })
 
   it("keeps the return local and replaces any supplied checkout identifier", () => {
@@ -95,7 +98,7 @@ describe("Paddle Sandbox renewal boundary", () => {
   })
 
   it("normalizes the signed recurring transaction identity for reconciliation", () => {
-    const event = normalizePaddleSandboxEvent({
+    const event = normalizePaddleEvent({
       event_id: "evt_00000000000000000000000000", event_type: "transaction.completed", occurred_at: boundary,
       data: { id: "txn_test", origin: "subscription_recurring", subscription_id: renewed.id },
     })
@@ -135,5 +138,48 @@ describe("Paddle Sandbox renewal boundary", () => {
     const resumed = { ...renewed, custom_data: paused.custom_data }
     expect(normalizePaddleSubscription(resumed).deferredIntervalChange).toMatchObject({ phase: "resumed", effectiveAt: boundary })
     expect(() => normalizePaddleSubscription({ ...resumed, current_billing_period: scheduled.current_billing_period })).toThrow("boundary")
+  })
+})
+
+
+describe("Paddle Live checkout configuration", () => {
+  const account = "slr_" + "0".repeat(26)
+
+  function configureLive() {
+    const env = {
+      NODE_ENV: "production", VERCEL_ENV: "production", SAAS_CORE_BILLING_PROVIDER: "paddle",
+      SAAS_CORE_BILLING_MODE: "enabled", PADDLE_ENVIRONMENT: "live", PADDLE_ACCOUNT_ID: account,
+      PADDLE_APP_ORIGIN: "https://app.example.com", APP_URL: "https://app.example.com",
+      SUPABASE_URL: "https://project.supabase.co", NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
+      PADDLE_API_KEY: "pdl_live_fixture", NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: "live_fixture",
+      PADDLE_WEBHOOK_SECRET: "fixture-webhook-secret", PADDLE_LIVE_CHECKOUT_MODE: "disabled",
+    }
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
+  }
+
+  it("allows the pilot Workspace and keeps the adapter configured when checkout is closed", () => {
+    configureLive()
+    expect(getPaddleConfig()).toMatchObject({ environment: "live", apiOrigin: "https://api.paddle.com" })
+    expect(canStartPaddleCheckout("workspace")).toBe(false)
+    vi.stubEnv("PADDLE_LIVE_CHECKOUT_MODE", "pilot")
+    vi.stubEnv("PADDLE_LIVE_CHECKOUT_WORKSPACE_ID", "workspace")
+    expect(canStartPaddleCheckout("workspace")).toBe(true)
+    expect(canStartPaddleCheckout("another-workspace")).toBe(false)
+    vi.stubEnv("SAAS_CORE_BILLING_MODE", "deferred")
+    expect(canStartPaddleCheckout("workspace")).toBe(false)
+    expect(getPaddleConfig().environment).toBe("live")
+    vi.stubEnv("VERCEL_ENV", "preview")
+    expect(() => getPaddleConfig()).toThrow()
+  })
+
+  it("checks the API key account before retrieving a Live price", async () => {
+    configureLive()
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({
+      data: { api: { environment: "production" }, caller: { auth_type: "api_key", account: { id: "another-account" } } },
+    }))
+    vi.stubGlobal("fetch", fetchMock)
+    await expect(createPaddleAdapter().retrievePrice("pri_" + "0".repeat(26))).rejects.toThrow("another account")
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.paddle.com/")
   })
 })

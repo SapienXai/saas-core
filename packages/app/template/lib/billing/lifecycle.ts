@@ -5,6 +5,7 @@ import { getConfiguredFallbackPlanKey } from "./reconciliation"
 import { finalizeBillingWebhookEvent } from "./persistence"
 import { processStoredPaddleWebhookEvent } from "./paddle-webhook"
 import { processStoredStripeWebhookEvent } from "./stripe-webhook"
+import { getPaddleConfig } from "./providers/paddle"
 
 export const PAYMENT_GRACE_PERIOD_DAYS = 14
 export const STRIPE_WEBHOOK_DRAIN_BATCH_SIZE = 4
@@ -75,17 +76,19 @@ async function processDueBillingWebhookEvents(provider: "stripe" | "paddle", lim
   const db = createServiceRoleClient() as any
   const batchLimit = getStripeWebhookDrainBatchLimit(limit)
   const nowIso = now.toISOString()
-  const [waiting, expiredLeases] = await Promise.all([
-    db.from("billing_webhook_events")
-      .select("id, attempts, max_attempts, received_at")
+  const receipts = () => {
+    const query = db.from("billing_webhook_events")
+      .select("id, attempts, max_attempts, lease_token, lease_until, received_at")
       .eq("provider", provider)
+    return provider === "paddle" ? query.eq("environment", getPaddleConfig().environment) : query
+  }
+  const [waiting, expiredLeases] = await Promise.all([
+    receipts()
       .in("status", ["received", "failed"])
       .or("next_attempt_at.is.null,next_attempt_at.lte." + nowIso)
       .order("received_at", { ascending: true })
       .limit(batchLimit),
-    db.from("billing_webhook_events")
-      .select("id, attempts, max_attempts, lease_token, lease_until, received_at")
-      .eq("provider", provider)
+    receipts()
       .eq("status", "processing")
       .lte("lease_until", nowIso)
       .order("received_at", { ascending: true })

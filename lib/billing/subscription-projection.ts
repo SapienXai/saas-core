@@ -201,7 +201,9 @@ export async function applyProviderSubscriptionProjection(
     if (current.provider_subscription_id === subscriptionId && current.provider && current.provider !== provider) {
       throw new BillingProjectionError("PROVIDER_MISMATCH", "Billing subscription ID conflicts with the Workspace's existing provider link.")
     }
-    if (current.provider_subscription_id && current.provider_environment && current.provider_environment !== environment) {
+    const replacesCanceledStripeSandbox = replacingSubscription && provider === "paddle" && environment === "live" &&
+      current.provider === "stripe" && current.provider_environment === "sandbox" && current.provider_status === "canceled"
+    if (current.provider_subscription_id && current.provider_environment && current.provider_environment !== environment && !replacesCanceledStripeSandbox) {
       throw new BillingProjectionError("ENVIRONMENT_MISMATCH", "Workspace subscription belongs to another billing environment.")
     }
     if (replacingSubscription && !isTerminalBillingSubscription(oldStatus)) {
@@ -315,7 +317,8 @@ export async function applyProviderSubscriptionProjection(
         workspaceId,
         provider,
         environment,
-        providerAccountId: subscription.customerId,
+        // A Paddle buyer can pay for multiple Workspace subscriptions under one seller.
+        providerAccountId: provider === "paddle" && environment === "live" ? subscription.id : subscription.customerId,
         providerCustomerId: subscription.customerId,
         metadata: { subscriptionId: subscription.id },
       }, db)

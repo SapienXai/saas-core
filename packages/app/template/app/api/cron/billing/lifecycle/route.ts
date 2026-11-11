@@ -16,12 +16,12 @@ export async function GET(request: Request) {
   }
 
   try {
-    const paddleSandbox = process.env.SAAS_CORE_BILLING_PROVIDER === "paddle" && isBillingProviderConfigured()
+    const paddleConfigured = process.env.SAAS_CORE_BILLING_PROVIDER === "paddle" && isBillingProviderConfigured()
     const [gracePeriods, webhooks] = await Promise.all([
       expirePaymentGracePeriods(),
-      paddleSandbox ? processDuePaddleBillingWebhookEvents() : processDueStripeBillingWebhookEvents(),
+      paddleConfigured ? processDuePaddleBillingWebhookEvents() : processDueStripeBillingWebhookEvents(),
     ])
-    const intervalChanges = paddleSandbox ? await processDuePaddleIntervalChanges() : null
+    const intervalChanges = paddleConfigured ? await processDuePaddleIntervalChanges() : null
     return Response.json({ ok: true, ...gracePeriods, webhooks, ...(intervalChanges && { intervalChanges }) })
   } catch (error) {
     console.error("Billing lifecycle cron failed", { error: error instanceof Error ? error.message : String(error) })

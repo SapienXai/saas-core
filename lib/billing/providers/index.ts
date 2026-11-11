@@ -1,8 +1,8 @@
 import "server-only"
 
 import type { BillingProviderName, BillingProviderAdapter } from "../provider"
-import { BillingConfigurationError, getBillingEnvironment, isStripeBillingConfigured } from "../config"
-import { createPaddleSandboxAdapter, getPaddleSandboxConfig } from "./paddle"
+import { BillingConfigurationError, getBillingEnvironment, isStripeBillingConfigured, isBillingDeferred } from "../config"
+import { canStartPaddleCheckout, createPaddleAdapter, getPaddleConfig } from "./paddle"
 import { createStripeBillingAdapter } from "./stripe"
 
 /** Resolve the configured provider behind the product's vendor-neutral API. */
@@ -13,19 +13,30 @@ export function getBillingProviderName(): BillingProviderName {
 }
 
 export function getBillingProviderEnvironment() {
-  return getBillingProviderName() === "paddle" ? getPaddleSandboxConfig().environment : getBillingEnvironment()
+  return getBillingProviderName() === "paddle" ? getPaddleConfig().environment : getBillingEnvironment()
 }
 
 export function isBillingProviderConfigured() {
   try {
-    return getBillingProviderName() === "paddle" ? Boolean(getPaddleSandboxConfig()) : isStripeBillingConfigured()
+    return getBillingProviderName() === "paddle" ? Boolean(getPaddleConfig()) : isStripeBillingConfigured()
   } catch {
     return false
   }
 }
 
 export function getBillingProviderAdapter(): BillingProviderAdapter {
-  return getBillingProviderName() === "paddle" ? createPaddleSandboxAdapter() : createStripeBillingAdapter()
+  return getBillingProviderName() === "paddle" ? createPaddleAdapter() : createStripeBillingAdapter()
+}
+
+export function canStartBillingCheckout(workspaceId: string) {
+  if (isBillingDeferred()) return false
+  return getBillingProviderName() === "paddle" ? isBillingProviderConfigured() && canStartPaddleCheckout(workspaceId) : true
+}
+
+export function assertBillingCheckoutEnabled(workspaceId: string) {
+  if (!canStartBillingCheckout(workspaceId)) {
+    throw new BillingConfigurationError("Checkout is temporarily unavailable.", "BILLING_DEFERRED")
+  }
 }
 
 export function isSubscriptionManagementEnabled() {

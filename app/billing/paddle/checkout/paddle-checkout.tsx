@@ -9,9 +9,10 @@ type Paddle = {
   Checkout: { open(options: { transactionId: string; settings: { displayMode: "overlay"; allowLogout: boolean } }): void }
 }
 
-export default function PaddleCheckout({ transactionId, clientToken, successPath, cancelPath }: {
+export default function PaddleCheckout({ transactionId, clientToken, environment, successPath, cancelPath }: {
   transactionId: string
   clientToken: string
+  environment: "sandbox" | "live"
   successPath: string
   cancelPath: string
 }) {
@@ -28,7 +29,7 @@ export default function PaddleCheckout({ transactionId, clientToken, successPath
     }
     initialized.current = true
     try {
-      paddle.Environment.set("sandbox")
+      if (environment === "sandbox") paddle.Environment.set("sandbox")
       paddle.Initialize({
         token: clientToken,
         eventCallback(event) {
@@ -52,7 +53,7 @@ export default function PaddleCheckout({ transactionId, clientToken, successPath
     <main className="grid min-h-dvh place-items-center bg-background p-6 text-foreground">
       <Script src="https://cdn.paddle.com/paddle/v2/paddle.js" onReady={openCheckout} onError={() => setError(true)} />
       <div className="space-y-4 text-center">
-        <p role="status">{error ? "Paddle Sandbox checkout could not open." : "Opening Paddle Sandbox checkout…"}</p>
+        <p role="status">{error ? "Paddle checkout could not open." : "Opening Paddle checkout…"}</p>
         <a className="underline" href={cancelPath}>Return to your plan</a>
       </div>
     </main>

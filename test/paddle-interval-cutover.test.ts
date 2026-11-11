@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/supabase", () => ({ createServiceRoleClient: mocks.db }))
 vi.mock("../lib/billing/providers/paddle", () => ({
-  getPaddleSandboxConfig: vi.fn(),
+  getPaddleConfig: () => ({ environment: "sandbox" }),
   readPaddleIntervalApproval: mocks.approve,
   retrievePaddleSubscription: mocks.read,
   stagePaddleDeferredInterval: mocks.stage,

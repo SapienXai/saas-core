@@ -4,15 +4,14 @@ import { randomUUID } from "node:crypto"
 import { createServiceRoleClient } from "@/lib/supabase"
 import { claimBillingWebhookEvent, finalizeBillingWebhookEvent, recordBillingWebhookEvent } from "./persistence"
 import { getProviderPriceByProviderId } from "./price-mapping"
-import { createPaddleSandboxAdapter, getPaddleSandboxConfig, isPaddleTransactionId, retrievePaddleTransaction } from "./providers/paddle"
+import { createPaddleAdapter, getPaddleConfig, isPaddleTransactionId, retrievePaddleTransaction } from "./providers/paddle"
 import { applyProviderSubscriptionProjection, BillingProjectionError, settleProviderMutation } from "./subscription-projection"
 
 const provider = "paddle"
-const environment = "sandbox"
 type EventMarker = { eventId: string; eventType: string; occurredAt: string }
 type PaddleEvent = EventMarker & { objectId: string; subscriptionId: string | null; origin: string | null }
 
-export function normalizePaddleSandboxEvent(value: unknown): PaddleEvent {
+export function normalizePaddleEvent(value: unknown): PaddleEvent {
   const event = value as { event_id?: unknown; event_type?: unknown; occurred_at?: unknown; data?: { id?: unknown; subscription_id?: unknown; origin?: unknown } } | null
   if (!event || typeof event.event_id !== "string" || !/^evt_[a-z0-9]{26}$/.test(event.event_id) ||
       typeof event.event_type !== "string" || typeof event.occurred_at !== "string" ||
@@ -35,7 +34,7 @@ export function isPaddleSubscriptionEvent(eventType: string) {
 }
 
 export async function getVerifiedPaddleCheckout(transactionId: string, workspaceId?: string) {
-  getPaddleSandboxConfig()
+  const { environment } = getPaddleConfig()
   if (!isPaddleTransactionId(transactionId)) return null
   const db = createServiceRoleClient()
   let query = db.from("billing_checkout_sessions")
@@ -59,7 +58,22 @@ export async function getVerifiedPaddleCheckout(transactionId: string, workspace
   return { checkout, session }
 }
 
+export async function getVerifiedPaddlePaymentUpdate(transactionId: string, workspaceId: string) {
+  const { environment } = getPaddleConfig()
+  if (environment !== "live" || !isPaddleTransactionId(transactionId)) return false
+  const { data: subscription, error } = await createServiceRoleClient().from("workspace_subscriptions")
+    .select("provider_subscription_id,provider_customer_id")
+    .eq("workspace_id", workspaceId).eq("provider", provider).eq("provider_environment", environment).maybeSingle()
+  if (error) throw new Error(error.message)
+  if (!subscription?.provider_subscription_id || !subscription.provider_customer_id) return false
+  const { session, origin, status } = await retrievePaddleTransaction(transactionId)
+  return session.subscriptionId === subscription.provider_subscription_id && session.customerId === subscription.provider_customer_id &&
+    ((origin === "subscription_payment_method_change" && status === "ready") ||
+      (origin === "subscription_recurring" && status === "past_due"))
+}
+
 export async function reconcilePaddleCheckoutSession(transactionId: string, expectedWorkspaceId?: string, event?: EventMarker) {
+  const { environment } = getPaddleConfig()
   const verified = await getVerifiedPaddleCheckout(transactionId, expectedWorkspaceId)
   if (!verified) return { status: "failed" as const, workspaceId: expectedWorkspaceId || null }
   const { checkout, session } = verified
@@ -90,7 +104,7 @@ export async function reconcilePaddleCheckoutSession(transactionId: string, expe
       planKey: checkout.target_plan_key as string, subscriptionStatus: "active" as const,
     }
   }
-  const adapter = createPaddleSandboxAdapter()
+  const adapter = createPaddleAdapter()
   const result = await applyProviderSubscriptionProjection(
     { ...(event ?? { eventId: `reconcile_${transactionId}`, occurredAt: new Date().toISOString(), eventType: "transaction.completed" }), workspaceId },
     session.subscriptionId,
@@ -116,7 +130,8 @@ export async function reconcilePaddleCheckoutSession(transactionId: string, expe
 }
 
 export async function reconcilePaddleSubscription(subscriptionId: string, expectedWorkspaceId?: string, event?: EventMarker) {
-  const adapter = createPaddleSandboxAdapter()
+  const { environment } = getPaddleConfig()
+  const adapter = createPaddleAdapter()
   const db = createServiceRoleClient()
   let query = db.from("workspace_subscriptions").select("workspace_id")
     .eq("provider", provider).eq("provider_environment", environment).eq("provider_subscription_id", subscriptionId)
@@ -130,7 +145,8 @@ export async function reconcilePaddleSubscription(subscriptionId: string, expect
   )
 }
 
-export async function recordPaddleSandboxEvent(event: PaddleEvent) {
+export async function recordPaddleEvent(event: PaddleEvent) {
+  const { environment } = getPaddleConfig()
   return recordBillingWebhookEvent({
     provider, environment, providerEventId: event.eventId, eventType: event.eventType, occurredAt: event.occurredAt,
     providerObjectId: event.objectId, payload: event,
@@ -138,7 +154,7 @@ export async function recordPaddleSandboxEvent(event: PaddleEvent) {
 }
 
 export async function processStoredPaddleWebhookEvent(eventId: string) {
-  getPaddleSandboxConfig()
+  const { environment } = getPaddleConfig()
   const db = createServiceRoleClient()
   const { data: stored, error } = await db.from("billing_webhook_events").select("id,status")
     .eq("id", eventId).eq("provider", provider).eq("environment", environment).single()

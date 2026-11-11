@@ -6,7 +6,7 @@ import { AuthorizationError, getCurrentWorkspace, requireUser, requireWorkspaceR
 import { BillingConfigurationError, BillingMutationRejectedError, BillingScheduleUnavailableError, isBillingDeferred } from "@/lib/billing/config"
 import { getActiveProviderPrice, getProviderPriceByProviderId, isBillingInterval, isPaidPlanKey, type BillingInterval, type PaidPlanKey, type ProviderPriceMapping } from "@/lib/billing/price-mapping"
 import { canResumePendingCheckout } from "@/lib/billing/checkout-resumption"
-import { assertSubscriptionManagementEnabled, getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured, isSubscriptionManagementEnabled } from "@/lib/billing/providers"
+import { assertBillingCheckoutEnabled, canStartBillingCheckout, assertSubscriptionManagementEnabled, getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured, isSubscriptionManagementEnabled } from "@/lib/billing/providers"
 import { getWorkspaceEntitlements, getWorkspaceUsage, validatePlanChangeEligibility } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
 import type { Json } from "@/types/supabase"
@@ -570,6 +570,7 @@ export async function getPlanUsage() {
         workspace, entitlements, usage,
         billing: {
           canManage: membership.role === "owner",
+          canStartCheckout: membership.role === "owner" && presentation.billingConfigured && canStartBillingCheckout(membership.workspace_id),
           isProviderBacked: subscription.provider === provider && Boolean(subscription.provider_subscription_id),
           canManageProvider: isSubscriptionManagementEnabled() && membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id) && presentation.billingConfigured && !presentation.billingDeferred,
           canUsePortal: membership.role === "owner" && subscription.provider === provider && Boolean(subscription.provider_subscription_id && subscription.provider_customer_id) && presentation.billingConfigured && !presentation.billingDeferred,
@@ -657,6 +658,7 @@ export async function consumeBillingTransitionForCurrentUser(transitionId: strin
 export async function previewCheckout(targetPlan: string, billingInterval = "month") {
   try {
     const membership = await requireCurrentWorkspaceOwner()
+    assertBillingCheckoutEnabled(membership.workspace_id)
     const planKey = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
     if (!isPaidPlanKey(planKey) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
     const environment = getBillingProviderEnvironment()
@@ -716,6 +718,7 @@ export async function startCheckout(targetPlan: string, billingInterval = "month
   let transitionId: string | null = null
   try {
     const membership = await requireCurrentWorkspaceOwner()
+    assertBillingCheckoutEnabled(membership.workspace_id)
     const planKey = targetPlan?.trim() || await getConfiguredDefaultPlanKey()
     if (!isPaidPlanKey(planKey) || !isBillingInterval(billingInterval)) return { success: false, message: "That plan or billing cycle is not available." }
     const environment = getBillingProviderEnvironment()
