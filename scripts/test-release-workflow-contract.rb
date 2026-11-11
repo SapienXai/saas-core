@@ -37,6 +37,11 @@ expect_contract(quality["permissions"] == { "contents" => "read" }, "quality che
 quality_jobs = quality.fetch("jobs")
 full = quality_jobs.fetch("e2e-full")
 expect_contract(full["needs"] == "release-quality", "full browsers must depend on release quality")
+full_steps = full.fetch("steps")
+runtime_build = full_steps.index { |step| step["run"] == "pnpm run typecheck" }
+browser_run = full_steps.index { |step| step["run"] == "pnpm run e2e:full" }
+expect_contract(runtime_build && browser_run && runtime_build < browser_run, "the clean browser runner must build workspace runtime packages before Playwright")
+
 expect_contract(full["if"].include?("head.repo.full_name == github.repository") && full["if"].include?("'release-candidate'"), "full PR browser coverage must require a labeled same-repository PR")
 quality_jobs.each_value do |job|
   checkout = job.fetch("steps").find { |step| step["uses"] == "actions/checkout@v4" }
