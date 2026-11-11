@@ -1,8 +1,9 @@
-import { loadProductCspConnectSources, loadProductCspFrameSources, loadProductCspScriptSources } from './lib/content-security-policy.mjs'
+import { loadProductCspConnectSources, loadProductCspFrameSources, loadProductCspScriptSources, loadProductCspStyleSources } from './lib/content-security-policy.mjs'
 
 const productCspFrameSources = loadProductCspFrameSources()
 const productCspScriptSources = loadProductCspScriptSources()
 const productCspConnectSources = loadProductCspConnectSources()
+const productCspStyleSources = loadProductCspStyleSources()
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -49,7 +50,7 @@ const nextConfig = {
           "frame-ancestors 'self'",
           "object-src 'none'",
           `script-src 'self' 'unsafe-inline' ${productCspScriptSources.join(' ')}`.trim(),
-          "style-src 'self' 'unsafe-inline'",
+          `style-src 'self' 'unsafe-inline' ${productCspStyleSources.join(' ')}`.trim(),
           "img-src 'self' data: blob: https:",
           "font-src 'self' data:",
           "media-src 'self' blob: https:",

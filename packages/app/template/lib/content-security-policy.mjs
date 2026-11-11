@@ -119,3 +119,8 @@ export function loadProductCspScriptSources(configPath = DEFAULT_PRODUCT_SECURIT
 export function loadProductCspConnectSources(configPath = DEFAULT_PRODUCT_SECURITY_CONFIG) {
   return productCspConnectSources(loadProductSecurityConfiguration(configPath))
 }
+
+/** @param {string} [configPath] @returns {string[]} */
+export function loadProductCspStyleSources(configPath = DEFAULT_PRODUCT_SECURITY_CONFIG) {
+  return productCspSources(loadProductSecurityConfiguration(configPath), 'styleSrc')
+}
