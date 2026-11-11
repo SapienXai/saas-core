@@ -2,27 +2,40 @@
 
 SaaS Core 2.8.0 supports a fresh Neon Postgres installation. The Next.js
 application runs Better Auth against the same database and sends Core queries
-to the Neon Data API. The browser talks to the application. The database
+through a PostgREST endpoint. The browser talks to the application. The database
 connection and Data API signing key are server credentials.
 
 1. Create a clean Neon branch and database. Use its direct connection for
    `DATABASE_URL_UNPOOLED`. Set `NEXT_PUBLIC_SAAS_CORE_BACKEND=neon` in both
-   the build and runtime environment. Run `pnpm db:setup:neon` or
-   `node --env-file=.env.local scripts/setup-neon.mjs` from the application.
-   The setup checks the target, records migration checksums and leaves the
-   existing Core migrations intact.
-2. Enable the Neon Data API for the database with external JWT
-   authentication. Expose only `public`, skip creating the auth schema and
-   leave automatic default grants off. Set the anonymous role to `anon`.
-   After provisioning, grant `anon`, `authenticated` and `service_role` to
-   the Data API authenticator. These roles need no password or login.
-3. Generate a deployment-specific RSA key with at least 2048 bits. Store the
+   the build and runtime environment.
+2. Generate a deployment-specific RSA key with at least 2048 bits. Store the
    private PEM in `SAAS_CORE_DATA_SIGNING_KEY` as a server secret. Use
-   `https://<app-origin>/api/core-data/jwks` as the external provider JWKS URL.
-   Configure the same unique audience in Neon and `SAAS_CORE_DATA_AUDIENCE`.
-   Set `NEON_DATA_API_URL` to the Data API base URL for this branch. The
-   application signs short-lived tokens using the user from its verified
-   session or its server role, depending on the operation.
+   `SAAS_CORE_DATA_AUDIENCE` for a unique audience. The application signs
+   short-lived tokens for the verified user or the server role. The public
+   key is available at `https://<app-origin>/api/core-data/jwks` once the
+   application is running with the signing key.
+3. Choose an endpoint for `NEON_DATA_API_URL`:
+
+   - **PostgREST:** Run `pnpm db:setup:neon` (or
+     `node --env-file=.env.local scripts/setup-neon.mjs`) to apply the Core
+     schema. Connect PostgREST to the same Neon database with a dedicated
+     `LOGIN NOINHERIT` role. Grant only `anon`, `authenticated` and
+     `service_role` to that login. Configure `PGRST_DB_SCHEMAS=public`,
+     `PGRST_DB_ANON_ROLE=anon`, `PGRST_OPENAPI_MODE=disabled`, the public JWK
+     set in `PGRST_JWT_SECRET` and the same audience in `PGRST_JWT_AUD`.
+     Use verified TLS for the Neon connection and HTTPS for the endpoint
+     in production. The application allows HTTP on loopback for development.
+   - **Neon-managed Data API:** Before running the Core setup script, enable
+     the API with external JWT authentication, the public JWKS URL and the
+     same audience. Expose only `public`, skip creating the auth schema and
+     disable automatic default grants. Set the anonymous role to `anon`.
+     Then run the setup script. Grant `anon` and `service_role` to
+     `authenticator`; Neon already grants it `authenticated`. Refresh the
+     Data API schema cache and verify an authenticated and a server-role
+     query before using this endpoint.
+
+   The setup script checks the target, records migration checksums and
+   leaves the shared Core migration files intact.
 4. Set `DATABASE_URL` to the runtime Postgres connection on the same branch
    and `SAAS_CORE_AUTH_URL` to the canonical application origin. Set a random
    server-only `SAAS_CORE_AUTH_SECRET` of at least 32 bytes. Use a separate
@@ -52,9 +65,8 @@ The Data API roles must retain the Core grants and row-level policies from the
 setup script. Never grant `service_role` to `anon` or `authenticated`. Keep
 the signing key, Postgres URLs and Better Auth secret out of browser variables.
 
-The same contract can be exercised locally with PostgreSQL and PostgREST
-configured with the public JWK set, the same audience, and the three database
-roles. Local email delivery can use Mailpit.
+The same PostgREST contract can be exercised on a local PostgreSQL instance.
+Local email delivery can use Mailpit.
 
 This setup targets clean databases. Existing Supabase users, sessions,
 Workspace UUIDs and object storage require a separate migration plan and
@@ -64,6 +76,6 @@ consumer can continue using Supabase while planning that transition.
 See [Neon Data API external authentication](https://neon.com/docs/data-api/custom-authentication-providers)
 and [Neon Data API access control](https://neon.com/docs/data-api/access-control).
 
-The release verification ran against local PostgreSQL, PostgREST and Mailpit.
-Repeat the checks on the intended managed Neon branch, including the externally
-hosted JWKS configuration, before a production cutover.
+Before a production cutover, repeat the checks on the intended branch and
+endpoint. See the [2.8.0 release notes](./RELEASE-2.8.0.md) for the verification
+scope.
