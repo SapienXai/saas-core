@@ -177,12 +177,14 @@ describe("same-origin agent endpoint boundary", () => {
   it("allows trusted same-origin fallback signals and respects forwarded origin", () => {
     expect(isSameOriginAgentRequest(request({ referer: "https://app.example.test/workspace/projects" }))).toBe(true)
     expect(isSameOriginAgentRequest(request({ "sec-fetch-site": "same-origin" }))).toBe(true)
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "true")
     expect(isSameOriginAgentRequest(request({
       host: "internal.invalid",
       "x-forwarded-host": "app.example.test",
       "x-forwarded-proto": "https:",
       origin: "https://app.example.test",
     }, "http://internal.invalid:3000/api/agent"))).toBe(true)
+    vi.unstubAllEnvs()
   })
 
   it("does not accept a foreign referer even when the request has a same-origin fetch hint", () => {

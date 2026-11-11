@@ -34,14 +34,64 @@ example, the adapter may translate its immediate upgrade operation to Core's
 provider details stay under `lib/billing`; they do not appear in Core policy
 types.
 
+## Provider selection
+
+Set `SAAS_CORE_BILLING_PROVIDER=stripe` or `paddle` server-side. Existing
+consumers retain Stripe when the variable is absent. Configure a single
+checkout provider for a deployment. A Workspace already linked to a
+provider and environment keeps that association even after cancellation.
+Core permits a verified checkout replacement of a terminal subscription
+within its original provider and environment. Webhook workers can drain
+both configured providers while new checkouts use the selected adapter.
+Changing providers or modes
+for a linked Workspace requires a separately designed, audited migration.
+
+## Paddle
+
+For local Sandbox set `SAAS_CORE_BILLING_PROVIDER=paddle`,
+`SAAS_CORE_BILLING_MODE=enabled`, `PADDLE_ENVIRONMENT=sandbox`,
+`PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`, and
+`NEXT_PUBLIC_PADDLE_CLIENT_TOKEN`. Use a loopback `NEXT_PUBLIC_SITE_URL`
+and matching loopback server and public Supabase URLs. For an approved
+hosted environment bind `PADDLE_APP_ORIGIN` and `SAAS_CORE_APP_URL` to
+the exact HTTPS app origin. Keep server and browser Supabase origins equal.
+The billing webhook is `/api/billing/paddle/webhook` and Paddle.js checkout
+is `/billing/paddle/checkout`.
+
+Register each selected provider price in `billing_provider_prices` via
+privileged consumer tooling after validating its environment, product,
+currency, interval, and active state. The existing `billing:register-price`
+and `billing:reconcile` operator scripts are Stripe-specific. Paddle
+checkout and webhook runtime use the same canonical price registry and
+projection as Stripe.
+
+Subscribe the Sandbox destination to `transaction.created`,
+`transaction.completed`, `transaction.canceled`, `subscription.updated`,
+`subscription.activated`, `subscription.trialing`, `subscription.canceled`,
+`subscription.paused`, `subscription.past_due`, and `subscription.resumed`.
+Schedule the existing billing lifecycle endpoint and monitor failed receipts.
+A Paddle create is issued once per Core mutation. A signed notification can
+recover a missing transaction reference from a provider-confirmed API
+transaction and its durable Workspace, price, and interval intent. When
+Paddle returns no recoverable reference, an operator must investigate the
+unknown outcome before clearing the mutation.
+
+The hosted portal link requires a subscription linked to the Workspace's
+customer. A Sandbox portal token requires the authenticated owner's
+confirmed email to match the provider buyer email. The Live link prompts
+the buyer to authenticate with Paddle. Live Checkout defaults to disabled
+and configuration tests exercise account binding and an explicit Workspace
+pilot gate. Live acceptance requires provider-side checkout, webhooks and
+lifecycle evidence. See [Paddle Sandbox](https://developer.paddle.com/sdks/sandbox/)
+and [Paddle portal links](https://developer.paddle.com/build/customers/integrate-customer-portal/).
+
 ## Deferred provider mode
 
 Set `SAAS_CORE_BILLING_MODE=deferred` when a product intentionally pauses
 customer-initiated billing changes. Core blocks Checkout, Portal, and plan
 mutation calls while continuing to verify webhooks and reconcile subscriptions.
 The product keeps its local plan and entitlement projection. Unset the variable
-only for an environment that intentionally enables Stripe Sandbox or Live
-billing; this flag does not change the configured environment.
+only for an environment that intentionally enables provider billing; this flag does not change the configured environment.
 
 ## Stripe Checkout tax controls
 
@@ -147,8 +197,9 @@ authorization. Provider customer IDs, provider price IDs, environment, and
 plan mappings are resolved on the server.
 
 Webhook processing verifies the exact raw body before parsing or persistence,
-deduplicates provider event IDs, and ignores events older than the current
-projection timestamp. Unknown prices, workspaces, subscriptions, or
+deduplicates provider event IDs within their provider and environment, and
+re-reads the provider under a Workspace projection lease so delayed delivery
+cannot apply an older payload. Unknown prices, workspaces, subscriptions, or
 environments fail closed. A failed operation may be retried according to its
 durable state. An unknown operation result must be reconciled before another
 financial call is attempted, because an unavailable response does not prove
@@ -174,21 +225,23 @@ grants paid access.
 
 An immediate plan change becomes effective only after the verified provider
 event updates the local projection. A deferred downgrade or cancellation
-keeps current entitlements through its exact effective timestamp. Past-due
-recovery retains paid access for the configured grace period; expiry moves
-only effective entitlements to the fallback and preserves data, usage, and
-provider history. Resume clears a scheduled cancellation after provider
+keeps current entitlements through its exact effective timestamp. Past-due access is bounded by the recorded grace deadline and the verified
+local paid period. On expiry, effective entitlements fall back and existing
+data, usage, and provider history remain available to their owners. Resume clears a scheduled cancellation after provider
 confirmation.
 
-A same-plan billing-cycle change is recorded as `interval_change` and uses the
-normal preview, explicit confirmation, provider mutation, reconciliation, and
-durable transition path without downgrade eligibility or downgrade copy. The
-policy is intentionally asymmetric: month → year is immediate and uses
-`prorated_immediately`; year → month uses the provider's frequency replacement
-with `do_not_bill`, keeps the already-paid annual period and current annual
-entitlements through its exact period end, and projects the monthly interval
-locally for that boundary. It does not shorten the annual period or bill early.
-A same-interval request is rejected before provider work.
+A same-plan billing-cycle change uses the same preview, confirmation and
+journal as a plan change. Monthly-to-annual is immediate when provider
+payment and the resulting billing window can be verified. An annual-to-monthly
+transition must preserve the current annual entitlement boundary. Paddle
+Sandbox can schedule a pause at that boundary, then stage and resume once
+under a durable mutation claim. A completed recurring transaction must
+match the customer, subscription, items and billing window before the new
+period is granted. A resume with an uncertain result is reconciled through
+provider reads and may require operator intervention. Core rejects this
+Paddle cutover in Live pending provider certification. See
+[Paddle subscription updates](https://developer.paddle.com/api-reference/subscriptions/update-subscription/)
+and [Paddle renewal events](https://developer.paddle.com/webhooks/simulator/subscription-renewed/).
 
 For an explicit plan change, the managed action adds one provider-neutral
 policy step before the provider mutation:
@@ -244,10 +297,10 @@ product catalog
 ```
 
 The configured catalog fallback is used when a paid subscription is absent,
-past its local billing period, expired, paused, canceled, unknown, or mapped to an inactive plan. `null` is
+missing its local paid period, past that period, paused, canceled, unknown, or mapped to an inactive plan. `null` is
 the only unlimited limit; an omitted or malformed capability is unavailable.
 Non-manual paid projections also require a complete local provider identity;
-normal entitlement reads never call Stripe synchronously.
+normal entitlement reads use the local projection.
 
 The root migration and application template carry both durable billing
 persistence and the server-only entitlement lock boundary. The CLI delivers

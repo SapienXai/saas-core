@@ -23,11 +23,32 @@ for workflow_path in [RELEASE_WORKFLOW, QUALITY_WORKFLOW]
     NEXT_PUBLIC_SITE_URL NEXT_PUBLIC_APP_URL SAAS_CORE_ROOT_DOMAIN SAAS_CORE_APP_DOMAIN
     SAAS_CORE_APP_URL NEXT_PUBLIC_SAAS_CORE_APP_DOMAIN SAAS_CORE_RATE_LIMIT_SECRET
     SAAS_CORE_API_CREDENTIAL_PEPPER CRON_SECRET STRIPE_ENVIRONMENT STRIPE_SECRET_KEY
+    PADDLE_API_KEY PADDLE_WEBHOOK_SECRET NEXT_PUBLIC_PADDLE_CLIENT_TOKEN
     STRIPE_WEBHOOK_SECRET STRIPE_ACCOUNT_ID STRIPE_BILLING_PORTAL_CONFIGURATION_ID
   ]
   leaked_keys = forbidden_global_keys.select { |key| global_environment.key?(key) }
   expect_contract(leaked_keys.empty?, "#{File.basename(workflow_path)} must not globally inject runtime/test environment: #{leaked_keys.join(", ")}")
 end
+quality = YAML.load_file(QUALITY_WORKFLOW)
+quality_events = quality["on"] || quality[true]
+expect_contract(quality_events.dig("pull_request", "types").include?("labeled"), "release candidate label must start PR checks")
+expect_contract(quality_events.dig("push", "branches") == ["main"] && quality_events.key?("schedule"), "main and scheduled checks must remain enabled")
+expect_contract(quality["permissions"] == { "contents" => "read" }, "quality checks must remain read-only")
+quality_jobs = quality.fetch("jobs")
+full = quality_jobs.fetch("e2e-full")
+expect_contract(full["needs"] == "release-quality", "full browsers must depend on release quality")
+full_steps = full.fetch("steps")
+runtime_build = full_steps.index { |step| step["run"] == "pnpm run typecheck" }
+browser_run = full_steps.index { |step| step["run"] == "pnpm run e2e:full" }
+expect_contract(runtime_build && browser_run && runtime_build < browser_run, "the clean browser runner must build workspace runtime packages before Playwright")
+
+expect_contract(full["if"].include?("head.repo.full_name == github.repository") && full["if"].include?("'release-candidate'"), "full PR browser coverage must require a labeled same-repository PR")
+quality_jobs.each_value do |job|
+  checkout = job.fetch("steps").find { |step| step["uses"] == "actions/checkout@v4" }
+  expect_contract(checkout.dig("with", "ref").include?("head.sha") && checkout.dig("with", "persist-credentials") == false, "quality checks must verify candidate head without keeping checkout credentials")
+  expect_contract(job.fetch("steps").none? { |step| step["run"].to_s.include?("release:publish") }, "quality checks cannot publish artifacts")
+end
+
 jobs = workflow.fetch("jobs")
 validate = jobs.fetch("validate-release")
 publish = jobs.fetch("publish-npm")

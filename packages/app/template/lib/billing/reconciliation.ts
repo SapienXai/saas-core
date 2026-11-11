@@ -111,7 +111,10 @@ function dateOnly(value: string | null | undefined) {
 function periodFor(subscription: CanonicalSubscription, current: BillingSubscriptionProjectionRow, occurredAt: string) {
   const providerStart = dateOnly(subscription.currentBillingPeriod?.startsAt)
   const providerEnd = dateOnly(subscription.currentBillingPeriod?.endsAt)
-  if (providerStart && providerEnd) return { start: providerStart, end: providerEnd }
+  if (providerStart && providerEnd) {
+    // Legacy date columns cannot represent a valid period within one UTC day.
+    return providerEnd > providerStart ? { start: providerStart, end: providerEnd } : { start: null, end: null }
+  }
   if (current.current_period_start && current.current_period_end) {
     return { start: current.current_period_start, end: current.current_period_end }
   }

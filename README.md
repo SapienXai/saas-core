@@ -11,8 +11,8 @@ product receives the real application shell and consumes Core's canonical
 `hostname → Domain → PublicSite → Workspace → productKey` contract; it does
 not own hostname mappings.
 
-> Current coordinates: coordinated runtime/package release `2.6.2`; Core
-> schema compatibility `2.0`. The `saas-core-v2.6.2` tag is the release anchor.
+> This branch prepares runtime and packages `2.7.0` on Core schema `2.0`.
+> The latest published release is `2.6.2` at tag `saas-core-v2.6.2`.
 > This checkout's `main` branch is ahead of that tag and may contain unreleased
 > changes. Treat package metadata, release constants, tags and registry checks
 > as authority—not a historical paragraph in a release note.
@@ -184,7 +184,8 @@ source-map policy before a release can proceed.
 - [Security](docs/SECURITY.md)
 - [UI system](docs/UI-SYSTEM.md)
 - [Consumer upgrades](docs/UPGRADING.md)
-- [Current coordinated release](docs/RELEASE-2.6.2.md)
+- [Latest published release](docs/RELEASE-2.6.2.md)
+- [2.7.0 candidate](docs/RELEASE-2.7.0.md)
 
 ## Principles
 

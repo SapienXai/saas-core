@@ -34,13 +34,12 @@ be denied even if a caller knows another Workspace UUID.
 
 ## Public Workspace routing
 
-Public tenancy is selected only from the server request hostname. A single
-trusted extractor validates the first `x-forwarded-host` value and falls back
-to `Host` when the forwarded value is malformed; it rejects schemes,
-credentials, paths, queries, invalid labels, and unsafe IP forms. `proxy.ts`
-and the server-only public resolver consume that same boundary. Query
-parameters, cookies, form fields, and client-supplied Workspace IDs/slugs have
-no authority over public tenant selection.
+The shared extractor uses the ingress `Host` by default and validates its
+shape before the proxy or resolver selects a public Workspace. A deployment
+can opt into the first `X-Forwarded-Host` value with
+`SAAS_CORE_TRUST_FORWARDED_HOST=true` when the ingress replaces that header and
+blocks direct access to the origin. Query parameters, cookies, form fields,
+and client-supplied Workspace IDs have no authority over public tenant selection.
 
 All public hosts resolve through the exact persisted chain
 `workspace_domains → public_sites → workspaces`. Platform rows must be active
@@ -55,7 +54,7 @@ are never sent to the public client. The resolver performs no provider or DNS
 calls during public page resolution.
 
 Canonical app ownership is separate from reserved public/system ownership.
-Tenant/custom hosts redirect `/app/*`, `/manage`, `/platform`, and Core auth or
+Tenant/custom hosts redirect `/app/*`, `/manage`, `/platform`, Paddle checkout, and Core auth or
 onboarding paths to the canonical app domain; product-owned public paths stay
 on their public hostname. Standard URL pathname normalization is performed
 before route ownership checks, preventing dot-segment bypasses. `/api`,
@@ -98,10 +97,11 @@ development operator and never return secret values.
 
 ## Billing and providers
 
-Stripe webhook requests require signature validation against the exact raw
-request body. Provider events are
-idempotent and ordered before local subscription state changes. Entitlements
-come from the local subscription projection, not a browser callback. Live
+Stripe and Paddle webhook requests require signature validation against the
+raw request body. Core stores provider- and environment-scoped receipts with
+leases and retry limits. The worker re-reads the authoritative subscription
+under a Workspace projection lease and retains the newest event marker. The
+verified local subscription projection controls entitlement grants. Live
 provider mutations and reconciliation require explicit environment guards.
 Vercel domain operations are isolated behind a server-only provider module;
 provider verification cannot be marked complete by the browser.

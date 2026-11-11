@@ -184,7 +184,11 @@ For check-then-insert quota races, call
 `public.lock_workspace_entitlement(workspace_id, capability)` from a
 product-owned transaction RPC, then count and insert the product row in that
 same transaction. Core holds the workspace/capability lock; the product owns
-the table query and write. Errors are structured (`PLAN_LIMIT_REACHED`,
+the table query and write. Use the transaction for every quota-consuming
+write path. After a downgrade or cancellation, leave existing resources in
+place and reject creation while the active count meets or exceeds the new
+limit. Consumers define resource status, count, and remediation workflows.
+Errors are structured (`PLAN_LIMIT_REACHED`,
 `FEATURE_NOT_AVAILABLE`, `INVALID_PLAN`, or `SUBSCRIPTION_REQUIRED`) and can
 be serialized with `serializeEntitlementError()`.
 

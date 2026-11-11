@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { classifyHostname, getRequestHostname, getTrustedRequestHost } from "../lib/domains/hostname"
 import { getAuthRedirectOrigin, getAuthRedirectUrl, getRequestUrl } from "../lib/request-url"
 
@@ -7,10 +7,12 @@ const environment = process.env as Record<string, string | undefined>
 
 afterEach(() => {
   environment.NODE_ENV = originalNodeEnv
+  vi.unstubAllEnvs()
 })
 
 describe("trusted request hostname boundary", () => {
-  it("uses the first forwarded host and preserves its port for development URLs", () => {
+  it("uses the first forwarded host when a trusted proxy is configured", () => {
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "true")
     const request = new Request("http://0.0.0.0:3000/app?next=%2Fapp", {
       headers: {
         host: "fallback.example.com",
@@ -25,6 +27,7 @@ describe("trusted request hostname boundary", () => {
   })
 
   it("falls back to Host when the forwarded value is malformed", () => {
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "true")
     const request = new Request("http://0.0.0.0:3000/", {
       headers: {
         host: "alpha.example.com",
@@ -33,6 +36,32 @@ describe("trusted request hostname boundary", () => {
     })
 
     expect(getRequestHostname(request)).toBe("alpha.example.com")
+  })
+
+  it("ignores an injected forwarded hostname by default", () => {
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "")
+    const request = new Request("http://localhost/", {
+      headers: { host: "alpha.example.com", "x-forwarded-host": "other.example.com", "x-forwarded-proto": "https" },
+    })
+    expect(getRequestHostname(request)).toBe("alpha.example.com")
+    expect(getRequestUrl(request).origin).toBe("http://alpha.example.com")
+  })
+
+  it("keeps redirect authority when a path looks like a protocol-relative URL", () => {
+    const request = new Request("http://0.0.0.0:3000//attacker.example/path?keep=1#anchor", {
+      headers: { host: "alpha.example.com" },
+    })
+    expect(getRequestUrl(request).href).toBe("http://alpha.example.com//attacker.example/path?keep=1#anchor")
+    environment.NODE_ENV = "production"
+    expect(getAuthRedirectUrl(request).href).toBe("http://0.0.0.0:3000//attacker.example/path?keep=1#anchor")
+  })
+
+  it("keeps the request scheme when the trusted proxy protocol is invalid", () => {
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "true")
+    const request = new Request("https://preview.example.test/login", {
+      headers: { host: "preview.example.test", "x-forwarded-proto": "javascript, http" },
+    })
+    expect(getAuthRedirectUrl(request).href).toBe("https://preview.example.test/login")
   })
 
   it("preserves a private LAN host and the active development port", () => {

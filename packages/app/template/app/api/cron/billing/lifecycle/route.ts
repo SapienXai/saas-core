@@ -1,4 +1,7 @@
-import { expirePaymentGracePeriods, processDueStripeBillingWebhookEvents } from "@/lib/billing/lifecycle"
+import { isStripeWebhookConfigured } from "@/lib/billing/config"
+import { isPaddleBillingConfigured } from "@/lib/billing/providers/paddle"
+import { expirePaymentGracePeriods, processDuePaddleBillingWebhookEvents, processDueStripeBillingWebhookEvents } from "@/lib/billing/lifecycle"
+import { processDuePaddleIntervalChanges } from "@/lib/billing/paddle-interval-cutover"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -14,11 +17,15 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [gracePeriods, webhooks] = await Promise.all([
+    const paddleConfigured = isPaddleBillingConfigured()
+    const [gracePeriods, stripe, paddle] = await Promise.all([
       expirePaymentGracePeriods(),
-      processDueStripeBillingWebhookEvents(),
+      isStripeWebhookConfigured() ? processDueStripeBillingWebhookEvents() : null,
+      paddleConfigured ? processDuePaddleBillingWebhookEvents() : null,
     ])
-    return Response.json({ ok: true, ...gracePeriods, webhooks })
+    const webhooks = paddle ?? stripe
+    const intervalChanges = paddleConfigured ? await processDuePaddleIntervalChanges() : null
+    return Response.json({ ok: true, ...gracePeriods, webhooks, ...(stripe && paddle && { stripeWebhooks: stripe }), ...(intervalChanges && { intervalChanges }) })
   } catch (error) {
     console.error("Billing lifecycle cron failed", { error: error instanceof Error ? error.message : String(error) })
     return Response.json({ error: "Billing lifecycle could not be completed." }, { status: 500 })

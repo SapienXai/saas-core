@@ -15,6 +15,22 @@ export class BillingConfigurationError extends Error {
   }
 }
 
+export class BillingScheduleUnavailableError extends Error {
+  constructor() {
+    super("This change cannot be scheduled while preserving your current paid billing period.")
+    this.name = "BillingScheduleUnavailableError"
+  }
+}
+
+export class BillingMutationRejectedError extends Error {
+  constructor(providerCode: string) {
+    super(/payment|declin/.test(providerCode)
+      ? "The payment provider could not collect the payment. Review your payment method and try again."
+      : "The payment provider rejected this change. Refresh and review your subscription.")
+    this.name = "BillingMutationRejectedError"
+  }
+}
+
 export function isBillingDeferred() {
   return process.env.SAAS_CORE_BILLING_MODE === "deferred"
 }
@@ -84,6 +100,15 @@ export function assertStripeBillingReady() {
 export function isStripeBillingConfigured() {
   try {
     return Boolean(assertStripeBillingReady().portalConfigurationId)
+  } catch {
+    return false
+  }
+}
+
+export function isStripeWebhookConfigured() {
+  try {
+    getStripeBillingConfig()
+    return true
   } catch {
     return false
   }

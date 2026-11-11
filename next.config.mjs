@@ -38,9 +38,10 @@ const nextConfig = {
       { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
     ]
 
+    let paddleHeaders = null
     if (process.env.NODE_ENV === 'production') {
       headers.push({ key: 'Strict-Transport-Security', value: 'max-age=31536000' })
-      headers.push({
+      const contentSecurityPolicy = (paddleOrigins = []) => ({
         key: 'Content-Security-Policy',
         value: [
           "default-src 'self'",
@@ -48,20 +49,33 @@ const nextConfig = {
           "form-action 'self'",
           "frame-ancestors 'self'",
           "object-src 'none'",
-          `script-src 'self' 'unsafe-inline' ${productCspScriptSources.join(' ')}`.trim(),
-          "style-src 'self' 'unsafe-inline'",
+          `script-src 'self' 'unsafe-inline' ${[...productCspScriptSources, ...(paddleOrigins.length ? ['https://cdn.paddle.com'] : [])].join(' ')}`.trim(),
+          `style-src 'self' 'unsafe-inline'${paddleOrigins.length ? ' https://cdn.paddle.com' : ''}`,
           "img-src 'self' data: blob: https:",
           "font-src 'self' data:",
           "media-src 'self' blob: https:",
-          `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://tiles.openfreemap.org ${productCspConnectSources.join(' ')}`.trim(),
-          `frame-src 'self' ${productCspFrameSources.join(' ')}`.trim(),
+          `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://tiles.openfreemap.org ${[...productCspConnectSources, ...paddleOrigins].join(' ')}`.trim(),
+          `frame-src 'self' ${[...productCspFrameSources, ...paddleOrigins.slice(0, 1)].join(' ')}`.trim(),
           "worker-src 'self' blob:",
           "manifest-src 'self'",
         ].join('; '),
       })
+      if (process.env.SAAS_CORE_BILLING_PROVIDER?.trim() === 'paddle') {
+        const prefix = process.env.PADDLE_ENVIRONMENT === 'sandbox' ? 'sandbox-' : ''
+        paddleHeaders = [contentSecurityPolicy([
+          `https://${prefix}buy.paddle.com`,
+          `https://${prefix}api.paddle.com`,
+          'https://cdn.paddle.com',
+        ])]
+      }
+      headers.push(contentSecurityPolicy())
     }
 
-    return [{ source: '/(.*)', headers }]
+    // Next uses the last matching value for the same header name.
+    return [{ source: '/(.*)', headers }, ...(paddleHeaders ? [{
+      source: '/billing/paddle/checkout',
+      headers: paddleHeaders,
+    }] : [])]
   },
 }
 

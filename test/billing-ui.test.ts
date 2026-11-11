@@ -97,8 +97,10 @@ describe("provider-neutral billing UI", () => {
     expect(source).not.toContain("@paddle/paddle-js")
     expect(actions).toContain("reconcileBillingCheckoutSession")
     expect(webhook).toContain("A completed Checkout return never grants access")
-    expect(webhook).toContain("validateInitialCheckoutCorrelation")
-    expect(webhook).toContain("claimWorkspaceProjection")
+    expect(webhook).toContain("applyProviderSubscriptionProjection")
+    const projection = read("lib/billing/subscription-projection.ts")
+    expect(projection).toContain("validateInitialCheckoutCorrelation")
+    expect(projection).toContain("claimWorkspaceProjection")
   })
 
   it("resumes a matching pending hosted Checkout before the duplicate-mutation guard", () => {

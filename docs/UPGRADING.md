@@ -10,8 +10,7 @@ on Core schema compatibility coordinate `2.0`. Its packed consumer contract
 delivers the additive billing sources listed in
 [`RELEASE-2.6.0.md`](./RELEASE-2.6.0.md) plus the Checkout lifecycle and
 scheduled-downgrade runtime fixes documented in
-[`RELEASE-2.6.2.md`](./RELEASE-2.6.2.md). The tag matches the current canonical
-source set. Package packing and CLI `init`/`update` deliver sources but never
+[`RELEASE-2.6.2.md`](./RELEASE-2.6.2.md). The tag identifies the published source set. Package packing and CLI `init`/`update` deliver sources but never
 execute SQL; each consumer owns the controlled apply and verification
 workstream. The Plan Catalog guide is shipped in the Core package as
 `docs/PLAN-CATALOG.md`. The release evidence and certification boundary are
@@ -19,7 +18,7 @@ recorded in the versioned release notes, with the prior release retained in
 [`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md), and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
-## Unreleased Checkout reconciliation follow-up on `main`
+## Upgrade to the 2.7.0 candidate
 
 Post-2.6.2 source adds a fail-closed fast path for Checkout returns: it reuses
 the local subscription only when Workspace, Stripe environment, subscription,
@@ -30,9 +29,21 @@ already verified Checkout snapshot through validation instead of retrieving
 the same Session twice. This does not change the database schema or grant
 entitlement from browser state. The shared billing success experience now uses
 Radix's managed dialog layer, keeping close and action controls inside the
-active modal's pointer and focus boundary when shown above another dialog. The
-patch is currently on `main` after the 2.6.2 tag; it is not part of the
-published 2.6.2 package.
+active modal's pointer and focus boundary when shown above another dialog. The 2.7.0 candidate carries these post-tag changes.
+
+Review `saas-core diff` and `saas-core update --dry-run` against the candidate
+source or packed CLI. Apply the managed source update and then apply the new
+flat migration through the consumer's controlled Supabase workflow. Verify
+active provider rows have a current period end timestamp or legacy UTC end
+date. Reconcile incomplete rows through their original provider. The migration
+changes effective entitlement evaluation and preserves stored subscriptions.
+
+Core now resolves the ingress `Host` by default. Deployments behind a reverse
+proxy that deliberately rewrites `Host` may set
+`SAAS_CORE_TRUST_FORWARDED_HOST=true` when their ingress replaces client
+forwarding headers and prevents direct access to the application origin.
+Existing product-owned environment templates stay intact on update. Add
+[Paddle settings](./BILLING-ARCHITECTURE.md#paddle) manually if adopting Paddle.
 
 The managed entitlement runtime imports the product-owned server extension
 `src/product/usage.ts`. Fresh consumers receive a neutral resolver registry;
@@ -260,7 +271,7 @@ For every schema update:
    product vocabulary.
 
 Core runtime version and schema compatibility coordinate are separate. The
-current runtime is `2.6.2` and the compatibility coordinate remains `2.0` even
+candidate runtime is `2.7.0` and the compatibility coordinate remains `2.0` even
 though the release delivers additive billing, entitlement, and plan-catalog
 sources. `doctor`
 reports Core source readiness, consumer presence/hash readiness, and manifest

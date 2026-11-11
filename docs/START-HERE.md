@@ -6,17 +6,14 @@ of you.
 
 ## Coordinates and release truth
 
-The coordinated runtime/package release in this checkout is `2.6.2`. The
-database compatibility coordinate is `2.0`; it is not the same thing as the
-package version. The `saas-core-v2.6.2` tag is the release anchor, while the
-checked-out `main` branch can contain post-tag, unreleased changes. Treat
-`package.json`, `scripts/release-constants.mjs`, package manifests and the
-consumer manifest as authority; prose and historical release notes are
-context.
+The candidate runtime and package coordinate in this checkout is `2.7.0`.
+The Core schema compatibility coordinate is `2.0`. Registry install examples
+still use the published `2.6.2` release anchored by `saas-core-v2.6.2`.
+See [RELEASE-2.7.0.md](./RELEASE-2.7.0.md) for local candidate installation.
 
 ```mermaid
 flowchart LR
-  Release[Runtime package release 2.6.2] -. separate coordinate .-> Schema[Core schema compatibility 2.0]
+  Release[Runtime package candidate 2.7.0] -. separate coordinate .-> Schema[Core schema compatibility 2.0]
   Schema --> Source[Source-only migrations]
   Release --> Template[Canonical app template]
   Template --> Consumer[Generated product consumer]

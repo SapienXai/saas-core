@@ -59,7 +59,7 @@ Public routing now stops at the canonical Core domain boundary:
 
 ```text
 HTTP request
-  → trusted x-forwarded-host/Host boundary
+  → ingress Host boundary
   → canonical normalizeHostname()
   → resolveHost()
   → Domain → PublicSite → Workspace → productKey
@@ -155,7 +155,7 @@ authorization remains in Core/product server boundaries.
 
 ## Infrastructure boundaries
 
-Stripe is a billing provider, not an entitlement authority. Signed webhook
+Stripe and Paddle supply billing evidence. Signed webhook
 events are stored idempotently and update local subscription state only after
 validation. `lib/entitlements.ts` reads keyed `features`, `limits`, and
 `workspace_usage_periods.usage`; Core never requires Free/Starter/Pro/Business,
@@ -197,7 +197,7 @@ domains, Platform Control, and source-derived interaction surfaces. It has a
 generic Workspace plus Projects model and does not require industry-specific
 concepts to boot.
 
-The coordinated runtime is `2.6.2`; the Core schema compatibility coordinate
+The candidate runtime is `2.7.0`; the Core schema compatibility coordinate
 remains `2.0`. The tagged release delivers the additive, Core-managed migration
 sources `supabase/migrations/20260909094344_reusable_billing_persistence.sql`,
 `supabase/migrations/20260912100000_reusable_entitlement_enforcement.sql`,

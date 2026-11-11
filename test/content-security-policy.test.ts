@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { loadProductCspFrameSources, productCspFrameSources } from '../lib/content-security-policy.mjs'
+import { loadProductCspFrameSources, loadProductCspStyleSources, productCspFrameSources } from '../lib/content-security-policy.mjs'
 
 const temporaryDirectories: string[] = []
 
@@ -25,6 +25,17 @@ describe('product CSP frame sources', () => {
     expect(() => productCspFrameSources({ contentSecurityPolicy: { frameSrc: ['http://video.example'] } })).toThrow()
     expect(() => productCspFrameSources({ contentSecurityPolicy: { frameSrc: ['https://video.example/path'] } })).toThrow()
     expect(() => productCspFrameSources({ contentSecurityPolicy: { frameSrc: ['https://*.example'] } })).toThrow()
+  })
+
+  it('keeps the product-owned Next config style source export compatible', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'saas-core-csp-'))
+    temporaryDirectories.push(directory)
+    const configPath = path.join(directory, 'security-config.json')
+    expect(loadProductCspStyleSources(configPath)).toEqual([])
+    writeFileSync(configPath, JSON.stringify({ contentSecurityPolicy: { styleSrc: ['https://styles.example', 'https://styles.example'] } }))
+    expect(loadProductCspStyleSources(configPath)).toEqual(['https://styles.example'])
+    writeFileSync(configPath, JSON.stringify({ contentSecurityPolicy: { styleSrc: ['https://*.styles.example'] } }))
+    expect(() => loadProductCspStyleSources(configPath)).toThrow(/styleSrc wildcard/)
   })
 
   it('loads an optional product security config and fails clearly on invalid JSON', () => {

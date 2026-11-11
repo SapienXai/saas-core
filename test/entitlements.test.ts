@@ -108,12 +108,16 @@ describe("workspace entitlement policy", () => {
       providerCustomerId: "cus_fixture",
       providerSubscriptionId: "sub_fixture",
       providerPriceId: "price_fixture",
+      currentPeriodEndAt: "2026-10-01T00:00:00.000Z",
+      now: exactBoundary,
     } as const
 
     expect(resolveEffectiveEntitlementPlan(stripe)).toBe("paid")
+    expect(resolveEffectiveEntitlementPlan({ ...stripe, currentPeriodEndAt: null })).toBe("default")
+    expect(resolveEffectiveEntitlementPlan({ ...stripe, currentPeriodEndAt: "malformed" })).toBe("default")
     expect(resolveEffectiveEntitlementPlan({ ...stripe, providerPriceId: null })).toBe("default")
     expect(resolveEffectiveEntitlementPlan({ ...stripe, provider: "Invalid Provider" })).toBe("default")
-    expect(resolveEffectiveEntitlementPlan({ ...stripe, provider: "other-provider" })).toBe("paid")
+    expect(resolveEffectiveEntitlementPlan({ ...stripe, provider: "other-provider" })).toBe("default")
     expect(resolveEffectiveEntitlementPlan({ ...stripe, source: "legacy" })).toBe("default")
   })
 
@@ -128,6 +132,7 @@ describe("workspace entitlement policy", () => {
       fallbackPlanKey: "free",
       status: "active",
       providerPriceId: "pri_current",
+      currentPeriodEndAt: "2026-10-01T00:00:00.000Z",
       scheduledPlanKey: "starter",
       scheduledPlanAt: "2099-01-01T00:00:00.000Z",
       scheduledProviderPriceId: "pri_target",

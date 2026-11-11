@@ -304,6 +304,7 @@ export type EffectiveEntitlementPlanInput = {
   providerCustomerId?: string | null
   providerSubscriptionId?: string | null
   providerPriceId?: string | null
+  currentPeriodStartAt?: string | null
   currentPeriodEndAt?: string | null
   initialTrialEndsAt?: string | null
   fallbackPlanKey?: string | null
@@ -324,7 +325,8 @@ function hasTrustedProviderProjection(input: EffectiveEntitlementPlanInput) {
       && isValidTimestamp(input.initialTrialEndsAt)
       && new Date(input.initialTrialEndsAt).getTime() > effectiveNow(input.now).getTime()
   }
-  const providerProjection = input.source === "provider" && typeof input.provider === "string" && /^[a-z][a-z0-9_-]{0,79}$/.test(input.provider)
+  const providerProjection = (input.source === "provider" && (input.provider === "stripe" || input.provider === "paddle")) ||
+    (input.source === "paddle" && input.provider === "paddle")
   if (input.source !== undefined && !providerProjection) return false
 
   const providerFieldsWereSupplied = [
@@ -360,10 +362,15 @@ export function resolveEffectiveEntitlementPlan(input: EffectiveEntitlementPlanI
 
   const purchased = validPlanKey(input.subscriptionPlanKey)
   if (!purchased) return fallback
+  if (input.source === "system") return fallback
   if (purchased !== fallback && !hasTrustedProviderProjection(input)) return fallback
 
   const now = effectiveNow(input.now)
-  if (purchased !== fallback && input.currentPeriodEndAt && (!isValidTimestamp(input.currentPeriodEndAt) || isScheduledPlanEffective(input.currentPeriodEndAt, now))) return fallback
+  const providerBacked = input.source === "provider" || input.source === "paddle"
+  if ((providerBacked || input.currentPeriodEndAt) &&
+      (!isValidTimestamp(input.currentPeriodEndAt) || isScheduledPlanEffective(input.currentPeriodEndAt, now))) return fallback
+  if (providerBacked && input.currentPeriodStartAt &&
+      (!isValidTimestamp(input.currentPeriodStartAt) || new Date(input.currentPeriodStartAt).getTime() > now.getTime())) return fallback
   if (status === "past_due") {
     // A past-due subscription without a valid boundary cannot grant an
     // unbounded grace period.
@@ -376,7 +383,9 @@ export function resolveEffectiveEntitlementPlan(input: EffectiveEntitlementPlanI
     // A scheduled cancellation without a trustworthy boundary cannot grant
     // paid access indefinitely.
     if (!isValidTimestamp(cancellationAt) || isScheduledPlanEffective(cancellationAt, now)) return fallback
+    return purchased
   }
+  if (input.scheduledChangeAction === "resume") return purchased
 
   const hasScheduledMapping = input.scheduledPlanKey != null || input.scheduledPlanAt != null
   if (hasScheduledMapping) {
@@ -621,6 +630,7 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
     providerCustomerId: textValue(subscription.provider_customer_id),
     providerSubscriptionId: textValue(subscription.provider_subscription_id),
     providerPriceId: textValue(subscription.provider_price_id),
+    currentPeriodStartAt: textValue(subscription.current_period_start_at) || textValue(subscription.current_period_start),
     currentPeriodEndAt: textValue(subscription.current_period_end_at) || textValue(subscription.current_period_end),
     initialTrialEndsAt: textValue(subscription.initial_trial_ends_at),
     fallbackPlanKey: fallback,
@@ -640,9 +650,9 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
       scheduledPlanKey &&
       scheduledAt &&
       isScheduledPlanPending(scheduledAt, now) &&
-      !["cancel", "pause", "resume"].includes(scheduledAction || ""),
+      !subscription.cancel_at_period_end && !["cancel", "pause", "resume"].includes(scheduledAction || ""),
     )
-    const effectiveProviderPriceId = scheduledPlanKey === resolvedKey && isScheduledPlanEffective(scheduledAt, now)
+    const effectiveProviderPriceId = !subscription.cancel_at_period_end && !scheduledAction && scheduledPlanKey === resolvedKey && isScheduledPlanEffective(scheduledAt, now)
       ? scheduledProviderPriceId
       : providerPriceId
     const findActiveMapping = async (planKey: string | null, priceId: string | null) => {
@@ -701,7 +711,7 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
   const scheduledPlanKey = validPlanKey(subscription.scheduled_plan_key)
   const scheduledPlanAt = textValue(subscription.scheduled_plan_at)
   const scheduledChangeAt = textValue(subscription.scheduled_change_at) || textValue(subscription.scheduled_effective_at)
-  const scheduledIsVisible = !providerMappingUnavailable && !subscription.grace_expired && status !== "paused" && status !== "canceled" && isScheduledPlanPending(scheduledPlanAt, now)
+  const scheduledIsVisible = !subscription.override_id && !providerMappingUnavailable && !subscription.grace_expired && status !== "paused" && status !== "canceled" && isScheduledPlanPending(scheduledPlanAt, now)
   const scheduled = scheduledIsVisible && scheduledPlanKey && scheduledPlanAt
     ? activePlans.find((item: any) => item.key === scheduledPlanKey)
     : null
@@ -734,8 +744,8 @@ export const getWorkspacePlan = cache(async function getWorkspacePlan(workspaceI
       scheduledChangeAction: textValue(subscription.scheduled_change_action),
       scheduledChangeAt,
       overrideId: subscription.override_id,
-      scheduledPlanKey: subscription.grace_expired ? null : subscription.scheduled_plan_key || null,
-      scheduledPlanAt: subscription.grace_expired ? null : subscription.scheduled_plan_at || null,
+      scheduledPlanKey: subscription.override_id || subscription.grace_expired ? null : subscription.scheduled_plan_key || null,
+      scheduledPlanAt: subscription.override_id || subscription.grace_expired ? null : subscription.scheduled_plan_at || null,
       paymentFailureStartedAt: subscription.payment_failure_started_at || null,
       paymentGraceEndsAt: subscription.payment_grace_ends_at || null,
       billingIssueCode: subscription.billing_issue_code || (subscription.grace_expired ? "grace_expired" : providerMappingUnavailable ? "invalid_provider_mapping" : invalidResolvedPlan ? "invalid_plan" : null),

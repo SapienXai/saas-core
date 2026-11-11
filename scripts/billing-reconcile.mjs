@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { createClient } from "@supabase/supabase-js"
 import Stripe from "stripe"
+import { hasMatchingPaidStripePeriod } from "../lib/billing/stripe-paid-period.mjs"
 
 const argumentsList = process.argv.slice(2)
 const dryRun = argumentsList.includes("--dry-run") || !argumentsList.includes("--apply") || process.env.BILLING_RECONCILE_DRY_RUN === "true"
@@ -47,6 +48,11 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 })
 const stripe = new Stripe(apiKey, { apiVersion: "2026-09-30.endive", maxNetworkRetries: 2, timeout: 20_000 })
+const account = await stripe.accounts.retrieve(null).catch(() => null)
+if (!account || account.id !== expectedAccountId) {
+  console.error("Stripe account binding could not be verified. No local state was changed.")
+  process.exit(1)
+}
 
 const { data: workspace, error: workspaceError } = await supabase
   .from("workspaces")
@@ -60,7 +66,7 @@ if (workspaceError || !workspace) {
 
 const { data: localState, error: stateError } = await supabase
   .from("workspace_subscriptions")
-  .select("workspace_id, provider, provider_environment, provider_subscription_id")
+  .select("workspace_id, provider, provider_environment, provider_subscription_id, provider_customer_id, billing_projection_revision")
   .eq("workspace_id", workspace.id)
   .single()
 if (stateError || !localState?.provider_subscription_id || localState.provider !== "stripe") {
@@ -82,6 +88,11 @@ try {
 }
 if (subscription.livemode !== (environment === "live")) {
   console.error("Stripe subscription mode does not match STRIPE_ENVIRONMENT. No local state was changed.")
+  process.exit(1)
+}
+const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id
+if (subscription.id !== localState.provider_subscription_id || !customerId || customerId !== localState.provider_customer_id) {
+  console.error("The Stripe subscription or customer does not match the stored Workspace link. No local state was changed.")
   process.exit(1)
 }
 const metadata = subscription.metadata || {}
@@ -127,8 +138,8 @@ switch (subscription.status) {
 }
 
 let schedule = typeof subscription.schedule === "object" ? subscription.schedule : null
-if (schedule?.status === "active" && (schedule.metadata?.billing_provider !== "stripe" || schedule.metadata?.billing_integration !== "placedj")) {
-  console.error("Stripe subscription has a schedule that is not managed by PlaceDJ. No local state was changed.")
+if (schedule?.status === "active" && (schedule.metadata?.billing_provider !== "stripe" || !["saas-core", "placedj"].includes(schedule.metadata?.billing_integration))) {
+  console.error("Stripe subscription has a schedule that is not managed by SaaS Core. No local state was changed.")
   process.exit(1)
 }
 if (schedule?.status !== "active") schedule = null
@@ -137,7 +148,7 @@ const futurePhase = currentPhase ? schedule.phases.find((phase) => phase.start_d
 let scheduledPlan = null
 if (futurePhase) {
   if (futurePhase.items.length !== 1 || (futurePhase.items[0]?.quantity ?? 1) !== 1) {
-    console.error("The PlaceDJ schedule contains an unsupported future phase. No local state was changed.")
+    console.error("The Stripe schedule contains an unsupported future phase. No local state was changed.")
     process.exit(1)
   }
   const targetPrice = futurePhase.items[0].price
@@ -156,12 +167,8 @@ if (futurePhase) {
   scheduledPlan = { ...targetMapping, providerPriceId: targetPriceId, effectiveAt: new Date(futurePhase.start_date * 1000).toISOString() }
 }
 
-const configuredDefault = await supabase.rpc("core_default_plan_key")
-const configuredDefaultKey = Array.isArray(configuredDefault.data) ? configuredDefault.data[0]?.core_default_plan_key : configuredDefault.data?.core_default_plan_key || configuredDefault.data
-const fallbackPlan = configuredDefaultKey
-  ? await supabase.from("plans").select("key").eq("key", configuredDefaultKey).eq("active", true).maybeSingle()
-  : await supabase.from("plans").select("key").eq("active", true).order("sort_order", { ascending: true }).order("key", { ascending: true }).limit(1).maybeSingle()
-if (fallbackPlan.error || !fallbackPlan.data) {
+const configuredDefault = await supabase.rpc("get_core_default_plan_key")
+if (configuredDefault.error || typeof configuredDefault.data !== "string" || !configuredDefault.data) {
   console.error("No active fallback plan is configured. No local state was changed.")
   process.exit(1)
 }
@@ -170,17 +177,44 @@ const periodStartAt = item.current_period_start ? new Date(item.current_period_s
 const periodEndAt = item.current_period_end ? new Date(item.current_period_end * 1000).toISOString() : null
 const { data: latestState, error: latestStateError } = await supabase
   .from("workspace_subscriptions")
-  .select("provider_status, current_period_start_at, current_period_end_at, payment_failure_started_at, payment_grace_ends_at, billing_projection_revision")
+  .select("current_period_end_at, current_period_end, payment_failure_started_at, payment_grace_ends_at, billing_projection_revision")
   .eq("workspace_id", workspace.id)
   .single()
-if (latestStateError || !latestState) {
+if (latestStateError || !latestState || latestState.billing_projection_revision !== localState.billing_projection_revision) {
   console.error("Could not read the current Workspace billing projection. No local state was changed.")
   process.exit(1)
+}
+if (["active", "trialing", "past_due"].includes(status)) {
+  const previousEnd = Date.parse(latestState.current_period_end_at || latestState.current_period_end || "")
+  const start = Date.parse(periodStartAt || "")
+  const end = Date.parse(periodEndAt || "")
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    console.error("The Stripe subscription has no valid billing period. No local state was changed.")
+    process.exit(1)
+  }
+  const advancesPeriod = status !== "trialing" && (!Number.isFinite(previousEnd) || start >= previousEnd || end > previousEnd)
+  if (advancesPeriod) {
+    let paid = false
+    try {
+      paid = start <= Date.now() && await hasMatchingPaidStripePeriod(stripe, {
+        id: subscription.id, customerId, livemode: subscription.livemode,
+        currentBillingPeriod: { startsAt: periodStartAt, endsAt: periodEndAt },
+        items: [{ id: item.id, priceId: providerPriceId, productId: providerProductId, quantity: 1 }],
+      })
+    } catch {
+      console.error("Could not verify Stripe invoice evidence. No local state was changed.")
+      process.exit(1)
+    }
+    if (!paid) {
+      console.error("The new Stripe billing period has no verified paid invoice. No local state was changed.")
+      process.exit(1)
+    }
+  }
 }
 const failureStartedAt = status === "past_due" ? latestState.payment_failure_started_at || new Date().toISOString() : null
 const graceEndsAt = failureStartedAt ? latestState.payment_grace_ends_at || new Date(new Date(failureStartedAt).getTime() + 14 * 86400000).toISOString() : null
 const graceExpired = status === "past_due" && graceEndsAt && new Date(graceEndsAt).getTime() <= Date.now()
-const planKey = ["paused", "canceled", "pending", "expired", "unpaid"].includes(status) || graceExpired ? fallbackPlan.data.key : mapping.plan_key
+const planKey = ["paused", "canceled", "pending", "expired", "unpaid"].includes(status) || graceExpired ? configuredDefault.data : mapping.plan_key
 const occurredAt = new Date().toISOString()
 const reconcileEventId = `reconcile:${subscription.id}:${occurredAt}`
 const cancelAtPeriodEnd = Boolean(subscription.cancel_at_period_end || subscription.cancel_at)
@@ -214,13 +248,16 @@ if (leaseError || typeof lease?.lease_revision !== "number") {
 }
 
 try {
+  if (lease.lease_revision !== latestState.billing_projection_revision) {
+    throw new Error("The Workspace projection changed during reconciliation. Retry with a fresh Stripe read.")
+  }
   const patch = {
     plan_key: planKey,
     status,
     source: "provider",
     provider: "stripe",
     provider_environment: environment,
-    provider_customer_id: typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id,
+    provider_customer_id: customerId,
     provider_subscription_id: subscription.id,
     provider_price_id: providerPriceId,
     billing_interval: mapping.billing_interval,

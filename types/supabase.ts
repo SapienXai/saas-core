@@ -979,6 +979,54 @@ export type Database = {
           },
         ]
       }
+      workspace_initial_trial_eligibility: {
+        Row: {
+          created_at: string
+          duration_days: number | null
+          ends_at: string | null
+          plan_key: string | null
+          signup_at: string
+          started_at: string | null
+          user_id: string
+          workspace_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          duration_days?: number | null
+          ends_at?: string | null
+          plan_key?: string | null
+          signup_at: string
+          started_at?: string | null
+          user_id: string
+          workspace_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          duration_days?: number | null
+          ends_at?: string | null
+          plan_key?: string | null
+          signup_at?: string
+          started_at?: string | null
+          user_id?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_initial_trial_eligibility_plan_key_fkey"
+            columns: ["plan_key"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "workspace_initial_trial_eligibility_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_invitations: {
         Row: {
           accepted_at: string | null
@@ -1184,6 +1232,8 @@ export type Database = {
           current_period_end_at: string | null
           current_period_start: string | null
           current_period_start_at: string | null
+          initial_trial_ends_at: string | null
+          initial_trial_started_at: string | null
           last_provider_event_at: string | null
           last_provider_event_id: string | null
           next_billed_at: string | null
@@ -1221,6 +1271,8 @@ export type Database = {
           current_period_end_at?: string | null
           current_period_start?: string | null
           current_period_start_at?: string | null
+          initial_trial_ends_at?: string | null
+          initial_trial_started_at?: string | null
           last_provider_event_at?: string | null
           last_provider_event_id?: string | null
           next_billed_at?: string | null
@@ -1258,6 +1310,8 @@ export type Database = {
           current_period_end_at?: string | null
           current_period_start?: string | null
           current_period_start_at?: string | null
+          initial_trial_ends_at?: string | null
+          initial_trial_started_at?: string | null
           last_provider_event_at?: string | null
           last_provider_event_id?: string | null
           next_billed_at?: string | null
@@ -1552,6 +1606,21 @@ export type Database = {
         Returns: {
           runtime_major: number
           schema_version: string
+        }[]
+      }
+      grant_initial_workspace_trial: {
+        Args: {
+          target_duration_days: number
+          target_plan_key: string
+          target_user_id: string
+          target_workspace_id: string
+        }
+        Returns: {
+          eligible: boolean
+          granted: boolean
+          plan_key: string
+          trial_ends_at: string
+          trial_started_at: string
         }[]
       }
       has_workspace_role: {

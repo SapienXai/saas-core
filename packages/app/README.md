@@ -1,6 +1,6 @@
 # `@sapienx/saas-core-app`
 
-Current package release: `2.6.2`; Core schema compatibility coordinate remains
+Package coordinate: `2.7.0` candidate; Core schema compatibility coordinate remains
 `2.0`. This package is the template carrier for the coordinated release and
 includes the additive, Core-managed billing persistence, entitlement-lock, and
 plan-catalog sources (stored under `template/` in this package).

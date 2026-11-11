@@ -3,6 +3,7 @@ import "server-only"
 import { createHash } from "node:crypto"
 import Stripe from "stripe"
 import { assertBillingMutationsEnabled, assertStripeBillingReady, getStripeBillingConfig, type StripeBillingConfig } from "../config"
+import { hasMatchingPaidStripePeriod } from "../stripe-paid-period.mjs"
 import type {
   BillingProviderEnvironment,
   BillingProviderAdapter,
@@ -83,8 +84,9 @@ function unixSecondsToIso(value: number | null | undefined) {
   return Number.isFinite(date.getTime()) ? date.toISOString() : null
 }
 
-function isPlaceDJBillingSchedule(schedule: Stripe.SubscriptionSchedule | null | undefined) {
-  return schedule?.metadata?.billing_provider === "stripe" && schedule.metadata.billing_integration === "placedj"
+function isCoreBillingSchedule(schedule: Stripe.SubscriptionSchedule | null | undefined) {
+  return schedule?.metadata?.billing_provider === "stripe" &&
+    ["saas-core", "placedj"].includes(schedule.metadata.billing_integration)
 }
 
 export function buildStripeScheduleCreateParams(subscriptionId: string): Stripe.SubscriptionScheduleCreateParams {
@@ -137,7 +139,7 @@ export function normalizeStripeSubscription(subscription: Stripe.Subscription): 
   const collectionPaused = Boolean(subscription.pause_collection)
   const activeSchedule = typeof subscription.schedule === "object" && subscription.schedule?.status === "active" ? subscription.schedule : null
   if (activeSchedule && activeSchedule.livemode !== subscription.livemode) throw new Error("Stripe subscription schedule mode does not match its subscription.")
-  const ownsSchedule = isPlaceDJBillingSchedule(activeSchedule)
+  const ownsSchedule = isCoreBillingSchedule(activeSchedule)
   const schedule = ownsSchedule ? activeSchedule : null
   const currentPhaseEnd = schedule?.current_phase?.end_date
   const nextPhase = currentPhaseEnd
@@ -262,6 +264,10 @@ export function createStripeBillingAdapter(): StripeBillingAdapter {
       assertStripeMode(config, normalized.livemode)
       return normalized
     },
+    async hasPaidRenewal(subscription) {
+      await assertStripeAccountBinding(config)
+      return hasMatchingPaidStripePeriod(stripe, subscription)
+    },
     async createPortalSession(request: ProviderPortalRequest): Promise<ProviderPortalSession> {
       assertBillingMutationsEnabled()
       assertStripeBillingReady()
@@ -375,7 +381,7 @@ export function createStripeBillingAdapter(): StripeBillingAdapter {
         createdForThisMutation = true
       }
       if (schedule.livemode !== (config.environment === "live")) throw new Error("Stripe schedule belongs to another environment.")
-      if (!createdForThisMutation && !isPlaceDJBillingSchedule(schedule)) throw new Error("The active Stripe schedule is not managed by PlaceDJ and cannot be changed here.")
+      if (!createdForThisMutation && !isCoreBillingSchedule(schedule)) throw new Error("The active Stripe schedule is not managed by SaaS Core and cannot be changed here.")
       const currentPhase = schedule.current_phase
       const current = currentPhase && schedule.phases.find((phase) => phase.start_date <= currentPhase.start_date && phase.end_date === currentPhase.end_date)
       if (!current || !current.items.length || current.items.length !== 1) throw new Error("Stripe schedule has an unsupported current phase.")
@@ -453,7 +459,7 @@ export function createStripeBillingAdapter(): StripeBillingAdapter {
         metadata: {
           ...(schedule.metadata || {}),
           billing_provider: "stripe",
-          billing_integration: "placedj",
+          billing_integration: "saas-core",
           billing_mutation_id: input.mutationId,
           billing_mutation_kind: "scheduled_plan_change",
           billing_target_plan_key: input.targetPlanKey,
@@ -470,8 +476,8 @@ export function createStripeBillingAdapter(): StripeBillingAdapter {
       await assertStripeAccountBinding(config)
       const schedule = await stripe.subscriptionSchedules.retrieve(scheduleId)
       const attachedSubscriptionId = typeof schedule.subscription === "string" ? schedule.subscription : schedule.subscription?.id
-      if (schedule.livemode !== (config.environment === "live") || attachedSubscriptionId !== subscriptionId || schedule.status !== "active" || !isPlaceDJBillingSchedule(schedule)) {
-        throw new Error("The scheduled billing change is no longer active or is not managed by PlaceDJ.")
+      if (schedule.livemode !== (config.environment === "live") || attachedSubscriptionId !== subscriptionId || schedule.status !== "active" || !isCoreBillingSchedule(schedule)) {
+        throw new Error("The scheduled billing change is no longer active or is not managed by SaaS Core.")
       }
       await stripe.subscriptions.update(subscriptionId, {
         metadata: {

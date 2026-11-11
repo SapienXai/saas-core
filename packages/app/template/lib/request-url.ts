@@ -10,10 +10,13 @@ export function getRequestUrl(request: Request) {
 
   if (process.env.NODE_ENV === "production") return url
 
-  const protocol = firstHeaderValue(request, "x-forwarded-proto") || url.protocol.replace(":", "")
+  const forwardedProtocol = process.env.SAAS_CORE_TRUST_FORWARDED_HOST === "true"
+    ? firstHeaderValue(request, "x-forwarded-proto") : null
+  const protocol = forwardedProtocol === "http" || forwardedProtocol === "https"
+    ? forwardedProtocol : url.protocol.replace(":", "")
   const trustedHost = getTrustedRequestHost(request)
   const origin = originFromHost(trustedHost?.host || null, protocol)
-  if (origin) return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)
+  if (origin) return withOrigin(url, origin)
 
   return url
 }
@@ -34,7 +37,16 @@ export function getAuthRedirectOrigin(origin: string) {
 export function getAuthRedirectUrl(request: Request) {
   const url = getRequestUrl(request)
   const origin = getAuthRedirectOrigin(url.origin)
-  return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)
+  return withOrigin(url, origin)
+}
+
+function withOrigin(url: URL, origin: string) {
+  // A pathname beginning with two slashes is still a path, never an authority.
+  const result = new URL(origin)
+  result.pathname = url.pathname
+  result.search = url.search
+  result.hash = url.hash
+  return result
 }
 
 export function getBrowserAuthOrigin() {

@@ -22,7 +22,7 @@ describe("generic Core contracts", () => {
   })
 
   it("separates runtime and schema compatibility", () => {
-    expect(CORE_VERSION).toBe("2.6.2")
+    expect(CORE_VERSION).toBe("2.7.0")
     expect(CORE_SCHEMA_VERSION).toBe("2.0")
     expect(evaluateCompatibility({ manifestVersion: "2.0.0", schemaVersion: "2.0" }).status).toBe("compatible")
     expect(evaluateCompatibility({ manifestVersion: CORE_VERSION, schemaVersion: CORE_SCHEMA_VERSION }).status).toBe("compatible")
