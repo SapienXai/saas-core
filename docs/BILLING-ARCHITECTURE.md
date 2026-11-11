@@ -36,20 +36,29 @@ types.
 
 ## Provider selection
 
-Set `SAAS_CORE_BILLING_PROVIDER=stripe` or `paddle` server-side. Existing
-consumers retain Stripe when the variable is absent. Configure a single
-checkout provider for a deployment. A Workspace already linked to a
-provider and environment keeps that association even after cancellation.
-Core permits a verified checkout replacement of a terminal subscription
-within its original provider and environment. Webhook workers can drain
-both configured providers while new checkouts use the selected adapter.
-Changing providers or modes
-for a linked Workspace requires a separately designed, audited migration.
+Paddle is the default provider for new checkouts. Set
+`SAAS_CORE_BILLING_PROVIDER=stripe` explicitly on deployments that use Stripe
+for new checkouts. Each provider requires its own configuration and price
+mappings.
+
+Management uses the provider and environment recorded on the Workspace
+subscription, including cancellation, plan changes, portal access, and
+invoices. Checkout returns use the saved checkout's provider and environment.
+Keep credentials and webhook delivery configured for each provider with active
+subscriptions. For example, after switching new checkouts to Paddle, Stripe
+continues renewing its existing subscriptions and Core processes their Stripe
+events and cancellation requests. See [Stripe subscription webhooks](https://docs.stripe.com/billing/subscriptions/webhooks)
+and [Paddle subscription cancellation](https://developer.paddle.com/api-reference/subscriptions/cancel-subscription/).
+
+A linked Workspace keeps its provider and environment after cancellation.
+Core permits a verified replacement of a terminal subscription within that
+binding. Moving a linked Workspace to another provider or mode requires a
+separate migration. Consumer-owned billing actions control their own provider
+routing and need review before changing the checkout setting.
 
 ## Paddle
 
-For local Sandbox set `SAAS_CORE_BILLING_PROVIDER=paddle`,
-`SAAS_CORE_BILLING_MODE=enabled`, `PADDLE_ENVIRONMENT=sandbox`,
+For local Sandbox set `SAAS_CORE_BILLING_MODE=enabled`, `PADDLE_ENVIRONMENT=sandbox`,
 `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`, and
 `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN`. Use a loopback `NEXT_PUBLIC_SITE_URL`
 and matching loopback server and public Supabase URLs. For an approved

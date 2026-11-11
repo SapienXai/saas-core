@@ -1,13 +1,43 @@
 import { randomUUID } from "node:crypto"
 import { createClient } from "@supabase/supabase-js"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { cancelSubscription, getPlanUsage, startCheckout } from "@/app/manage/plan/actions"
+import { getCurrentWorkspace, requireWorkspaceRole } from "@/lib/authorization"
+import * as stripe from "@/lib/billing/providers/stripe"
+import { reconcileBillingCheckoutSession, reconcileBillingSubscription } from "@/lib/billing/reconciliation-service"
 import { normalizePaddleEvent, processStoredPaddleWebhookEvent, reconcilePaddleCheckoutSession, recordPaddleEvent } from "@/lib/billing/paddle-webhook"
 import { applyProviderSubscriptionProjection, settleProviderMutation } from "@/lib/billing/subscription-projection"
-import type { ProviderCheckoutSession, ProviderSubscriptionSnapshot } from "@/lib/billing/provider"
+import type { BillingProviderAdapter, ProviderCheckoutSession, ProviderSubscriptionSnapshot } from "@/lib/billing/provider"
 import { recordBillingMutationTransition } from "@/lib/billing/persistence"
+import { normalizeStripeEvent, processStoredStripeWebhookEvent, recordStripeWebhookEvent } from "@/lib/billing/stripe-webhook"
+
+vi.mock("@/lib/authorization", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/authorization")>(),
+  getCurrentWorkspace: vi.fn(),
+  requireWorkspaceRole: vi.fn(),
+  requireUser: vi.fn(),
+}))
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+
+function signInAsOwner(workspaceId: string) {
+  vi.mocked(getCurrentWorkspace).mockResolvedValue({ workspace_id: workspaceId, role: "owner" } as Awaited<ReturnType<typeof getCurrentWorkspace>>)
+}
 
 const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+function configurePaddleCheckout() {
+  vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", undefined)
+  for (const [name, value] of Object.entries({
+    NODE_ENV: "development",
+    SAAS_CORE_BILLING_MODE: "enabled",
+    PADDLE_ENVIRONMENT: "sandbox",
+    PADDLE_API_KEY: "pdl_sdbx_fixture",
+    PADDLE_WEBHOOK_SECRET: "fixture-secret",
+    NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: "test_fixture",
+    NEXT_PUBLIC_SITE_URL: "http://127.0.0.1:3100",
+  })) vi.stubEnv(name, value)
+}
 
 function paddleId(prefix: string) {
   return prefix + "_" + randomUUID().replaceAll("-", "").slice(0, 26)
@@ -15,21 +45,14 @@ function paddleId(prefix: string) {
 
 describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider checkout and webhook reconciliation with local Supabase", () => {
   afterEach(() => {
+    vi.restoreAllMocks()
+    vi.clearAllMocks()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
   })
 
-  it("recovers one checkout, verifies payment and renewal, and rejects stale or forged changes", async () => {
-    for (const [name, value] of Object.entries({
-      NODE_ENV: "development",
-      SAAS_CORE_BILLING_PROVIDER: "paddle",
-      SAAS_CORE_BILLING_MODE: "enabled",
-      PADDLE_ENVIRONMENT: "sandbox",
-      PADDLE_API_KEY: "pdl_sdbx_fixture",
-      PADDLE_WEBHOOK_SECRET: "fixture-secret",
-      NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: "test_fixture",
-      NEXT_PUBLIC_SITE_URL: "http://127.0.0.1:3100",
-    })) vi.stubEnv(name, value)
+  it("starts new checkout through Paddle, recovers a lost response, and verifies payment and renewal", async () => {
+    configurePaddleCheckout()
 
     const db = createClient(url!, serviceKey!, { auth: { persistSession: false, autoRefreshToken: false } })
     const fixture = randomUUID().slice(0, 8)
@@ -52,30 +75,9 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
         plan_key: planKey, currency: "USD", billing_interval: "month", active: true,
       })
       expect(mapping.error).toBeNull()
-      const mutation = await db.from("billing_mutations").insert({
-        workspace_id: workspaceId, request_key: randomUUID(), status: "unknown", operation: "checkout",
-        result: { checkoutPriceId: priceId, interval: "month" },
-      }).select("id").single()
-      if (mutation.error) throw mutation.error
-      const mutationId = mutation.data.id
-      await recordBillingMutationTransition({
-        mutationId, workspaceId, provider: "paddle", environment: "sandbox",
-        transitionKey: "checkout:" + mutationId, kind: "checkout", toPlanKey: planKey,
-      })
-      for (const scope of [
-        { workspaceId, provider: "stripe", environment: "sandbox" },
-        { workspaceId, provider: "paddle", environment: "live" },
-        { workspaceId: randomUUID(), provider: "paddle", environment: "sandbox" },
-      ] as const) {
-        await settleProviderMutation(db, scope, mutationId, "expired", planKey, transactionId)
-      }
-      const unsettled = await db.from("billing_mutations").select("status").eq("id", mutationId).single()
-      expect(unsettled.data?.status).toBe("unknown")
-      const metadata = {
-        workspace_id: workspaceId, billing_provider: "paddle", billing_environment: "sandbox",
-        billing_mutation_id: mutationId, billing_checkout_mutation_id: mutationId,
-        plan_key: planKey, billing_interval: "month",
-      }
+      signInAsOwner(workspaceId)
+      let metadata: Record<string, string> = {}
+      let createCalls = 0
       const items = [{ price: { id: priceId, product_id: productId }, quantity: 1 }]
       const initialPeriod = {
         starts_at: new Date(Date.now() - 120_000).toISOString(),
@@ -95,11 +97,37 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
       vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const address = new URL(input instanceof Request ? input.url : input)
         if (address.origin !== "https://sandbox-api.paddle.com") return realFetch(input, init)
+        if (address.pathname === "/prices/" + priceId) {
+          return Response.json({ data: { id: priceId, product_id: productId, status: "active", unit_price: { amount: "990", currency_code: "USD" }, billing_cycle: { interval: "month", frequency: 1 } } })
+        }
+        if (address.pathname === "/transactions" && init?.method === "POST") {
+          createCalls += 1
+          const body = JSON.parse(String(init.body))
+          expect(body.items).toEqual([{ price_id: priceId, quantity: 1 }])
+          metadata = body.custom_data
+          transaction = { ...transaction, custom_data: metadata }
+          remote = { ...remote, custom_data: metadata }
+          throw new Error("Fixture lost the response after creating the Paddle transaction.")
+        }
         if (address.pathname === "/transactions/" + transactionId) return Response.json({ data: transaction })
         if (address.pathname === "/subscriptions/" + subscriptionId) return Response.json({ data: remote })
         if (address.pathname === "/transactions") return Response.json({ data: renewals })
         throw new Error("Unexpected Paddle fixture request")
       }))
+      await expect(startCheckout(planKey, "month")).resolves.toMatchObject({ success: false })
+      expect(createCalls).toBe(1)
+      expect(metadata).toMatchObject({ workspace_id: workspaceId, billing_provider: "paddle", billing_environment: "sandbox", plan_key: planKey, billing_interval: "month" })
+      expect(requireWorkspaceRole).toHaveBeenCalledWith(workspaceId, ["owner"])
+      const mutationId = metadata.billing_mutation_id
+      for (const scope of [
+        { workspaceId, provider: "stripe", environment: "sandbox" },
+        { workspaceId, provider: "paddle", environment: "live" },
+        { workspaceId: randomUUID(), provider: "paddle", environment: "sandbox" },
+      ] as const) {
+        await settleProviderMutation(db, scope, mutationId, "expired", planKey, transactionId)
+      }
+      const unsettled = await db.from("billing_mutations").select("status").eq("id", mutationId).single()
+      expect(unsettled.data?.status).toBe("unknown")
       const processEvent = async (eventType: string, objectId: string, occurredAt: string, origin?: string) => {
         const event = normalizePaddleEvent({
           event_id: paddleId("evt"), event_type: eventType, occurred_at: occurredAt,
@@ -122,7 +150,7 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
       transaction = { ...transaction, origin: "api" }
       expect((await processEvent("transaction.created", transactionId, initialPeriod.starts_at, "api")).status).toBe("processed")
       await expect(reconcilePaddleCheckoutSession(transactionId, randomUUID())).resolves.toMatchObject({ status: "failed" })
-      await expect(reconcilePaddleCheckoutSession(transactionId, workspaceId)).resolves.toMatchObject({ status: "pending" })
+      await expect(reconcileBillingCheckoutSession(transactionId, workspaceId)).resolves.toMatchObject({ status: "pending" })
       expect((await projected()).source).toBe("system")
 
       transaction = { ...transaction, status: "completed", customer_id: customerId, subscription_id: subscriptionId }
@@ -163,7 +191,13 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
     }
   })
 
-  it("requires server-confirmed Stripe Checkout payment before linking an initial active subscription", async () => {
+  it("verifies Stripe renewal and schedules cancellation with Stripe while new checkout uses Paddle", async () => {
+    configurePaddleCheckout()
+    vi.stubEnv("STRIPE_ENVIRONMENT", "sandbox")
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_fixture")
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_fixture")
+    vi.stubEnv("STRIPE_ACCOUNT_ID", "acct_fixture")
+    vi.stubEnv("STRIPE_BILLING_PORTAL_CONFIGURATION_ID", "bpc_fixture")
     const db = createClient(url!, serviceKey!, { auth: { persistSession: false, autoRefreshToken: false } })
     const fixture = randomUUID().slice(0, 8)
     const planKey = "stripe-proof-" + fixture
@@ -175,6 +209,7 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
     const workspace = await db.from("workspaces").insert({ name: "Stripe projection proof", slug: planKey }).select("id").single()
     if (workspace.error) throw workspace.error
     const workspaceId = workspace.data.id
+    let webhookReceiptId: string | undefined
     try {
       const plan = await db.from("plans").insert({ key: planKey, name: "Stripe paid fixture", sort_order: 50, active: true })
       expect(plan.error).toBeNull()
@@ -188,6 +223,10 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
       }).select("id").single()
       if (mutation.error) throw mutation.error
       const mutationId = mutation.data.id
+      await recordBillingMutationTransition({
+        mutationId, workspaceId, provider: "stripe", environment: "sandbox",
+        transitionKey: "checkout:" + mutationId, kind: "checkout", toPlanKey: planKey,
+      })
       const checkout = await db.from("billing_checkout_sessions").insert({
         workspace_id: workspaceId, provider: "stripe", environment: "sandbox", target_plan_key: planKey,
         provider_price_id: priceId, provider_transaction_id: checkoutId, idempotency_key: mutationId, status: "created",
@@ -212,6 +251,21 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
         provider: "stripe", environment: "sandbox" as const,
         retrieveSubscription: vi.fn().mockResolvedValue(subscription), retrieveCheckoutSession: vi.fn(), hasPaidRenewal: vi.fn(),
       }
+      const retrievePrice = vi.fn().mockResolvedValue({ id: priceId, productId, amount: 990, currency: "USD", interval: "month", intervalCount: 1, livemode: false })
+      const scheduleCancellation = vi.fn(async (id: string, mutationId: string) => {
+        expect(id).toBe(subscriptionId)
+        const current = await adapter.retrieveSubscription(id)
+        const canceled = {
+          ...current, cancelAtPeriodEnd: true, cancelEffectiveAt: current.currentBillingPeriod.endsAt,
+          customData: { ...current.customData, billing_mutation_id: mutationId, billing_mutation_kind: "cancel" },
+        }
+        adapter.retrieveSubscription.mockResolvedValue(canceled)
+        return canceled
+      })
+      const stripeFactory = vi.spyOn(stripe, "createStripeBillingAdapter").mockReturnValue({
+        ...adapter, retrievePrice, scheduleCancellation, getCustomerPaymentMethod: vi.fn().mockResolvedValue(null),
+      } as unknown as BillingProviderAdapter)
+      signInAsOwner(workspaceId)
       const event = { eventId: "evt_" + fixture, occurredAt: now, workspaceId, eventType: "customer.subscription.created" }
       for (const change of [
         { paymentStatus: "unpaid" }, { id: checkoutId + "_foreign" }, { customerId: "cus_other" }, { subscriptionId: "sub_other" },
@@ -230,20 +284,45 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
       const renewedPeriod = { startsAt: now, endsAt: new Date(Date.now() + 2 * 86_400_000).toISOString() }
       adapter.retrieveSubscription.mockResolvedValue({ ...subscription, currentBillingPeriod: renewedPeriod })
       adapter.hasPaidRenewal.mockResolvedValue(false)
-      const renewalEvent = { ...event, eventType: "customer.subscription.updated" }
       const projectedEnd = async () => {
         const row = await db.from("workspace_subscriptions").select("current_period_end_at").eq("workspace_id", workspaceId).single()
         if (row.error) throw row.error
         return Date.parse(row.data.current_period_end_at)
       }
-      await expect(applyProviderSubscriptionProjection(renewalEvent, subscriptionId, adapter)).rejects.toMatchObject({ code: "RENEWAL_PENDING_PAYMENT" })
+      await expect(reconcileBillingSubscription(subscriptionId, randomUUID())).rejects.toThrow("not linked")
+      vi.stubEnv("STRIPE_ENVIRONMENT", "live")
+      await expect(reconcileBillingSubscription(subscriptionId, workspaceId)).rejects.toThrow("environment does not match")
+      expect(stripeFactory).not.toHaveBeenCalled()
+      vi.stubEnv("STRIPE_ENVIRONMENT", "sandbox")
+      await expect(reconcileBillingCheckoutSession(checkoutId, randomUUID())).resolves.toMatchObject({ status: "failed" })
+      await expect(reconcileBillingCheckoutSession(checkoutId, workspaceId)).resolves.toMatchObject({ status: "processed", planKey })
+      await expect(reconcileBillingSubscription(subscriptionId, workspaceId)).rejects.toMatchObject({ code: "RENEWAL_PENDING_PAYMENT" })
       expect(await projectedEnd()).toBe(Date.parse(subscription.currentBillingPeriod!.endsAt))
 
       adapter.hasPaidRenewal.mockResolvedValue(true)
-      await expect(applyProviderSubscriptionProjection({ ...renewalEvent, eventType: "invoice.paid" }, subscriptionId, adapter))
-        .resolves.toMatchObject({ status: "processed", planKey })
+      const receipt = await recordStripeWebhookEvent(normalizeStripeEvent({
+        id: "evt_paid_" + fixture, type: "invoice.paid", created: Math.floor(Date.now() / 1000), livemode: false,
+        data: { object: { id: "in_" + fixture, object: "invoice", subscription: subscriptionId } },
+      }))
+      webhookReceiptId = receipt.id
+      await expect(processStoredStripeWebhookEvent(receipt.id)).resolves.toBe("processed")
+      await expect(reconcileBillingSubscription(subscriptionId, workspaceId)).resolves.toMatchObject({ status: "processed", planKey })
+      expect(await projectedEnd()).toBe(Date.parse(renewedPeriod.endsAt))
+
+      await expect(getPlanUsage()).resolves.toMatchObject({
+        success: true, data: { billing: { canStartCheckout: false, isProviderBacked: true, canManageProvider: true, canUsePortal: true } },
+      })
+      await expect(cancelSubscription("other")).resolves.toMatchObject({ success: true })
+      expect(requireWorkspaceRole).toHaveBeenCalledWith(workspaceId, ["owner"])
+      expect(scheduleCancellation).toHaveBeenCalledTimes(1)
+      const recorded = await db.from("billing_mutation_transitions").select("provider, environment, state")
+        .eq("workspace_id", workspaceId).eq("kind", "cancel").single()
+      expect(recorded.data).toEqual({ provider: "stripe", environment: "sandbox", state: "succeeded" })
+      const afterCancel = await db.from("workspace_subscriptions").select("provider, cancel_at_period_end, current_period_end_at").eq("workspace_id", workspaceId).single()
+      expect(afterCancel.data).toMatchObject({ provider: "stripe", cancel_at_period_end: true })
       expect(await projectedEnd()).toBe(Date.parse(renewedPeriod.endsAt))
     } finally {
+      if (webhookReceiptId) await db.from("billing_webhook_events").delete().eq("id", webhookReceiptId)
       await db.from("workspaces").delete().eq("id", workspaceId)
       await db.from("billing_provider_prices").delete().eq("provider_price_id", priceId)
       await db.from("plans").delete().eq("key", planKey)

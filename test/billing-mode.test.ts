@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { assertBillingMutationsEnabled, getBillingEnvironment, isBillingDeferred, isStripeBillingConfigured } from "../lib/billing/config"
-import { getBillingProviderName, isBillingProviderConfigured } from "../lib/billing/providers"
+import { canStartBillingCheckout, getBillingProviderName, isBillingProviderConfigured } from "../lib/billing/providers"
 import { createStripeBillingAdapter } from "../lib/billing/providers/stripe"
 
 afterEach(() => vi.unstubAllEnvs())
@@ -14,11 +14,18 @@ function configureSandbox() {
 }
 
 describe("billing deployment mode", () => {
-  it("defaults legacy consumers to Stripe and rejects an unknown provider", () => {
+  it("defaults new checkout to Paddle, supports explicit Stripe, and rejects an unknown provider", () => {
+    configureSandbox()
+    vi.stubEnv("SAAS_CORE_BILLING_MODE", "enabled")
     vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", undefined)
-    expect(getBillingProviderName()).toBe("stripe")
-    vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", "paddle")
+    vi.stubEnv("PADDLE_ENVIRONMENT", undefined)
     expect(getBillingProviderName()).toBe("paddle")
+    expect(canStartBillingCheckout("workspace")).toBe(false)
+    vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", "  ")
+    expect(getBillingProviderName()).toBe("paddle")
+    vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", "stripe")
+    expect(getBillingProviderName()).toBe("stripe")
+    expect(isBillingProviderConfigured()).toBe(true)
     vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", "unknown")
     expect(() => getBillingProviderName()).toThrow("Unknown billing provider")
     expect(isBillingProviderConfigured()).toBe(false)

@@ -1,15 +1,35 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import nextConfig from '../next.config.mjs'
 import { loadProductCspFrameSources, loadProductCspStyleSources, productCspFrameSources } from '../lib/content-security-policy.mjs'
 
 const temporaryDirectories: string[] = []
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { force: true, recursive: true })
   }
+})
+
+describe('Paddle checkout CSP', () => {
+  it('allows Sandbox origins on the checkout route when the provider defaults to Paddle', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('SAAS_CORE_BILLING_PROVIDER', undefined)
+    vi.stubEnv('PADDLE_ENVIRONMENT', 'sandbox')
+
+    const headers = await nextConfig.headers!()
+    const checkoutPolicy = headers.find(rule => rule.source === '/billing/paddle/checkout')?.headers[0]?.value
+    expect(checkoutPolicy).toContain('https://sandbox-buy.paddle.com')
+    expect(checkoutPolicy).toContain('https://sandbox-api.paddle.com')
+    expect(checkoutPolicy).not.toContain('https://buy.paddle.com')
+    expect(headers.find(rule => rule.source === '/(.*)')?.headers.at(-1)?.value).not.toContain('paddle.com')
+
+    vi.stubEnv('SAAS_CORE_BILLING_PROVIDER', 'stripe')
+    expect(await nextConfig.headers!()).toHaveLength(1)
+  })
 })
 
 describe('product CSP frame sources', () => {

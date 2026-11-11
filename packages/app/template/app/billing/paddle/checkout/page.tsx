@@ -1,12 +1,13 @@
 import { notFound, redirect } from "next/navigation"
 import { AuthorizationError, getCurrentWorkspace } from "@/lib/authorization"
+import { getSelectedCheckoutProvider } from "@/lib/billing/checkout-provider.mjs"
 import { canStartBillingCheckout, isBillingProviderConfigured } from "@/lib/billing/providers"
 import { getPaddleReturnPath, getPaddleConfig, isPaddleTransactionId } from "@/lib/billing/providers/paddle"
 import { getVerifiedPaddleCheckout, getVerifiedPaddlePaymentUpdate } from "@/lib/billing/paddle-webhook"
 import PaddleCheckout from "./paddle-checkout"
 
 export default async function PaddleCheckoutPage({ searchParams }: { searchParams: Promise<{ transaction?: string; _ptxn?: string }> }) {
-  if (process.env.SAAS_CORE_BILLING_PROVIDER?.trim() !== "paddle" || !isBillingProviderConfigured()) notFound()
+  if (getSelectedCheckoutProvider() !== "paddle" || !isBillingProviderConfigured("paddle")) notFound()
   const params = await searchParams
   const transaction = params.transaction ?? params._ptxn
   if (typeof transaction !== "string" || !isPaddleTransactionId(transaction)) notFound()

@@ -1,4 +1,5 @@
 import { loadProductCspConnectSources, loadProductCspFrameSources, loadProductCspScriptSources } from './lib/content-security-policy.mjs'
+import { getSelectedCheckoutProvider } from './lib/billing/checkout-provider.mjs'
 
 const productCspFrameSources = loadProductCspFrameSources()
 const productCspScriptSources = loadProductCspScriptSources()
@@ -60,7 +61,7 @@ const nextConfig = {
           "manifest-src 'self'",
         ].join('; '),
       })
-      if (process.env.SAAS_CORE_BILLING_PROVIDER?.trim() === 'paddle') {
+      if (getSelectedCheckoutProvider() === 'paddle' && ['sandbox', 'live'].includes(process.env.PADDLE_ENVIRONMENT)) {
         const prefix = process.env.PADDLE_ENVIRONMENT === 'sandbox' ? 'sandbox-' : ''
         paddleHeaders = [contentSecurityPolicy([
           `https://${prefix}buy.paddle.com`,

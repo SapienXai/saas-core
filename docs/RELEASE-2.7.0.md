@@ -4,12 +4,13 @@ The coordinated runtime and package version is **2.7.0**. The Core schema
 compatibility coordinate remains **2.0**. The latest published package version
 is 2.6.2.
 
-- Stripe remains the default. Paddle adds explicit environment and provider
-  selection, hosted checkout, signed receipts, portal identity verification,
-  and subscription reconciliation through the shared projection. Paddle Live
-  checkout is disabled by default; Sandbox-only interval cutover is not
-  certified for Live. Stripe renewal projection requires matching paid invoice
-  evidence before extending the paid period.
+- Paddle is the default for new checkout. Deployments that want Stripe for new
+  checkout can select it explicitly. Existing subscriptions use their stored
+  provider and environment for management and reconciliation. Paddle supports
+  hosted checkout, signed receipts, portal identity verification, and shared
+  subscription reconciliation. Paddle Live checkout is disabled by default.
+  Stripe renewal projection requires matching paid invoice evidence before
+  extending the paid period.
 - The entitlement gate requires a current paid period for provider-backed
   access. Legacy UTC date-only periods remain accepted.
 - Public Workspace resolution uses the ingress Host by default. A trusted
