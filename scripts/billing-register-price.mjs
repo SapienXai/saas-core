@@ -30,6 +30,11 @@ if (!(environment === "sandbox" ? /^(sk|rk)_test_/.test(apiKey) : /^(sk|rk)_live
 }
 
 const stripe = new Stripe(apiKey, { apiVersion: "2026-09-30.endive", maxNetworkRetries: 1 })
+const account = await stripe.accounts.retrieve(null).catch(() => null)
+if (!account || account.id !== accountId) {
+  console.error("Stripe account binding could not be verified. No local state was changed.")
+  process.exit(1)
+}
 let price
 try {
   price = await stripe.prices.retrieve(priceId, { expand: ["product"] })

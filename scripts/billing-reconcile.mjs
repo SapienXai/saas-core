@@ -48,6 +48,11 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 })
 const stripe = new Stripe(apiKey, { apiVersion: "2026-09-30.endive", maxNetworkRetries: 2, timeout: 20_000 })
+const account = await stripe.accounts.retrieve(null).catch(() => null)
+if (!account || account.id !== expectedAccountId) {
+  console.error("Stripe account binding could not be verified. No local state was changed.")
+  process.exit(1)
+}
 
 const { data: workspace, error: workspaceError } = await supabase
   .from("workspaces")
