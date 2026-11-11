@@ -36,11 +36,20 @@ async function post(context, path, data) {
   return context.request.post(origin + path, { headers: { Origin: origin }, data })
 }
 
+async function signIn(context, email, password) {
+  const response = await post(context, "/auth/signin", { email, password })
+  if (response.status() !== 429) return response
+  const retryAfter = Number(response.headers()["retry-after"] || 10)
+  assert.ok(retryAfter > 0 && retryAfter <= 60, "Unexpected sign-in rate limit interval.")
+  await delay(retryAfter * 1_000 + 100)
+  return post(context, "/auth/signin", { email, password })
+}
+
 async function register(suffix) {
   const context = await browser.newContext({ baseURL: origin })
   const email = `neon-${marker}-${suffix}@example.test`
   assert.equal((await post(context, "/auth/signup", { email, password: firstPassword })).status(), 200)
-  assert.equal((await post(context, "/auth/signin", { email, password: firstPassword })).status(), 401)
+  assert.equal((await signIn(context, email, firstPassword)).status(), 401)
   const verification = await waitForEmail(email, "Verify your email address")
   const response = await context.request.get(verification.href)
   assert.ok(response.ok())
@@ -78,8 +87,8 @@ try {
   await expect(page).toHaveURL(/\/login\?reset=success/)
   const session = await owner.context.request.get(origin + "/api/core-auth/get-session").then(result => result.json())
   assert.equal(session, null)
-  assert.equal((await post(owner.context, "/auth/signin", { email: owner.email, password: firstPassword })).status(), 401)
-  assert.equal((await post(owner.context, "/auth/signin", { email: owner.email, password: newPassword })).status(), 200)
+  assert.equal((await signIn(owner.context, owner.email, firstPassword)).status(), 401)
+  assert.equal((await signIn(owner.context, owner.email, newPassword)).status(), 200)
   await owner.context.request.get(origin + "/auth/signout")
   assert.equal(await owner.context.request.get(origin + "/api/core-auth/get-session").then(result => result.json()), null)
   console.log("PASS Neon runtime: signup, confirmation, workspace creation, RLS, privileged endpoint denial, reset, sign-in and logout")
