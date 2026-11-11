@@ -1,0 +1,178 @@
+.content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--saas-core-auth-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--saas-core-auth-text) 7%, transparent);
+}
+
+.copy {
+  min-width: 0;
+}
+
+.copy h1 {
+  font-size: clamp(1.25rem, 5.5vw, 1.5rem);
+  font-weight: 680;
+  letter-spacing: -0.035em;
+  line-height: 1.18;
+  text-wrap: balance;
+}
+
+.copy p {
+  margin-top: 5px;
+  color: var(--saas-core-auth-muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.address {
+  overflow-wrap: anywhere;
+  border: 1px solid var(--saas-core-auth-line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--saas-core-auth-text) 4%, transparent);
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.recovery {
+  display: grid;
+  gap: 12px;
+}
+
+.emailInput {
+  min-height: 44px;
+  border-color: var(--saas-core-auth-line);
+  background: var(--saas-core-auth-field);
+  color: var(--saas-core-auth-text);
+}
+
+.primary,
+.secondary {
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-size: 0.875rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: center;
+  text-decoration: none;
+}
+
+.primary {
+  width: 100%;
+  background: var(--saas-core-auth-text);
+  color: var(--saas-core-auth-bg-deep);
+}
+
+.primary svg {
+  flex: none;
+}
+
+.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--saas-core-auth-text) 88%, var(--saas-core-auth-muted));
+}
+
+.primary:disabled {
+  opacity: 0.6;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--saas-core-auth-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--saas-core-auth-accent);
+}
+
+.spinner {
+  flex: none;
+  color: var(--saas-core-auth-accent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spinner { animation: spin 850ms linear infinite; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 14px;
+  border-top: 1px solid var(--saas-core-auth-line);
+  padding-top: 3px;
+}
+
+.secondary {
+  padding-inline: 4px;
+  color: var(--saas-core-auth-text);
+  font-size: 0.8125rem;
+}
+
+.secondary:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.secondary:disabled {
+  color: var(--saas-core-auth-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.emailInput:focus-visible {
+  outline: 2px solid var(--saas-core-auth-accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 430px) {
+  .content { gap: 12px; }
+
+  .footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 6px;
+  }
+
+  .footer > :only-child {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+}

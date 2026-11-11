@@ -2,8 +2,8 @@
 
 import type React from "react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
-import { ArrowUpRight, LoaderCircle, Mail } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { ArrowUpRight, LoaderCircle, Mail, MailWarning } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -13,6 +13,8 @@ import { PasswordField } from "@/components/auth/password-field"
 import { useLanguage } from "@/context/language-context"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { getProductOnboardingPath, isDeferredWorkspaceProvisioning, PRODUCT_CONFIG } from "@/lib/product-config"
+
+import styles from "./signup-confirmation.module.css"
 
 const RESEND_COOLDOWN_MS = 60_000
 
@@ -75,8 +77,17 @@ export function isConfirmedEmailUser(
   )
 }
 
-export function SignupForm({ backHref = "/", initialConfirmationMessage = "" }: { backHref?: string; initialConfirmationMessage?: "sent" | "expired" | "" } = {}) {
+type SignupFormProps = {
+  backHref?: string
+  initialConfirmationMessage?: "sent" | "expired" | ""
+  localInbox?: boolean
+}
+
+export function SignupForm({ backHref = "/", initialConfirmationMessage = "", localInbox = false }: SignupFormProps = {}) {
   const [email, setEmail] = useState("")
+  const [recoveryEmail, setRecoveryEmail] = useState("")
+  const emailInput = useRef<HTMLInputElement>(null)
+  const focusEmail = useRef(false)
   const [password, setPassword] = useState("")
   const [confirmationMessage, setConfirmationMessage] = useState(initialConfirmationMessage)
   const [error, setError] = useState("")
@@ -206,8 +217,9 @@ export function SignupForm({ backHref = "/", initialConfirmationMessage = "" }: 
     }
   }
 
-  async function resend() {
-    if (resending || resendCooldown > 0 || !email.trim()) return
+  async function resend(address = email) {
+    address = address.trim()
+    if (resending || continuing || resendCooldown > 0 || !address) return
     setError("")
     setResending(true)
     try {
@@ -215,14 +227,19 @@ export function SignupForm({ backHref = "/", initialConfirmationMessage = "" }: 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ email: email.trim(), redirect: redirectPath }),
+        body: JSON.stringify({ email: address, redirect: redirectPath }),
       })
       if (!response.ok) setError(await getAuthFailureMessage(response, getTranslation("auth.errors.resendFailed")))
       else {
-        window.sessionStorage.setItem("saas-core.signup.email", email.trim())
+        window.sessionStorage.setItem("saas-core.signup.email", address)
         window.sessionStorage.setItem("saas-core.signup.sentAt", String(Date.now()))
-        setResendCooldown(60)
+        setEmail(address)
+        setResendCooldown(getResendCooldownSeconds(Date.now()))
         setConfirmationMessage("sent")
+        const url = new URL(window.location.href)
+        url.searchParams.set("confirmation", "sent")
+        url.searchParams.delete("error")
+        window.history.replaceState(window.history.state, "", url)
       }
     } catch {
       setError(getTranslation("auth.errors.serviceUnavailable"))
@@ -231,60 +248,109 @@ export function SignupForm({ backHref = "/", initialConfirmationMessage = "" }: 
     }
   }
 
+  useEffect(() => {
+    if (!confirmationMessage && focusEmail.current) {
+      focusEmail.current = false
+      emailInput.current?.focus()
+      emailInput.current?.select()
+    }
+  }, [confirmationMessage])
+
   function useDifferentEmail() {
+    focusEmail.current = true
     setConfirmationMessage("")
     setPassword("")
     setError("")
     setResendCooldown(0)
     window.sessionStorage.removeItem("saas-core.signup.email")
     window.sessionStorage.removeItem("saas-core.signup.sentAt")
+    const url = new URL(window.location.href)
+    url.searchParams.delete("confirmation")
+    url.searchParams.delete("error")
+    window.history.replaceState(window.history.state, "", url)
   }
 
-  const emailAppUrl = getSupportedEmailAppUrl(email)
+  const title = getTranslation("auth.signUpTitle")
+  const description = getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })
+  const alert = error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>
+
+  if (confirmationMessage) {
+    const expired = confirmationMessage === "expired"
+    const emailAppUrl = localInbox ? "/api/dev/mailpit/" : getSupportedEmailAppUrl(email)
+    const StatusIcon = expired ? MailWarning : Mail
+    const resendDisabled = resending || resendCooldown > 0 || continuing
+    const resendLabel = resending ? getTranslation("auth.sending")
+      : resendCooldown > 0 ? getTranslation("auth.resendCountdown", { seconds: resendCooldown })
+        : getTranslation("auth.resendEmail")
+
+    return (
+      <AuthShell showBrand layout="confirmation" backHref={backHref} sectionLabelledBy="signup-confirmation-title" title={title} description={description}>
+        <div className={styles.content} aria-busy={resending || continuing}>
+          <div className={styles.intro}>
+            <span className={styles.icon} aria-hidden="true"><StatusIcon size={22} strokeWidth={1.75} /></span>
+            <div className={styles.copy}>
+              <h1 id="signup-confirmation-title">{getTranslation(expired ? "auth.confirmationExpiredTitle" : "auth.confirmEmail")}</h1>
+              <p>{getTranslation(expired ? "auth.confirmationExpiredDescription" : email ? "auth.confirmEmailDescription" : "auth.confirmEmailOpenLink")}</p>
+            </div>
+          </div>
+
+          {email && <p className={styles.address} aria-label={getTranslation("auth.confirmEmailDestination")}><bdi>{email}</bdi></p>}
+          {alert}
+          {!expired && emailAppUrl && (
+            <a className={styles.primary} href={emailAppUrl} target="_blank" rel="noopener noreferrer">
+              {getTranslation(localInbox ? "auth.openDevelopmentInbox" : "auth.openEmailApp")}
+              <ArrowUpRight size={17} strokeWidth={1.9} aria-hidden="true" />
+            </a>
+          )}
+          {expired && (email ? (
+            <button className={styles.primary} type="button" onClick={() => void resend()} disabled={resendDisabled}>{resendLabel}</button>
+          ) : (
+            <form className={styles.recovery} onSubmit={(event) => { event.preventDefault(); void resend(recoveryEmail) }}>
+              <AuthField id="signup-resend-email" label={getTranslation("auth.email")}>
+                <Input className={styles.emailInput} id="signup-resend-email" type="email" autoComplete="email" value={recoveryEmail} onChange={(event) => setRecoveryEmail(event.target.value)} required />
+              </AuthField>
+              <button className={styles.primary} type="submit" disabled={resendDisabled}>{resendLabel}</button>
+            </form>
+          ))}
+
+          {!expired && (
+            <p className={styles.status} role="status">
+              {continuing ? <LoaderCircle className={styles.spinner} size={15} aria-hidden="true" /> : <span className={styles.statusDot} aria-hidden="true" />}
+              {getTranslation(continuing ? "auth.openingWorkspace" : "auth.waitingForConfirmation")}
+            </p>
+          )}
+
+          <div className={styles.footer}>
+            {!expired && email && (
+              <button type="button" className={styles.secondary} onClick={() => void resend()} disabled={resendDisabled}>{resendLabel}</button>
+            )}
+            <button type="button" className={styles.secondary} onClick={useDifferentEmail} disabled={resending || continuing}>
+              {getTranslation(email ? "auth.changeEmailAddress" : "auth.createAccountAction")}
+            </button>
+          </div>
+        </div>
+      </AuthShell>
+    )
+  }
 
   return (
-    <AuthShell showBrand showHeading={!confirmationMessage} sectionLabelledBy={confirmationMessage ? "signup-confirmation-title" : undefined} layout="account" backHref={backHref} title={getTranslation("auth.signUpTitle")} description={getTranslation("auth.signUpSubtitle", { product: PRODUCT_CONFIG.name })} footer={!confirmationMessage && <span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
-      {error && <Alert variant="destructive" className="auth-alert"><AlertDescription>{error}</AlertDescription></Alert>}
-      {confirmationMessage ? (
-        <section className={`auth-confirmation auth-confirmation--premium${confirmationMessage === "expired" ? " is-expired" : ""}`} aria-busy={resending || continuing}>
-          <span className="auth-confirmation-icon" aria-hidden="true"><Mail strokeWidth={1.65} /></span>
-          <div className="auth-confirmation-copy">
-            <h1 id="signup-confirmation-title">{getTranslation(confirmationMessage === "expired" ? "auth.confirmationExpiredTitle" : "auth.confirmEmail")}</h1>
-            <p>{getTranslation(confirmationMessage === "expired" ? "auth.confirmationExpiredDescription" : "auth.confirmEmailDescription")}</p>
+    <AuthShell showBrand layout="account" backHref={backHref} title={title} description={description} footer={<span>{getTranslation("auth.alreadyHaveAccount")} <Link className="auth-footer-link" href={`/login?redirect=${encodeURIComponent(redirectPath)}`}>{getTranslation("auth.signInAction")}</Link></span>}>
+      {alert}
+      <form method="post" action="/auth/signup" onSubmit={submit} aria-busy={submitting} className="auth-form auth-form--account">
+        <input type="hidden" name="redirect" value={redirectPath} />
+        <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
+        <AuthDivider />
+        <AuthField id="signup-email" label={getTranslation("auth.email")}>
+          <div className="auth-input-shell">
+            <Mail className="auth-input-icon" aria-hidden="true" strokeWidth={1.75} />
+            <Input className="auth-input" id="signup-email" ref={emailInput} name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" inputMode="email" required />
           </div>
-          {email && <p className="auth-confirmation-address" aria-label={getTranslation("auth.confirmEmailDestination")}>{email}</p>}
-          {emailAppUrl && confirmationMessage === "sent" && <a className="auth-confirmation-email-app" href={emailAppUrl} target="_blank" rel="noopener noreferrer"><ArrowUpRight aria-hidden="true" strokeWidth={1.9} /><span>{getTranslation("auth.openEmailApp")}</span></a>}
-          {emailAppUrl && confirmationMessage === "sent" && <div className="auth-confirmation-divider" aria-hidden="true"><span /><span>{getTranslation("auth.confirmationDivider")}</span><span /></div>}
-          <div className="auth-confirmation-resend">
-            <p>{getTranslation("auth.didNotReceiveEmail")}</p>
-            {email && <button type="button" onClick={resend} disabled={resending || resendCooldown > 0 || continuing} className="auth-confirmation-resend-link" aria-live="off">
-              {resending ? getTranslation("auth.sending") : resendCooldown > 0 ? getTranslation("auth.resendCountdown", { seconds: resendCooldown }) : getTranslation("auth.resendEmail")}
-            </button>}
-          </div>
-          {continuing
-            ? <p className="auth-confirmation-status" role="status"><LoaderCircle className="auth-confirmation-status-spinner" aria-hidden="true" />{getTranslation("auth.openingWorkspace")}</p>
-            : confirmationMessage !== "expired" && <p className="auth-confirmation-status" role="status">{getTranslation("auth.waitingForConfirmation")}</p>}
-          <button type="button" onClick={useDifferentEmail} className="auth-confirmation-change-email"><Mail aria-hidden="true" strokeWidth={1.7} />{getTranslation("auth.changeEmailAddress")}</button>
-        </section>
-      ) : (
-          <div>
-          <form method="post" action="/auth/signup" onSubmit={submit} aria-busy={submitting} className="auth-form auth-form--account">
-            <input type="hidden" name="redirect" value={redirectPath} />
-            <SocialAuthButtons redirectPath={redirectPath} onError={setError} />
-            <AuthDivider />
-            <AuthField id="signup-email" label={getTranslation("auth.email")}>
-              <div className="auth-input-shell">
-                <Mail className="auth-input-icon" aria-hidden="true" strokeWidth={1.75} />
-                <Input className="auth-input" id="signup-email" name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" inputMode="email" required />
-              </div>
-            </AuthField>
-            <AuthField id="signup-password" label={getTranslation("auth.password")}>
-              <PasswordField id="signup-password" name="password" label={getTranslation("auth.password")} placeholder={getTranslation("auth.passwordPlaceholder")} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required />
-            </AuthField>
-            <Button type="submit" loading={submitting} disabled={!hydrated} className="auth-primary-button">{submitting ? getTranslation("auth.creatingAccount") : getTranslation("auth.createAccountAction")}</Button>
-          </form>
-        </div>
-      )}
+        </AuthField>
+        <AuthField id="signup-password" label={getTranslation("auth.password")}>
+          <PasswordField id="signup-password" name="password" label={getTranslation("auth.password")} placeholder={getTranslation("auth.passwordPlaceholder")} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={8} required />
+        </AuthField>
+        <Button type="submit" loading={submitting} disabled={!hydrated} className="auth-primary-button">{submitting ? getTranslation("auth.creatingAccount") : getTranslation("auth.createAccountAction")}</Button>
+      </form>
     </AuthShell>
   )
 }

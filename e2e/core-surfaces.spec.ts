@@ -102,6 +102,11 @@ test("@critical signup confirmation identifies the destination and delivers to t
   await page.getByRole("button", { name: "Create Account" }).click()
   await expect(page.getByRole("heading", { name: "Check your inbox." })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByLabel("Confirmation email destination")).toHaveText(signupEmail)
+  const openInbox = page.getByRole("link", { name: "Open Mailpit" })
+  await expect(openInbox).toHaveAttribute("href", "/api/dev/mailpit/")
+  await expect(openInbox).toHaveCSS("min-height", "44px")
+  await expect(page.getByRole("button", { name: /Resend in / })).toBeDisabled()
+  await expect(page.getByRole("status")).toHaveText("Waiting for confirmation…")
   const inbox = process.env.SAAS_CORE_MAIL_URL
   expect(inbox).toMatch(/^http:\/\/(127\.0\.0\.1|localhost):55624$/)
   await expect.poll(async () => {

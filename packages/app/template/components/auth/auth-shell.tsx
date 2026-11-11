@@ -16,7 +16,7 @@ type AuthShellProps = {
   showBrand?: boolean
   showHeading?: boolean
   sectionLabelledBy?: string
-  layout?: "default" | "account"
+  layout?: "default" | "account" | "confirmation"
 }
 
 function getAuthBackgroundUrl() {
@@ -67,11 +67,11 @@ export function AuthDivider() {
   )
 }
 
-export function ProductBrand() {
+export function ProductBrand({ href = "/" }: { href?: string } = {}) {
   const { getTranslation } = useLanguage()
 
   return (
-    <Link href="/" aria-label={getTranslation("auth.homeLabel", { product: PRODUCT_CONFIG.name })} className="auth-brand">
+    <Link href={href} aria-label={getTranslation("auth.homeLabel", { product: PRODUCT_CONFIG.name })} className="auth-brand">
       <span className="auth-brand-mark">
         <Image src={PRODUCT_CONFIG.logoPath} alt="" width={34} height={34} priority />
       </span>
@@ -119,6 +119,20 @@ export function AuthField({
 }
 
 export function AuthShell({ title, description, children, footer, backHref = "/", showBrand = false, showHeading = true, sectionLabelledBy, layout = "default" }: AuthShellProps) {
+  if (layout === "confirmation") {
+    return (
+      <main className="auth-page auth-confirmation-page">
+        <AuthMediaBackground />
+        <div className="auth-confirmation-container">
+          {showBrand && <ProductBrand href={backHref} />}
+          <section className="auth-confirmation-panel" aria-labelledby={sectionLabelledBy}>
+            {children}
+          </section>
+        </div>
+      </main>
+    )
+  }
+
   const accountLayout = layout === "account"
   const heading = (
     <header className="auth-form-heading">

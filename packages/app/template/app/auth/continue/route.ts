@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getAccountState, safeInternalRedirect } from "@/lib/account-state"
 import { getCurrentUserAccess } from "@/lib/auth-utils"
 import { cookies } from "next/headers"
+import { usesNeonBackend } from "@/lib/backend"
 import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
 import { getRequestUrl } from "@/lib/request-url"
 import { getProductOnboardingPath, isDeferredWorkspaceProvisioning } from "@/lib/product-config"
@@ -20,6 +21,13 @@ export async function GET(request: Request) {
   const asJson = request.headers.get("accept")?.includes("application/json") ?? false
   const state = await getAccountState()
   if (!state.authenticated) {
+    const verificationError = url.searchParams.get("error")
+    if (usesNeonBackend() && (verificationError === "TOKEN_EXPIRED" || verificationError === "INVALID_TOKEN")) {
+      const fallback = isDeferredWorkspaceProvisioning() ? getProductOnboardingPath() : "/onboarding"
+      const redirect = safeInternalRedirect(url.searchParams.get("redirect"), fallback)
+      const query = new URLSearchParams({ confirmation: "expired", redirect })
+      return navigationResponse(`/signup?${query}`, url, asJson)
+    }
     return navigationResponse(`/login?redirect=${encodeURIComponent("/app")}`, url, asJson)
   }
 
