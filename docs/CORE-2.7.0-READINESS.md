@@ -3,8 +3,9 @@
 Candidate runtime and packages **2.7.0**, Core schema compatibility **2.0**.
 Published baseline **2.6.2**, anchored by `saas-core-v2.6.2` at
 `3ceca1c8e33e6d93e78fd9ee56094a6436a29e64`. The development branch was cut
-from `8a879fb5554af1f2975ec533d777e8811adb8443` on main. The candidate is
-unpublished.
+from `8a879fb5554af1f2975ec533d777e8811adb8443` on main. The tested
+implementation is `8532ccb39c886cafb16f32bc4d08c9257d902841`. The
+candidate is unpublished.
 
 ## Confirmed defects and repairs
 

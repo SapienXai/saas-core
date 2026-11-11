@@ -3,9 +3,8 @@
 The Core 2.7.0 candidate uses schema compatibility coordinate **2.0**. The
 review started from main at
 `8a879fb5554af1f2975ec533d777e8811adb8443` and reviewed the seven-commit Paddle
-branch through `d3239435850915d0b7bddfa0bdf6e30fadeba2df`. The candidate
-revision is the checkout containing this report. Run `git rev-parse HEAD`
-alongside the release checks to identify the exact source under test.
+branch through `d3239435850915d0b7bddfa0bdf6e30fadeba2df`. The tested
+implementation is commit `8532ccb39c886cafb16f32bc4d08c9257d902841`.
 
 BookPlace can start with one Core Workspace per property. The product owns
 the property profile, room and room-type inventory, guest identities, stays,
