@@ -21,7 +21,7 @@ belong to the BookPlace booking and folio workflows.
 | Hotel identity | Consumer implementation | Workspace bootstrap, authorized selection, tenant-owned schema and product home proof | Store property profile in a product table keyed by `workspace_id` |
 | Employees | Verified locally | Core RLS, invitation redemption and replay denial, finite membership limits and staff mutation denial | Map staff roles to PMS operations and apply RLS to each product table |
 | Free PMS plan | Verified locally | Default catalog bootstrap and browser Plan & Usage without billing credentials | Configure direct booking and a ten-active-room cap in the product catalog; free usage needs no payment provider |
-| Ten active rooms | Consumer implementation | The disposable consumer's generic quota transaction serializes two writes competing for one slot | Count active rooms in the same database transaction that locks entitlement and consumes quota |
+| Ten active rooms | Consumer implementation | The disposable consumer's generic quota transaction makes two writes compete for the tenth active slot; archived rows do not consume quota | Count active rooms in the same database transaction that locks entitlement and consumes quota |
 | Hotel subdomain | Verified locally | Unique platform claim, reserved label rules, canonical hostname and inactive or unknown routing tests | Configure wildcard DNS, TLS, and the correct Vercel project |
 | Public booking website | Consumer implementation | Host-to-Site-to-Workspace resolution and a disposable consumer renderer that uses the resolved Workspace | Publish tenant-safe availability and booking endpoints with separate product authorization and abuse controls |
 | Booking notifications | Consumer implementation | Shared delivery infrastructure and local Auth email capture | Add product templates, enqueue product events and verify provider delivery |
@@ -35,7 +35,7 @@ belong to the BookPlace booking and folio workflows.
 
 The disposable product uses a flat migration and a service-only write RPC.
 The RPC calls `lock_workspace_entitlement`, counts rows scoped to the
-Workspace and inserts in one transaction. The product resolver uses the same
+Workspace and inserts in one transaction. The fixture checks that moving to a lower limit preserves all records and that archiving can free capacity. The product resolver uses the same
 Workspace-owned resource table for display. Existing rows survive a downgrade
 or cancellation. New resource creation is blocked when current usage reaches
 the new ceiling. BookPlace must use the transactional path for room creation

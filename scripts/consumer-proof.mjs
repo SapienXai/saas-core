@@ -270,10 +270,15 @@ async function proveProductQuota(status, table) {
   const auth = { persistSession: false, autoRefreshToken: false }
   const service = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth })
   const planKey = "quota-proof"
+  const lowerPlanKey = "quota-proof-lower"
+  const capacity = 10
   const updated = await service.rpc("sync_core_catalog", {
     target_plans: [{
       key: planKey, name: "Quota proof", sort_order: 1, active: true,
-      features: { locations: true }, limits: { "core.workspaces": 1, "core.members": 3, locations: 1 },
+      features: { locations: true }, limits: { "core.workspaces": 1, "core.members": 3, locations: capacity },
+    }, {
+      key: lowerPlanKey, name: "Lower quota proof", sort_order: 0, active: true,
+      features: { locations: true }, limits: { "core.workspaces": 1, "core.members": 3, locations: 8 },
     }],
     target_default_plan_key: planKey,
     target_deactivate_missing: false,
@@ -290,13 +295,17 @@ async function proveProductQuota(status, table) {
     if (signedIn.error) throw signedIn.error
     const workspace = await client.rpc("bootstrap_initial_workspace", { target_workspace_name: slug, target_workspace_slug: slug })
     if (workspace.error || !workspace.data?.[0]) throw workspace.error || new Error("Could not bootstrap quota fixture.")
-    members.push({ client, workspaceId: workspace.data[0].workspace_id })
+    members.push({ client, userId: user.data.user.id, workspaceId: workspace.data[0].workspace_id })
   }
   const [owner, outsider] = members
   const subscribed = await service.from("workspace_subscriptions").select("plan_key,source").eq("workspace_id", owner.workspaceId).single()
   if (subscribed.error || subscribed.data?.plan_key !== planKey || subscribed.data.source !== "system") {
     throw new Error("The free quota fixture did not use the configured default plan.")
   }
+  const seeded = await service.from(table).insert(Array.from({ length: capacity }, (_, index) => ({
+    workspace_id: owner.workspaceId, active: index < capacity - 1,
+  })))
+  if (seeded.error) throw seeded.error
   const args = { target_workspace_id: owner.workspaceId }
   const results = await Promise.all([service.rpc("consume_proof_resource", args), service.rpc("consume_proof_resource", args)])
   if (results.filter(result => result.data === true && !result.error).length !== 1 ||
@@ -304,14 +313,31 @@ async function proveProductQuota(status, table) {
     throw new Error("Two simultaneous writes did not contend for exactly one available resource.")
   }
   const [own, crossTenant, anon, forbidden] = await Promise.all([
-    owner.client.from(table).select("id"),
+    owner.client.from(table).select("id,active"),
     outsider.client.from(table).select("id").eq("workspace_id", owner.workspaceId),
     createClient(status.API_URL, status.ANON_KEY, { auth }).from(table).select("id"),
     outsider.client.rpc("consume_proof_resource", args),
   ])
-  if (own.error || own.data.length !== 1 || crossTenant.error || crossTenant.data.length || !anon.error || !forbidden.error) {
-    throw new Error("Product quota fixture did not preserve tenant and public isolation.")
+  if (own.error || own.data.length !== capacity + 1 || own.data.filter(row => row.active).length !== capacity ||
+      crossTenant.error || crossTenant.data.length || !anon.error || !forbidden.error) {
+    throw new Error("Product quota fixture did not preserve tenant/public isolation and the active-resource cap.")
   }
+
+  const override = await service.from("subscription_overrides").insert({
+    workspace_id: owner.workspaceId, plan_key: lowerPlanKey, reason: "Disposable lower quota proof", created_by: owner.userId,
+  })
+  if (override.error) throw override.error
+  const blocked = await service.rpc("consume_proof_resource", args)
+  const preserved = await owner.client.from(table).select("id").order("id")
+  if (blocked.error?.message !== "RESOURCE_LIMIT_REACHED" || preserved.error ||
+      JSON.stringify(preserved.data.map(row => row.id)) !== JSON.stringify(own.data.map(row => row.id).sort())) {
+    throw new Error("A downgrade must block growth and preserve every existing resource.")
+  }
+  const archivedIds = own.data.filter(row => row.active).slice(0, 3).map(row => row.id)
+  const archived = await service.from(table).update({ active: false }).in("id", archivedIds)
+  if (archived.error) throw archived.error
+  const resumed = await service.rpc("consume_proof_resource", args)
+  if (resumed.error || resumed.data !== true) throw new Error("Archived rows still counted against the reduced cap.")
 }
 
 function requestPublicPage(port, pathname, headers) {
@@ -553,9 +579,10 @@ export default async function PublicProof() {
   const productMigrationTable = "product_owned_proof"
   const productMigration = `create table public.product_owned_proof (
     id uuid primary key default gen_random_uuid(),
-    workspace_id uuid not null references public.workspaces(id) on delete cascade
+    workspace_id uuid not null references public.workspaces(id) on delete cascade,
+    active boolean not null default true
   );
-  create index on public.product_owned_proof(workspace_id);
+  create index on public.product_owned_proof(workspace_id) where active;
   alter table public.product_owned_proof enable row level security;
   revoke all on public.product_owned_proof from public, anon, authenticated;
   grant select on public.product_owned_proof to authenticated;
@@ -569,7 +596,7 @@ export default async function PublicProof() {
   begin
     select * into strict quota from public.lock_workspace_entitlement(target_workspace_id, 'locations');
     if not quota.capability_configured or quota.limit_value is null or
-       (select count(*) from public.product_owned_proof where workspace_id = target_workspace_id) >= quota.limit_value then
+       (select count(*) from public.product_owned_proof where workspace_id = target_workspace_id and active) >= quota.limit_value then
       raise exception 'RESOURCE_LIMIT_REACHED';
     end if;
     insert into public.product_owned_proof(workspace_id) values (target_workspace_id);
