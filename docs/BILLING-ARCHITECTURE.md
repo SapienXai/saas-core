@@ -52,18 +52,20 @@ account configuration. Core does not infer Product tax codes or enable
 automatic tax; each consumer must establish its merchant registrations and
 Product classification before activating those Live settings.
 
-## Local Paddle Sandbox checkout
+## Paddle Sandbox checkout
 
 Set `SAAS_CORE_BILLING_PROVIDER=paddle`, `SAAS_CORE_BILLING_MODE=enabled`,
-and `PADDLE_ENVIRONMENT=sandbox` in a development process with a loopback
-application origin and local Supabase URLs. Supply a Sandbox `PADDLE_API_KEY`,
+and `PADDLE_ENVIRONMENT=sandbox`. A development process uses a loopback
+application origin and local Supabase URLs. A hosted production process uses
+an explicit HTTPS `PADDLE_APP_ORIGIN` matching `APP_URL` and matching HTTPS
+Supabase URLs. Supply a Sandbox `PADDLE_API_KEY`,
 `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN`, and the destination's `PADDLE_WEBHOOK_SECRET`
 from the local secret store. Register the product's active Sandbox price
 mappings before opening checkout. Stripe is the default provider.
 
 The Workspace owner's checkout action creates and registers a Paddle
 transaction before the browser can open it. Paddle.js opens that transaction
-on the local checkout page after the page verifies the Workspace association.
+on the application checkout page after the page verifies the Workspace association.
 The signed `transaction.completed` webhook and the authenticated return path
 both reread the Paddle transaction and its linked subscription. They verify
 customer, Workspace, mutation, environment, and mapped price before applying
@@ -71,8 +73,9 @@ the existing leased subscription projection and settling the checkout.
 
 A test notification destination can forward only the Paddle webhook path
 (`/api/billing/paddle/webhook`) over HTTPS. The lifecycle job drains Paddle
-receipts while the local pilot is enabled. The Paddle adapter is restricted
-to this local Sandbox configuration.
+receipts. Hosted checkout sets a transaction-specific payment link for the
+consumer's approved Sandbox domain. This preserves any shared seller's default
+payment link and other products' notification destinations.
 
 Paddle previews immediate price changes with tax and proration. The update
 requires payment success when it collects a charge. For a period-end change,

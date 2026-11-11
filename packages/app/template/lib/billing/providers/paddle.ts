@@ -30,18 +30,20 @@ export function getPaddleConfig() {
     throw new BillingConfigurationError("Paddle environment is not configured.")
   }
   const live = environment === "live"
-  const siteOrigin = configuredOrigin(live ? process.env.PADDLE_APP_ORIGIN : process.env.NEXT_PUBLIC_SITE_URL, environment)
+  const hosted = live || process.env.NODE_ENV === "production"
+  const originEnvironment = hosted ? "live" : "sandbox"
+  const siteOrigin = configuredOrigin(hosted ? process.env.PADDLE_APP_ORIGIN : process.env.NEXT_PUBLIC_SITE_URL, originEnvironment)
   const accountId = process.env.PADDLE_ACCOUNT_ID?.trim()
   if (!siteOrigin || !webhookSecret || !apiKey?.startsWith(live ? "pdl_live_" : "pdl_sdbx_") ||
       !clientToken?.startsWith(live ? "live_" : "test_")) {
     throw new BillingConfigurationError("Paddle credentials or checkout origin do not match the environment.")
   }
-  if (live ? process.env.NODE_ENV !== "production" ||
+  if (hosted ? process.env.NODE_ENV !== "production" ||
       (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") ||
       siteOrigin !== configuredOrigin(process.env.APP_URL, "live") ||
       !configuredOrigin(process.env.SUPABASE_URL, "live") ||
       configuredOrigin(process.env.SUPABASE_URL, "live") !== configuredOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL, "live") ||
-      !/^slr_[a-z0-9]{26}$/.test(accountId || "")
+      (live && !/^slr_[a-z0-9]{26}$/.test(accountId || ""))
     : process.env.NODE_ENV !== "development" || process.env.SAAS_CORE_BILLING_MODE !== "enabled" ||
       !configuredOrigin(process.env.SUPABASE_URL, environment) || !configuredOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL, environment)) {
     throw new BillingConfigurationError("Paddle configuration does not match this deployment.")
@@ -491,7 +493,7 @@ export function createPaddleAdapter(): BillingProviderAdapter {
       const transaction = await paddleRequest<PaddleTransaction>("/transactions", {
         items: [{ price_id: request.priceId, quantity: 1 }],
         collection_mode: "automatic",
-        ...(environment === "live" && { checkout: { url: config.siteOrigin + checkoutPath } }),
+        ...(config.siteOrigin.startsWith("https:") && { checkout: { url: config.siteOrigin + checkoutPath } }),
         custom_data: {
           workspace_id: request.workspaceId,
           billing_mutation_id: request.mutationId,

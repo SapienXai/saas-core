@@ -32,6 +32,30 @@ describe("Paddle Sandbox checkout", () => {
     expect(() => getPaddleConfig()).toThrow()
   })
 
+  it("allows explicitly bound hosted Sandbox while rejecting mixed credentials and database origins", () => {
+    const env = {
+      NODE_ENV: "production", VERCEL_ENV: "production", SAAS_CORE_BILLING_PROVIDER: "paddle",
+      SAAS_CORE_BILLING_MODE: "enabled", PADDLE_ENVIRONMENT: "sandbox",
+      PADDLE_APP_ORIGIN: "https://app.example.com", APP_URL: "https://app.example.com",
+      NEXT_PUBLIC_SITE_URL: "https://example.com",
+      SUPABASE_URL: "https://project.supabase.co", NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
+      PADDLE_API_KEY: "pdl_sdbx_fixture", NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: "test_fixture",
+      PADDLE_WEBHOOK_SECRET: "fixture-webhook-secret",
+    }
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
+    expect(getPaddleConfig()).toMatchObject({ environment: "sandbox", siteOrigin: env.APP_URL, apiOrigin: "https://sandbox-api.paddle.com" })
+    expect(canStartPaddleCheckout("workspace")).toBe(true)
+    for (const [name, value] of Object.entries({
+      PADDLE_API_KEY: "pdl_live_fixture", NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: "live_fixture",
+      PADDLE_APP_ORIGIN: "https://other.example.com", NEXT_PUBLIC_SUPABASE_URL: "https://other.supabase.co",
+      VERCEL_ENV: "preview",
+    })) {
+      vi.stubEnv(name, value)
+      expect(() => getPaddleConfig()).toThrow()
+      vi.stubEnv(name, env[name as keyof typeof env])
+    }
+  })
+
   it("binds the webhook signature to the raw body and recent timestamp", () => {
     const raw = '{"data":{"status":"completed"}}'
     const secret = "test-webhook-secret"
