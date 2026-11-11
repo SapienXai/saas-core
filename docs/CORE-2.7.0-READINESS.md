@@ -99,6 +99,16 @@ environment. Treat any provider migration as a separate audited operation.
    reconciliation. Keep the journal and provider links intact; do not relax the
    function or backfill entitlements from assumptions.
 
+The isolated PlaceDJ rehearsal started from its 130 committed migrations and
+applied only migration 131. The diagnostic counted seven synthetic Stripe
+Sandbox active rows: one missing end, one expired end, one future start,
+one valid legacy date-only end, one incomplete identity, and one unmapped
+price. The remaining row had a valid timestamp period. Only the two valid
+rows retained paid access. The migration closed previously granted access
+for the missing end and the future start. Fingerprints for subscriptions,
+Workspaces, billing accounts, billing mutations and domain mappings were
+unchanged. No customer database or provider account was used.
+
 `lock_workspace_entitlement` uses a fixed search path, an advisory transaction
 lock per Workspace/capability, and a row lock on the subscription. Public,
 anonymous and authenticated roles cannot execute it; approved server-side
@@ -112,13 +122,15 @@ source `d3239435850915d0b7bddfa0bdf6e30fadeba2df` (283 managed and 52
 product-owned entries). Audit from a disposable `git archive HEAD` extraction:
 run the candidate CLI's `doctor`, `diff --source /path/to/core`, then
 `update --source /path/to/core --dry-run` before applying. The five managed
-Paddle/provider/checkout files reconcile through the manifest. The new flat
+Paddle/provider/checkout files reconcile through the manifest. An intentional
+edit to the managed Paddle adapter blocked update and preserved the original
+edit and migration tree. The new flat
 Core migration is copied as source; 114 product migrations stay outside
 update ownership. PlaceDJ's plan actions/page, billing UI, proxy, Next
 configuration, localization, player, venue, and product catalog remain
 product-owned. Review those preserved billing and routing entry points in a
 separate PlaceDJ change before any rollout; an update cannot certify their
-product-specific behavior or its real migration history.
+product-specific behavior. Packed package install, typecheck, production build with fixture configuration, migration filename validation, and the isolated baseline-to-candidate SQL rehearsal passed.
 
 **ReserveVia:** Read-only source inspected at
 `92ffa98dd22e785d90959b292c341de1e57e6873`. It has its own Paddle client,

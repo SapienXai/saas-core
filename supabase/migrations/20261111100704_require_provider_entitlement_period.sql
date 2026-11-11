@@ -95,8 +95,10 @@ begin
       end if;
     elsif subscription_row.scheduled_change_action = 'resume' then
       candidate_key := subscription_row.plan_key;
-    elsif subscription_row.scheduled_plan_key is not null then
-      if coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at::timestamptz) is null then
+    elsif subscription_row.scheduled_plan_key is not null or subscription_row.scheduled_effective_at is not null
+      or subscription_row.scheduled_plan_at is not null then
+      if subscription_row.scheduled_plan_key is null
+        or coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at) is null then
         candidate_key := fallback_key;
       elsif coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at::timestamptz) <= now_at then
         candidate_key := subscription_row.scheduled_plan_key;

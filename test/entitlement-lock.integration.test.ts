@@ -395,6 +395,7 @@ integration("transactional entitlement lock", () => {
       ["canceled", { status: "canceled" }, "fixture_free"],
       ["downgrade pending", schedule, "fixture_pro"],
       ["downgrade after boundary", { ...schedule, scheduled_effective_at: ago }, "fixture_starter"],
+      ["orphan scheduled boundary", { scheduled_effective_at: later }, "fixture_free"],
       ["invalid target price mapping", { ...schedule, scheduled_provider_price_id: thirdPriceId }, "fixture_free"],
       ["incomplete provider identity", { provider_subscription_id: null }, "fixture_free"],
       ["cross environment price", { provider_environment: "live" }, "fixture_free"],
