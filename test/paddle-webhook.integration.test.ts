@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { createServiceRoleClient } from "@/lib/supabase"
 import { createClient } from "@supabase/supabase-js"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { cancelSubscription, getPlanUsage, startCheckout } from "@/app/manage/plan/actions"
@@ -25,6 +26,15 @@ function signInAsOwner(workspaceId: string) {
 
 const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const localNeon = process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon" &&
+  /^http:\/\/(127\.0\.0\.1|localhost):\d+\/?$/.test(process.env.NEON_DATA_API_URL || "")
+const localSupabase = url === "http://127.0.0.1:55621" && Boolean(serviceKey)
+
+function fixtureDatabase() {
+  return localNeon
+    ? createServiceRoleClient()
+    : createClient(url!, serviceKey!, { auth: { persistSession: false, autoRefreshToken: false } })
+}
 
 function configurePaddleCheckout() {
   vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", undefined)
@@ -43,7 +53,7 @@ function paddleId(prefix: string) {
   return prefix + "_" + randomUUID().replaceAll("-", "").slice(0, 26)
 }
 
-describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider checkout and webhook reconciliation with local Supabase", () => {
+describe.skipIf(!localNeon && !localSupabase)("Provider checkout and webhook reconciliation with local Postgres", () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.clearAllMocks()
@@ -54,7 +64,7 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
   it("starts new checkout through Paddle, recovers a lost response, and verifies payment and renewal", async () => {
     configurePaddleCheckout()
 
-    const db = createClient(url!, serviceKey!, { auth: { persistSession: false, autoRefreshToken: false } })
+    const db = fixtureDatabase()
     const fixture = randomUUID().slice(0, 8)
     const planKey = "paddle-proof-" + fixture
     const priceId = paddleId("pri")
@@ -198,7 +208,7 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", "whsec_fixture")
     vi.stubEnv("STRIPE_ACCOUNT_ID", "acct_fixture")
     vi.stubEnv("STRIPE_BILLING_PORTAL_CONFIGURATION_ID", "bpc_fixture")
-    const db = createClient(url!, serviceKey!, { auth: { persistSession: false, autoRefreshToken: false } })
+    const db = fixtureDatabase()
     const fixture = randomUUID().slice(0, 8)
     const planKey = "stripe-proof-" + fixture
     const priceId = "price_" + fixture
