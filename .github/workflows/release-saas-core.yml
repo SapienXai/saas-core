@@ -99,7 +99,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
       - name: Pin npm CLI and print release tooling
         run: |
           npm install --global "npm@${RELEASE_NPM_VERSION}"
@@ -135,6 +134,14 @@ jobs:
             echo "mode=trusted-publishing" >> "$GITHUB_OUTPUT"
             echo "No NPM_TOKEN is configured; npm Trusted Publishing is required for this release."
           fi
+      # setup-node adds a placeholder NODE_AUTH_TOKEN when registry-url is set.
+      # Only the bootstrap path needs token-based registry configuration.
+      - name: Configure npm registry for one-time bootstrap
+        if: steps.npm_auth.outputs.mode == 'bootstrap'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
       - name: Publish immutable public packages with one-time bootstrap token
         if: steps.npm_auth.outputs.mode == 'bootstrap'
         env:

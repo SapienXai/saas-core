@@ -6,14 +6,13 @@ of you.
 
 ## Coordinates and release truth
 
-The candidate runtime and package coordinate in this checkout is `2.8.0`.
-The Core schema compatibility coordinate is `2.0`. Registry install examples
-still use the published `2.6.2` release anchored by `saas-core-v2.6.2`.
-See [RELEASE-2.8.0.md](./RELEASE-2.8.0.md) for local candidate installation.
+The published runtime and package coordinate is `2.8.0`, anchored by
+`saas-core-v2.8.0`. The Core schema compatibility coordinate is `2.0`.
+See the [2.8.0 release notes](./RELEASE-2.8.0.md) for backend verification.
 
 ```mermaid
 flowchart LR
-  Release[Runtime package candidate 2.7.0] -. separate coordinate .-> Schema[Core schema compatibility 2.0]
+  Release[Runtime package 2.8.0] -. separate coordinate .-> Schema[Core schema compatibility 2.0]
   Schema --> Source[Source-only migrations]
   Release --> Template[Canonical app template]
   Template --> Consumer[Generated product consumer]
@@ -76,18 +75,14 @@ tracked set and `pnpm verify` before handing off changes.
 Start from a registry release or a local Core source:
 
 ```bash
-pnpm add @sapienx/saas-core@^2.6.2 @sapienx/saas-core-config@^2.6.2 @sapienx/saas-core-ui@^2.6.2
-pnpm add -D @sapienx/saas-core-cli@^2.6.2
-pnpm exec saas-core init "My Product" ./my-product
+pnpm dlx @sapienx/saas-core-cli@2.8.0 init "My Product" ./my-product
 cd my-product
 pnpm install
 cp .env.example .env.local
-pnpm db:start
-pnpm exec supabase status --workdir . -o env
-pnpm db:reset
-pnpm db:types
-pnpm dev
 ```
+
+For a clean database, follow [Neon setup](./NEON.md) before running `pnpm dev`.
+For an existing Supabase consumer, use its current database configuration.
 
 The generated consumer includes its own `README.md`, `AGENTS.md`,
 `.env.example`, lint/test configs, local database helpers, catalog sync helper
