@@ -86,8 +86,9 @@ pnpm update -- ./my-product
 
 ## Registry installation and update
 
-The normal consumer path installs the coordinated packages from npm. A fresh
-consumer uses the registry-published CLI to materialize the packed template:
+The normal consumer path installs the coordinated packages from npm. With
+Node.js 24 and pnpm 11.21 or later in the 11.x series, a fresh consumer uses
+the published CLI to materialize the packed template:
 
 ```bash
 pnpm dlx @sapienx/saas-core-cli@2.8.0 init "My Product" ./my-product

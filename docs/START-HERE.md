@@ -72,7 +72,8 @@ tracked set and `pnpm verify` before handing off changes.
 
 ## I am building a product on SaaS Core
 
-Start from a registry release or a local Core source:
+Use Node.js 24 and pnpm 11.21 or later in the 11.x series. To start from the
+published release:
 
 ```bash
 pnpm dlx @sapienx/saas-core-cli@2.8.0 init "My Product" ./my-product
