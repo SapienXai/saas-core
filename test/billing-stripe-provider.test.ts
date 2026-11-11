@@ -10,8 +10,8 @@ import {
   getStripeIntegrationIdentifier,
   getStripeMutationIdempotencyKey,
   normalizeStripeSubscription,
-  matchesPaidStripePeriod,
 } from "../lib/billing/providers/stripe"
+import { matchesPaidStripePeriod } from "../lib/billing/stripe-paid-period.mjs"
 import type { ProviderCheckoutRequest, ProviderSubscriptionSnapshot } from "../lib/billing/provider"
 import type Stripe from "stripe"
 
