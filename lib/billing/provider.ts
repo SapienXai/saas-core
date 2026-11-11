@@ -33,6 +33,8 @@ export type ProviderCheckoutSession = {
 export type ProviderPortalRequest = {
   customerId: string
   subscriptionId?: string
+  /** The authenticated Workspace owner’s email, verified by the app’s identity provider. */
+  confirmedBuyerEmail?: string
   returnUrl: string
 }
 

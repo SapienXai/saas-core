@@ -56,6 +56,30 @@ describe("Paddle Sandbox checkout", () => {
     }
   })
 
+  it("requires verified buyer email before returning a hosted Sandbox portal token", async () => {
+    const env = {
+      NODE_ENV: "production", VERCEL_ENV: "production", SAAS_CORE_BILLING_PROVIDER: "paddle",
+      SAAS_CORE_BILLING_MODE: "enabled", PADDLE_ENVIRONMENT: "sandbox",
+      PADDLE_APP_ORIGIN: "https://app.example.com", APP_URL: "https://app.example.com",
+      SUPABASE_URL: "https://project.supabase.co", NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
+      PADDLE_API_KEY: "pdl_sdbx_fixture", NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: "test_fixture",
+      PADDLE_WEBHOOK_SECRET: "fixture-webhook-secret",
+    }
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
+    const subscriptionId = `sub_${"a".repeat(26)}`
+    const customerId = `ctm_${"b".repeat(26)}`
+    const portal = `https://sandbox-customer-portal.paddle.com/cpl_${"c".repeat(26)}?action=view_subscription&subscription_id=${subscriptionId}`
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json({ data: url.endsWith(customerId)
+      ? { email: "buyer@example.com" }
+      : { id: subscriptionId, customer_id: customerId, management_urls: { view_subscription: portal + "&token=fixture" } },
+    })))
+    const adapter = createPaddleAdapter()
+    const input = { customerId, subscriptionId, returnUrl: env.APP_URL }
+    await expect(adapter.createPortalSession(input)).resolves.toEqual({ url: portal })
+    await expect(adapter.createPortalSession({ ...input, confirmedBuyerEmail: "owner@example.com" })).resolves.toEqual({ url: portal })
+    await expect(adapter.createPortalSession({ ...input, confirmedBuyerEmail: "BUYER@example.com" })).resolves.toEqual({ url: portal + "&token=fixture" })
+  })
+
   it("binds the webhook signature to the raw body and recent timestamp", () => {
     const raw = '{"data":{"status":"completed"}}'
     const secret = "test-webhook-secret"

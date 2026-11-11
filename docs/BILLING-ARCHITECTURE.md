@@ -114,8 +114,11 @@ customer, price and period. Signed lifecycle events trigger the existing
 leased reconciliation. The paid period uses precise timestamps, including
 short periods that fit within one UTC date.
 
-The owner can open the Paddle-hosted customer portal using a fresh session
-for the subscription's verified customer. The same customer and subscription
+The owner can open the Paddle-hosted portal for the verified subscription.
+For hosted Sandbox, the app includes a portal token only when the current
+owner's confirmed email matches the provider's buyer email. Otherwise Paddle
+authenticates the buyer. This keeps access to a shared seller's buyer-wide
+portal bound to the buyer's identity. The same customer and subscription
 checks protect invoice downloads. PlaceDJ keeps server-verified resource limits
 in downgrade eligibility and applies its device-local cache limit through
 Player reconciliation at the plan boundary.

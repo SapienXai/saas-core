@@ -9,6 +9,7 @@ import { canResumePendingCheckout } from "@/lib/billing/checkout-resumption"
 import { assertBillingCheckoutEnabled, canStartBillingCheckout, assertSubscriptionManagementEnabled, getBillingProviderAdapter, getBillingProviderEnvironment, getBillingProviderName, isBillingProviderConfigured, isSubscriptionManagementEnabled } from "@/lib/billing/providers"
 import { getWorkspaceEntitlements, getWorkspaceUsage, validatePlanChangeEligibility } from "@/lib/entitlements"
 import { createServiceRoleClient } from "@/lib/supabase"
+import { createSupabaseServerClient } from "@/lib/supabase/server"
 import type { Json } from "@/types/supabase"
 import { getConfiguredDefaultPlanKey, getConfiguredFallbackPlanKey, isTerminalBillingSubscription } from "@/lib/billing/reconciliation"
 import { consumeBillingTransition, recordBillingMutationTransition, updateBillingMutationTransition } from "@/lib/billing/persistence"
@@ -826,7 +827,10 @@ export async function createBillingPortalSession() {
         !subscription.provider_subscription_id || subscription.provider_environment !== getBillingProviderEnvironment()) {
       return { success: false, message: "No active billing account is available." }
     }
+    const user = subscription.provider === "paddle" && subscription.provider_environment === "sandbox" && process.env.NODE_ENV === "production"
+      ? (await (await createSupabaseServerClient()).auth.getUser()).data.user : null
     const portal = await getBillingProviderAdapter().createPortalSession({
+      confirmedBuyerEmail: user?.email_confirmed_at ? user.email : undefined,
       customerId: subscription.provider_customer_id,
       subscriptionId: subscription.provider_subscription_id,
       returnUrl: getBillingReturnUrl("/manage/plan"),

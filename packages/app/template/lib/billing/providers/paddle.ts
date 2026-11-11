@@ -120,6 +120,7 @@ type PaddleSubscription = {
   current_billing_period: { starts_at: string; ends_at: string } | null
   scheduled_change: { action: string; effective_at: string; resume_at?: string | null } | null
   custom_data: Record<string, unknown> | null
+  management_urls?: { view_subscription?: string }
   items: Array<{ price: PaddlePrice; quantity: number }>
   currency_code: string
 }
@@ -551,14 +552,27 @@ export function createPaddleAdapter(): BillingProviderAdapter {
       if (new URL(url).protocol !== "https:") throw new Error("Invalid Paddle invoice URL.")
       return { ...invoiceSummary(transaction), pdfUrl: url }
     },
-    async createPortalSession({ customerId, subscriptionId }) {
+    async createPortalSession({ customerId, subscriptionId, confirmedBuyerEmail }) {
       const customer = customerPath(customerId)
-      if (!subscriptionId || (await getPaddleSubscription(subscriptionId)).customer_id !== customerId) {
+      const subscription = subscriptionId ? await getPaddleSubscription(subscriptionId) : null
+      if (!subscriptionId || subscription?.customer_id !== customerId) {
         throw new Error("Paddle customer does not match this subscription.")
       }
       if (environment === "live") {
         // The shared seller's authenticated portal session covers all purchases for the buyer.
         return { url: "https://buyer-portal.paddle.com" + paddlePath("subscriptions", subscriptionId) + "/view-subscription" }
+      }
+      if (config.siteOrigin.startsWith("https:")) {
+        const url = new URL(subscription.management_urls?.view_subscription || "")
+        if (url.origin !== "https://sandbox-customer-portal.paddle.com" || url.username || url.password || url.hash ||
+            !/^\/cpl_[a-z0-9]{26}$/.test(url.pathname) || url.searchParams.get("action") !== "view_subscription" ||
+            url.searchParams.get("subscription_id") !== subscriptionId) throw new Error("Invalid Paddle subscription portal link.")
+        // A shared seller's token grants buyer-wide access. Workspace ownership
+        // alone does not prove control of the email entered in checkout.
+        const verifiedEmail = confirmedBuyerEmail?.trim().toLowerCase()
+        const buyer = verifiedEmail ? await paddleRequest<{ email?: string }>(customer).catch(() => null) : null
+        if (!verifiedEmail || buyer?.email?.trim().toLowerCase() !== verifiedEmail) url.searchParams.delete("token")
+        return { url: url.href }
       }
       const session = await paddleRequest<{ customer_id: string; urls: { general: { overview: string } } }>(
         customer + "/portal-sessions", { subscription_ids: [subscriptionId] }, "POST",
