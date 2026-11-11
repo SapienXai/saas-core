@@ -49,7 +49,8 @@ it into the product repository and records a manifest of Core-managed hashes.
 
 ## Build a product
 
-Create a consumer from the published template:
+With Node.js 24 and pnpm 11.21 or later in the 11.x series, create a consumer
+from the published template:
 
 ```bash
 pnpm dlx @sapienx/saas-core-cli@2.8.0 init "My Product" ./my-product
