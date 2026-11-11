@@ -42,6 +42,8 @@ jobs:
           pnpm --version
           test "$(npm --version)" = "$RELEASE_NPM_VERSION"
       - run: pnpm install --frozen-lockfile
+      - name: Use public Ubuntu package mirrors
+        run: sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm run release:check
       - uses: actions/upload-artifact@v4
@@ -80,6 +82,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run db:start:ci
       - run: pnpm run db:reset
+      - name: Use public Ubuntu package mirrors
+        run: sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
       - run: pnpm exec playwright install --with-deps chromium firefox webkit
       - name: Build workspace runtime packages
         run: pnpm run typecheck
