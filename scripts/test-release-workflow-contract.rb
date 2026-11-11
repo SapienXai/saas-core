@@ -75,6 +75,8 @@ publish_index = publish_steps.index { |step| step["run"].to_s.include?("pnpm run
 publish_download_index = publish_steps.index { |step| step["uses"] == "actions/download-artifact@v4" }
 expect_contract(publish_index, "publish-npm must invoke release:publish")
 expect_contract(publish_download_index < publish_index, "publish-npm must download artifacts before publishing")
+registry_auth_steps = publish_steps.select { |step| step["uses"] == "actions/setup-node@v4" && step.dig("with", "registry-url") }
+expect_contract(registry_auth_steps.length == 1 && registry_auth_steps.first["if"] == "steps.npm_auth.outputs.mode == 'bootstrap'", "setup-node must add NODE_AUTH_TOKEN only to the bootstrap path")
 
 verify_download_steps = verify_steps.select { |step| step["uses"] == "actions/download-artifact@v4" }
 expect_contract(verify_download_steps.length == 1, "verify-published must have exactly one artifact download")
