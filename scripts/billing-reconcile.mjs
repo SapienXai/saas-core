@@ -33,20 +33,21 @@ if (!matchesKeyMode || !expectedAccountId || !/^acct_[A-Za-z0-9]+$/.test(expecte
   process.exit(1)
 }
 
+const neon = process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon"
 const supabaseUrl = process.env.SUPABASE_URL
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-if (!supabaseUrl || !serviceRoleKey) {
+if (!neon && (!supabaseUrl || !serviceRoleKey)) {
   console.error("Server-only Supabase environment variables are required.")
   process.exit(1)
 }
-if (!dryRun && environment === "sandbox" && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(supabaseUrl)) {
-  console.error("Sandbox reconciliation can only write to a local Supabase project.")
+if (!dryRun && environment === "sandbox" && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(neon ? process.env.NEON_DATA_API_URL || "" : supabaseUrl)) {
+  console.error("Sandbox reconciliation can only write to a local database endpoint.")
   process.exit(1)
 }
 
-const supabase = createClient(supabaseUrl, serviceRoleKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-})
+const supabase = neon
+  ? (await import("@sapienx/saas-core/postgres")).createNeonDataClient({ role: "service_role" })
+  : createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
 const stripe = new Stripe(apiKey, { apiVersion: "2026-09-30.endive", maxNetworkRetries: 2, timeout: 20_000 })
 const account = await stripe.accounts.retrieve(null).catch(() => null)
 if (!account || account.id !== expectedAccountId) {

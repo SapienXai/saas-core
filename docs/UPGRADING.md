@@ -18,6 +18,14 @@ recorded in the versioned release notes, with the prior release retained in
 [`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md), and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
+## Upgrade to 2.8.0
+
+Neon mode uses Better Auth and the Neon Data API. It needs a clean database
+and explicit backend configuration. An update copies the setup script and SQL
+sources. Run them separately only on the intended Neon target. Existing
+Supabase consumers can keep their current backend setting and credentials.
+See [Neon setup](./NEON.md) for rollout and for boundaries on transferring users.
+
 ## Upgrade to the 2.7.0 candidate
 
 Post-2.6.2 source adds a fail-closed fast path for Checkout returns: it reuses

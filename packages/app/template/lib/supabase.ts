@@ -1,4 +1,8 @@
 import "server-only"
+import { createNeonDataClient } from "@sapienx/saas-core/postgres"
+import { usesNeonBackend } from "@/lib/backend"
+import { neonAuthAdmin } from "@/lib/neon/admin"
+import { neonStorage } from "@/lib/neon/storage"
 import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js"
 
 /**
@@ -8,6 +12,13 @@ import { createClient as createSupabaseClient, type SupabaseClient } from "@supa
  * The service-role key remains server-only and is never exposed to clients.
  */
 export function createServiceRoleClient(): SupabaseClient {
+  if (usesNeonBackend()) {
+    const data = createNeonDataClient({ role: "service_role" })
+    return {
+      from: data.from.bind(data), rpc: data.rpc.bind(data), schema: data.schema.bind(data),
+      auth: { admin: neonAuthAdmin }, storage: neonStorage,
+    } as unknown as SupabaseClient
+  }
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url) {

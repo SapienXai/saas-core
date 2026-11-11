@@ -11,7 +11,7 @@ product receives the real application shell and consumes Core's canonical
 `hostname → Domain → PublicSite → Workspace → productKey` contract; it does
 not own hostname mappings.
 
-> This branch prepares runtime and packages `2.7.0` on Core schema `2.0`.
+> This branch prepares runtime and packages `2.8.0` on Core schema `2.0`.
 > The latest published release is `2.6.2` at tag `saas-core-v2.6.2`.
 > This checkout's `main` branch is ahead of that tag and may contain unreleased
 > changes. Treat package metadata, release constants, tags and registry checks
@@ -50,7 +50,7 @@ it into the product repository and records a manifest of Core-managed hashes.
 
 ## Build a product
 
-The short path uses the coordinated registry release:
+For clean Neon installations, follow [Neon setup](docs/NEON.md). The registry example below uses the published Supabase-compatible release:
 
 ```bash
 pnpm add @sapienx/saas-core@^2.6.2 @sapienx/saas-core-config@^2.6.2 @sapienx/saas-core-ui@^2.6.2

@@ -13,6 +13,7 @@ Run this once from the product root:
 ```bash
 pnpm install
 cp .env.example .env.local
+# For this Supabase local setup, set NEXT_PUBLIC_SAAS_CORE_BACKEND=supabase in .env.local.
 pnpm db:start
 pnpm exec supabase status --workdir . -o env
 # Put the local URL, anon key, service-role key and JWT secret in .env.local.

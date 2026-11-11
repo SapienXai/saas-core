@@ -61,7 +61,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Validate tag and package coordinates
         run: pnpm run release:metadata -- "$GITHUB_REF_NAME" --require-clean
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Install and check Chromium
+        run: |
+          pnpm exec playwright install chromium
+          if ! node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch(); await browser.close()'; then
+            pnpm exec playwright install-deps chromium
+          fi
       - run: pnpm run release:check
       - name: Classify npm registry release state
         env:

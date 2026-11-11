@@ -1,4 +1,5 @@
 import "server-only"
+import { usesNeonBackend } from "@/lib/backend"
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { createServiceRoleClient } from "@/lib/supabase"
@@ -22,6 +23,19 @@ function configuredOrigin(value: string | undefined, environment: BillingProvide
   }
 }
 
+function billingDataOriginMatches(environment: "sandbox" | "live") {
+  if (usesNeonBackend()) {
+    try {
+      const url = new URL(process.env.NEON_DATA_API_URL || "")
+      const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+      return !url.username && !url.password && !url.search && !url.hash &&
+        (environment === "live" ? url.protocol === "https:" && !loopback : loopback && url.protocol === "http:")
+    } catch { return false }
+  }
+  const origin = configuredOrigin(process.env.SUPABASE_URL, environment)
+  return Boolean(origin && origin === configuredOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL, environment))
+}
+
 export function getPaddleConfig() {
   const environment = process.env.PADDLE_ENVIRONMENT
   const apiKey = process.env.PADDLE_API_KEY?.trim()
@@ -42,12 +56,10 @@ export function getPaddleConfig() {
   if (hosted ? process.env.NODE_ENV !== "production" ||
       (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") ||
       siteOrigin !== configuredOrigin(process.env.SAAS_CORE_APP_URL || process.env.APP_URL, "live") ||
-      !configuredOrigin(process.env.SUPABASE_URL, "live") ||
-      configuredOrigin(process.env.SUPABASE_URL, "live") !== configuredOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL, "live") ||
+      !billingDataOriginMatches("live") ||
       (live && !/^slr_[a-z0-9]{26}$/.test(accountId || ""))
     : process.env.NODE_ENV !== "development" ||
-      !configuredOrigin(process.env.SUPABASE_URL, environment) ||
-      configuredOrigin(process.env.SUPABASE_URL, environment) !== configuredOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL, environment)) {
+      !billingDataOriginMatches("sandbox")) {
     throw new BillingConfigurationError("Paddle configuration does not match this deployment.")
   }
   return {
