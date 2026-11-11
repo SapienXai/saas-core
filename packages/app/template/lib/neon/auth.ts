@@ -12,7 +12,7 @@ const captureRecovery = new AsyncLocalStorage<(url: string) => void>()
 export function neonPool() {
   const connectionString = process.env.DATABASE_URL
   if (!connectionString) throw new Error("DATABASE_URL is required in Neon mode.")
-  return pool ??= new Pool({ connectionString, options: "-c search_path=auth,public", max: 4, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 10_000 })
+  return pool ??= new Pool({ connectionString, max: 4, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 10_000 })
 }
 
 export function neonAuthOrigin() {

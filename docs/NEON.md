@@ -25,8 +25,21 @@ connection and Data API signing key are server credentials.
    session or its server role, depending on the operation.
 4. Set `DATABASE_URL` to the runtime Postgres connection on the same branch
    and `SAAS_CORE_AUTH_URL` to the canonical application origin. Set a random
-   server-only `SAAS_CORE_AUTH_SECRET` of at least 32 bytes. Configure the
-   application's Resend sender for verification and recovery email. For
+   server-only `SAAS_CORE_AUTH_SECRET` of at least 32 bytes. Use a separate
+   login for the runtime connection. For a role named `core_auth` on the
+   `saas_core` database, configure its schema and privileges as follows:
+
+   ```sql
+   ALTER ROLE core_auth IN DATABASE saas_core SET search_path TO auth, public;
+   GRANT USAGE ON SCHEMA auth TO core_auth;
+   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA auth TO core_auth;
+   GRANT SELECT (icon_url) ON public.workspace_pwa_settings TO core_auth;
+   CREATE POLICY core_neon_assets_read ON public.workspace_pwa_settings
+     FOR SELECT TO core_auth USING (true);
+   ```
+
+   Configure the application's Resend sender for verification and recovery
+   email. For
    Google sign-in, set `SAAS_CORE_GOOGLE_CLIENT_ID` and
    `SAAS_CORE_GOOGLE_CLIENT_SECRET`, with the callback
    `/api/core-auth/callback/google` on the canonical origin.
