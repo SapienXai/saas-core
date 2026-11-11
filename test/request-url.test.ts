@@ -41,9 +41,10 @@ describe("trusted request hostname boundary", () => {
   it("ignores an injected forwarded hostname by default", () => {
     vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "")
     const request = new Request("http://localhost/", {
-      headers: { host: "alpha.example.com", "x-forwarded-host": "other.example.com" },
+      headers: { host: "alpha.example.com", "x-forwarded-host": "other.example.com", "x-forwarded-proto": "https" },
     })
     expect(getRequestHostname(request)).toBe("alpha.example.com")
+    expect(getRequestUrl(request).origin).toBe("http://alpha.example.com")
   })
 
   it("preserves a private LAN host and the active development port", () => {

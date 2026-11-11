@@ -137,7 +137,7 @@ export async function reconcilePaddleCheckoutSession(transactionId: string, expe
   }
   if (session.status === "expired" && session.paymentStatus === "unpaid" && !session.subscriptionId) {
     await persistCheckoutStatus("expired")
-    await settleProviderMutation(db, workspaceId, checkout.idempotency_key, "expired", checkout.target_plan_key, transactionId)
+    await settleProviderMutation(db, { workspaceId, provider, environment }, checkout.idempotency_key, "expired", checkout.target_plan_key, transactionId)
     return { status: "failed" as const, workspaceId }
   }
   if (session.status !== "complete" || session.paymentStatus !== "paid" || !session.subscriptionId || !session.customerId) {
@@ -147,7 +147,8 @@ export async function reconcilePaddleCheckoutSession(transactionId: string, expe
 
   if (checkout.status === "completed") {
     const { data: transition, error } = await db.from("billing_mutation_transitions").select("id, state")
-      .eq("workspace_id", workspaceId).eq("mutation_id", checkout.idempotency_key).eq("kind", "checkout").maybeSingle()
+      .eq("workspace_id", workspaceId).eq("provider", provider).eq("environment", environment)
+      .eq("mutation_id", checkout.idempotency_key).eq("kind", "checkout").maybeSingle()
     if (error) throw new Error(error.message)
     if (transition?.state === "succeeded") {
       const { data: projected, error: projectionError } = await db.from("workspace_subscriptions")
@@ -183,10 +184,12 @@ export async function reconcilePaddleCheckoutSession(transactionId: string, expe
         return subscription
       },
     },
+    session,
   )
   await persistCheckoutStatus("completed")
   const { data: transition, error } = await db.from("billing_mutation_transitions").select("id")
-    .eq("workspace_id", workspaceId).eq("mutation_id", checkout.idempotency_key).eq("kind", "checkout").maybeSingle()
+    .eq("workspace_id", workspaceId).eq("provider", provider).eq("environment", environment)
+      .eq("mutation_id", checkout.idempotency_key).eq("kind", "checkout").maybeSingle()
   if (error) throw new Error(error.message)
   return { ...result, transitionId: transition?.id as string | undefined }
 }

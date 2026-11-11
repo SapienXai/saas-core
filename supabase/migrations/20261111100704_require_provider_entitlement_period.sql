@@ -37,6 +37,8 @@ declare
   invalid_provider_projection boolean := false;
   invalid_scheduled_downgrade boolean := false;
   candidate_provider_price_id text;
+  period_end_at timestamptz;
+  period_start_at timestamptz;
   now_at timestamptz := now();
 begin
   if target_workspace_id is null or capability = '' or capability !~ '^[a-z][a-z0-9_.-]{0,63}$' then
@@ -62,6 +64,8 @@ begin
    where subscription.workspace_id = target_workspace_id
    for update;
   subscription_exists := found;
+  period_end_at := coalesce(subscription_row.current_period_end_at, subscription_row.current_period_end::timestamp at time zone 'UTC');
+  period_start_at := coalesce(subscription_row.current_period_start_at, subscription_row.current_period_start::timestamp at time zone 'UTC');
 
   select override_row.plan_key
     into override_plan_key
@@ -77,27 +81,20 @@ begin
   if override_plan_key is not null then
     candidate_key := override_plan_key;
   elsif subscription_exists then
-    if subscription_row.status not in ('active', 'trialing', 'past_due') then
+    if subscription_row.source = 'system' or subscription_row.status not in ('active', 'trialing', 'past_due') then
       candidate_key := fallback_key;
     elsif subscription_row.status = 'past_due'
       and (subscription_row.payment_grace_ends_at is null or subscription_row.payment_grace_ends_at <= now_at) then
       candidate_key := fallback_key;
     elsif subscription_row.cancel_at_period_end or subscription_row.scheduled_change_action in ('cancel', 'pause') then
-      if coalesce(
-        subscription_row.scheduled_effective_at,
-        subscription_row.scheduled_change_at,
-        subscription_row.current_period_end_at,
-        subscription_row.current_period_end::timestamptz
-      ) is null or coalesce(
-        subscription_row.scheduled_effective_at,
-        subscription_row.scheduled_change_at,
-        subscription_row.current_period_end_at,
-        subscription_row.current_period_end::timestamptz
-      ) <= now_at then
+      if coalesce(subscription_row.scheduled_change_at, subscription_row.scheduled_effective_at, period_end_at, subscription_row.scheduled_plan_at) is null
+        or coalesce(subscription_row.scheduled_change_at, subscription_row.scheduled_effective_at, period_end_at, subscription_row.scheduled_plan_at) <= now_at then
         candidate_key := fallback_key;
       else
         candidate_key := subscription_row.plan_key;
       end if;
+    elsif subscription_row.scheduled_change_action = 'resume' then
+      candidate_key := subscription_row.plan_key;
     elsif subscription_row.scheduled_plan_key is not null then
       if coalesce(subscription_row.scheduled_effective_at, subscription_row.scheduled_plan_at::timestamptz) is null then
         candidate_key := fallback_key;
@@ -123,16 +120,7 @@ begin
        subscription_row.status <> 'trialing'
        or subscription_row.initial_trial_ends_at is null
        or subscription_row.initial_trial_ends_at <= now_at
-       or (
-         coalesce(
-           subscription_row.current_period_end_at,
-           subscription_row.current_period_end::timestamp at time zone 'UTC'
-         ) is not null
-         and coalesce(
-           subscription_row.current_period_end_at,
-           subscription_row.current_period_end::timestamp at time zone 'UTC'
-         ) <= now_at
-       )
+       or period_end_at <= now_at
      ) then
     candidate_key := fallback_key;
     invalid_provider_projection := true;
@@ -148,6 +136,7 @@ begin
   ) else null end;
   pending_scheduled_plan := subscription_exists
     and subscription_row.scheduled_plan_key is not null
+    and not subscription_row.cancel_at_period_end
     and coalesce(subscription_row.scheduled_change_action, '') = ''
     and scheduled_at is not null
     and scheduled_at > now_at;
@@ -171,6 +160,8 @@ begin
   candidate_provider_price_id := case
     when subscription_exists
       and subscription_row.scheduled_plan_key is not null
+      and not subscription_row.cancel_at_period_end
+      and subscription_row.scheduled_change_action is null
       and candidate_key = subscription_row.scheduled_plan_key
       and scheduled_at is not null
       and scheduled_at <= now_at
@@ -183,16 +174,17 @@ begin
      and override_plan_key is null
      and subscription_row.source not in ('manual', 'trial')
      and (
-       subscription_row.source = 'system'
-       or nullif(btrim(coalesce(subscription_row.provider, '')), '') is null
+       subscription_row.provider is null
+       or subscription_row.provider not in ('stripe', 'paddle')
+       or (subscription_row.source = 'paddle' and subscription_row.provider <> 'paddle')
        or nullif(btrim(coalesce(subscription_row.provider_environment, '')), '') is null
        or nullif(btrim(coalesce(subscription_row.provider_customer_id, '')), '') is null
        or nullif(btrim(coalesce(subscription_row.provider_subscription_id, '')), '') is null
+       or nullif(btrim(coalesce(subscription_row.provider_price_id, '')), '') is null
        or nullif(btrim(coalesce(candidate_provider_price_id, '')), '') is null
-       or (
-         coalesce(subscription_row.current_period_end_at, subscription_row.current_period_end::timestamp at time zone 'UTC') is null
-         or coalesce(subscription_row.current_period_end_at, subscription_row.current_period_end::timestamp at time zone 'UTC') <= now_at
-       )
+       or period_end_at is null
+       or period_end_at <= now_at
+       or period_start_at > now_at
        or (
          pending_scheduled_plan
          and not scheduled_target_provider_valid
@@ -218,6 +210,10 @@ begin
     invalid_provider_projection := true;
   end if;
 
+  if override_plan_key is null and subscription_exists and subscription_row.source = 'manual' and period_end_at <= now_at then
+    candidate_key := fallback_key;
+  end if;
+
   select *
     into selected_plan
     from public.plans plan
@@ -234,6 +230,7 @@ begin
 
   -- Validate a future target, but keep its limits dormant until its effective boundary.
   if subscription_exists
+     and override_plan_key is null
      and subscription_row.scheduled_plan_key is not null
      and not invalid_provider_projection
      and not coalesce(subscription_row.cancel_at_period_end, false)

@@ -1,5 +1,8 @@
+import { execFileSync } from "node:child_process"
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
+
+import { getWorkspaceEntitlements, resolveEffectiveEntitlementPlan } from "@/lib/entitlements"
 
 const url = process.env.SUPABASE_URL
 const anonKey = process.env.SUPABASE_ANON_KEY
@@ -353,6 +356,130 @@ integration("transactional entitlement lock", () => {
     const endedCancel = await service!.from("workspace_subscriptions").update({ scheduled_change_at: new Date(Date.now() - 1000).toISOString(), current_period_end: new Date(Date.now() - 1000).toISOString().slice(0, 10), current_period_end_at: new Date(Date.now() - 1000).toISOString() }).eq("workspace_id", workspaceId)
     expect(endedCancel.error).toBeNull()
     await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free", limit_value: 2 })
+  })
+
+  it("agrees with the application for the same stored lifecycle and price states", async () => {
+    const ago = new Date(Date.now() - 60_000).toISOString()
+    const later = new Date(Date.now() + 3 * 86_400_000).toISOString()
+    const date = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10)
+    const reset = {
+      plan_key: "fixture_pro", status: "active", source: "provider", provider: "stripe", provider_environment: "sandbox",
+      provider_customer_id: "cus_parity", provider_subscription_id: "sub_parity", provider_price_id: currentPlanPriceId,
+      current_period_start_at: ago, current_period_end_at: later, current_period_start: null, current_period_end: null,
+      initial_trial_started_at: null, initial_trial_ends_at: null, payment_grace_ends_at: null,
+      scheduled_plan_key: null, scheduled_plan_at: null, scheduled_effective_at: null,
+      scheduled_provider_price_id: null, scheduled_change_action: null, scheduled_change_at: null, cancel_at_period_end: false,
+    }
+    const trial = {
+      status: "trialing", source: "trial", provider: null, provider_environment: null,
+      provider_customer_id: null, provider_subscription_id: null, provider_price_id: null,
+      initial_trial_started_at: ago, initial_trial_ends_at: later,
+    }
+    const schedule = { scheduled_plan_key: "fixture_starter", scheduled_effective_at: later, scheduled_provider_price_id: targetPlanPriceId }
+    const fixtures: [string, Record<string, unknown>, "fixture_free" | "fixture_pro" | "fixture_starter" | "fixture_unlimited"][] = [
+      ["system", { source: "system" }, "fixture_free"],
+      ["system cannot schedule paid", { source: "system", ...schedule, scheduled_effective_at: ago }, "fixture_free"],
+      ["initial trial", trial, "fixture_pro"],
+      ["expired initial trial", { ...trial, initial_trial_ends_at: ago, initial_trial_started_at: new Date(Date.parse(ago) - 60000).toISOString() }, "fixture_free"],
+      ["active paid", {}, "fixture_pro"],
+      ["missing period end", { current_period_end_at: null }, "fixture_free"],
+      ["expired period end", { current_period_start_at: null, current_period_end_at: ago }, "fixture_free"],
+      ["future paid start", { current_period_start_at: later, current_period_end_at: new Date(Date.parse(later) + 60000).toISOString() }, "fixture_free"],
+      ["legacy date-only period", { current_period_start: date(-1), current_period_end: date(2), current_period_start_at: null, current_period_end_at: null }, "fixture_pro"],
+      ["past due within grace", { status: "past_due", payment_grace_ends_at: later }, "fixture_pro"],
+      ["past due beyond grace", { status: "past_due", payment_grace_ends_at: ago }, "fixture_free"],
+      ["past due beyond paid period despite grace", { status: "past_due", payment_grace_ends_at: later, current_period_start_at: null, current_period_end_at: ago }, "fixture_free"],
+      ["pending", { status: "pending" }, "fixture_free"],
+      ["unpaid", { status: "unpaid" }, "fixture_free"],
+      ["paused", { status: "paused" }, "fixture_free"],
+      ["canceled", { status: "canceled" }, "fixture_free"],
+      ["downgrade pending", schedule, "fixture_pro"],
+      ["downgrade after boundary", { ...schedule, scheduled_effective_at: ago }, "fixture_starter"],
+      ["invalid target price mapping", { ...schedule, scheduled_provider_price_id: thirdPriceId }, "fixture_free"],
+      ["incomplete provider identity", { provider_subscription_id: null }, "fixture_free"],
+      ["cross environment price", { provider_environment: "live" }, "fixture_free"],
+      ["unmapped provider price", { provider_price_id: thirdPriceId }, "fixture_free"],
+      ["manual plan without billing", { source: "manual", current_period_end_at: null, provider: null }, "fixture_pro"],
+      ["override of canceled provider", { status: "canceled", ...schedule }, "fixture_unlimited"],
+      ["resume does not apply a stale scheduled plan", { ...schedule, scheduled_effective_at: ago, scheduled_change_action: "resume" }, "fixture_pro"],
+    ]
+    for (const [name, changes, plan] of fixtures) {
+      const applied = await service!.from("workspace_subscriptions").update({ ...reset, ...changes }).eq("workspace_id", workspaceId)
+      expect(applied.error, name).toBeNull()
+      const override = plan === "fixture_unlimited"
+        ? await service!.from("subscription_overrides").insert({ workspace_id: workspaceId, plan_key: plan, reason: "Parity fixture", created_by: owner.id }).select("id").single()
+        : null
+      try {
+        expect(override?.error ?? null, name).toBeNull()
+        const app = await getWorkspaceEntitlements(workspaceId)
+        const sql = await lock("projects")
+        expect(app.planKey, name).toBe(plan)
+        expect(sql, name).toMatchObject({ plan_key: plan, capability_configured: true, feature_enabled: true, limit_value: app.limits.projects, unlimited: app.limits.projects === null })
+      } finally {
+        if (override?.data) await service!.from("subscription_overrides").delete().eq("id", override.data.id)
+      }
+    }
+
+    const protectedPlan = await service!.from("plans").update({ active: false }).eq("key", "fixture_pro")
+    expect(protectedPlan.error?.message).toBe("PLAN_REFERENCED_ACTIVE")
+    const detached = await service!.from("workspace_subscriptions").update({ ...reset, plan_key: "fixture_free", source: "system" }).eq("workspace_id", workspaceId)
+    expect(detached.error).toBeNull()
+    const inactive = await service!.from("plans").update({ active: false }).eq("key", "fixture_pro")
+    expect(inactive.error).toBeNull()
+    const malformedProjection = await service!.from("workspace_subscriptions").update(reset).eq("workspace_id", workspaceId)
+    expect(malformedProjection.error).toBeNull()
+    try {
+      await expect(getWorkspaceEntitlements(workspaceId)).resolves.toMatchObject({ planKey: "fixture_free" })
+      await expect(lock("projects")).resolves.toMatchObject({ plan_key: "fixture_free" })
+    } finally {
+      await service!.from("plans").update({ active: true }).eq("key", "fixture_pro")
+    }
+    const missingId = "00000000-0000-4000-8000-000000000001"
+    await expect(getWorkspaceEntitlements(missingId)).rejects.toMatchObject({ code: "PLAN_UNAVAILABLE" })
+    const missing = await service!.rpc("lock_workspace_entitlement", { target_workspace_id: missingId, target_capability: "projects" })
+    expect(missing.error?.message).toBe("WORKSPACE_UNAVAILABLE")
+    const invalid = await service!.rpc("lock_workspace_entitlement", { target_workspace_id: workspaceId, target_capability: "?" })
+    expect(invalid.error?.message).toBe("INVALID_ENTITLEMENT_REQUEST")
+  })
+
+  it("applies exact transaction boundaries in UTC and New York, including the DST date conversion", () => {
+    // The integration runner enforces the Core port; psql targets only the
+    // named disposable Core database. All SQL fixture changes roll back.
+    if (url !== "http://127.0.0.1:55621") throw new Error("Expected the isolated Core Supabase instance.")
+    const results = (zone: string) => execFileSync("docker", [
+      "exec", "-i", "supabase_db_saas-core-dev", "psql", "-XqAt", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres",
+    ], { encoding: "utf8", input: `
+      begin;
+      set local timezone to '${zone}';
+      update public.workspace_subscriptions set source = 'provider', status = 'active',
+        plan_key = 'fixture_pro', provider = 'stripe', provider_environment = 'sandbox',
+        provider_customer_id = 'cus_parity', provider_subscription_id = 'sub_parity',
+        provider_price_id = '${currentPlanPriceId}', current_period_start_at = now() - interval '1 day',
+        current_period_end_at = now() + interval '1 day', cancel_at_period_end = false,
+        scheduled_change_action = null, scheduled_plan_key = 'fixture_starter',
+        scheduled_provider_price_id = '${targetPlanPriceId}', scheduled_effective_at = now() + interval '1 millisecond'
+        where workspace_id = '${workspaceId}';
+      select plan_key from public.lock_workspace_entitlement('${workspaceId}', 'projects');
+      update public.workspace_subscriptions set scheduled_effective_at = now() where workspace_id = '${workspaceId}';
+      select plan_key from public.lock_workspace_entitlement('${workspaceId}', 'projects');
+      update public.workspace_subscriptions set current_period_end_at = now() where workspace_id = '${workspaceId}';
+      select plan_key from public.lock_workspace_entitlement('${workspaceId}', 'projects');
+      select to_char((date '2026-03-08'::timestamp at time zone 'UTC') at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS');
+      select to_char((date '2026-03-09'::timestamp at time zone 'UTC') at time zone 'UTC', 'YYYY-MM-DD HH24:MI:SS');
+      rollback;
+    ` }).trim().split("\n")
+    const expected = ["fixture_pro", "fixture_starter", "fixture_free", "2026-03-08 00:00:00", "2026-03-09 00:00:00"]
+    expect(results("UTC")).toEqual(expected)
+    expect(results("America/New_York")).toEqual(expected)
+    const resolve = (now: string, end = "2026-03-09") => resolveEffectiveEntitlementPlan({
+      subscriptionPlanKey: "fixture_pro", fallbackPlanKey: "fixture_free", status: "active", source: "provider",
+      provider: "stripe", providerEnvironment: "sandbox", providerCustomerId: "cus_parity",
+      providerSubscriptionId: "sub_parity", providerPriceId: currentPlanPriceId, currentPeriodEndAt: end,
+      scheduledPlanKey: "fixture_starter", scheduledPlanAt: "2026-03-08T03:00:00-04:00", now: new Date(now),
+    })
+    expect(resolve("2026-03-08T01:59:59.999-05:00")).toBe("fixture_pro")
+    expect(resolve("2026-03-08T03:00:00-04:00")).toBe("fixture_starter")
+    expect(resolve("2026-03-08T20:00:00-04:00")).toBe("fixture_free")
   })
 
   it("falls back when the local subscription row is missing and stays server-only", async () => {

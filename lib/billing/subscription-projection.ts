@@ -5,7 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase"
 import { getProviderPriceByProviderId, isPaidPlanKey, type ProviderPriceMapping } from "./price-mapping"
 import { getConfiguredFallbackPlanKey, isTerminalBillingSubscription, projectCanonicalSubscription, type CanonicalSubscription } from "./reconciliation"
 import { upsertBillingProviderAccount, updateBillingMutationTransition } from "./persistence"
-import { deferredIntervalResumeRequestKey, type BillingProviderAdapter, type ProviderSubscriptionSnapshot } from "./provider"
+import { deferredIntervalResumeRequestKey, type BillingProviderAdapter, type ProviderCheckoutSession, type ProviderSubscriptionSnapshot } from "./provider"
 
 export class BillingProjectionError extends Error {
   readonly code: string
@@ -81,7 +81,10 @@ export async function releaseWorkspaceProjection(db: any, workspaceId: string, l
 
 async function validateInitialCheckoutCorrelation(
   db: any,
-  input: { workspaceId: string; provider: string; environment: "sandbox" | "live"; mutationId: string; planKey: string; priceId: string },
+  input: { workspaceId: string; provider: string; environment: "sandbox" | "live"; mutationId: string; planKey: string; priceId: string; interval: string },
+  subscription: ProviderSubscriptionSnapshot,
+  retrieveCheckoutSession: BillingProviderAdapter["retrieveCheckoutSession"],
+  verifiedCheckout?: ProviderCheckoutSession,
 ) {
   const { data: mutation, error: mutationError } = await db.from("billing_mutations")
     .select("id, operation, status")
@@ -93,22 +96,33 @@ async function validateInitialCheckoutCorrelation(
     throw new BillingProjectionError("CHECKOUT_MUTATION_MISMATCH", "Billing subscription is not linked to a valid checkout mutation.")
   }
   const { data: checkout, error: checkoutError } = await db.from("billing_checkout_sessions")
-    .select("workspace_id, target_plan_key, provider_price_id, status")
+    .select("target_plan_key, provider_price_id, provider_transaction_id, status")
     .eq("provider", input.provider)
     .eq("environment", input.environment)
     .eq("workspace_id", input.workspaceId)
     .eq("idempotency_key", input.mutationId)
     .maybeSingle()
   if (checkoutError) throw new Error(checkoutError.message)
-  if (!checkout || checkout.target_plan_key !== input.planKey || checkout.provider_price_id !== input.priceId || checkout.status === "failed" || checkout.status === "expired") {
+  if (!checkout?.provider_transaction_id || checkout.target_plan_key !== input.planKey || checkout.provider_price_id !== input.priceId || checkout.status === "failed" || checkout.status === "expired") {
     throw new BillingProjectionError("CHECKOUT_CORRELATION_MISMATCH", "Billing subscription does not match the recorded checkout request.")
+  }
+  const session = verifiedCheckout ?? await retrieveCheckoutSession(checkout.provider_transaction_id)
+  if (session.id !== checkout.provider_transaction_id || session.status !== "complete" ||
+      (session.paymentStatus !== "paid" && !(input.provider === "stripe" && session.paymentStatus === "no_payment_required")) ||
+      !session.customerId || session.customerId !== subscription.customerId || session.subscriptionId !== subscription.id ||
+      session.workspaceId !== input.workspaceId || session.mutationId !== input.mutationId ||
+      session.livemode !== (input.environment === "live") ||
+      session.metadata.billing_provider !== input.provider || session.metadata.billing_environment !== input.environment ||
+      session.metadata.plan_key !== input.planKey || session.metadata.billing_interval !== input.interval) {
+    throw new BillingProjectionError("CHECKOUT_PAYMENT_UNVERIFIED", "The recorded checkout has not verified payment for this subscription and customer.")
   }
 }
 
 export async function applyProviderSubscriptionProjection(
   event: { eventId: string; occurredAt: string; workspaceId: string | null; eventType: string },
   subscriptionId: string,
-  adapter: Pick<BillingProviderAdapter, "provider" | "environment" | "retrieveSubscription" | "hasPaidRenewal">,
+  adapter: Pick<BillingProviderAdapter, "provider" | "environment" | "retrieveSubscription" | "retrieveCheckoutSession" | "hasPaidRenewal">,
+  verifiedCheckout?: ProviderCheckoutSession,
 ) {
   const { provider, environment } = adapter
   const db = createServiceRoleClient() as any
@@ -154,17 +168,20 @@ export async function applyProviderSubscriptionProjection(
       throw new BillingProjectionError("UNSUPPORTED_SCHEDULE", "Billing subscription has a schedule this product cannot safely manage.")
     }
 
-    // Paddle advances the subscription dates while collecting the renewal.
-    // Commit a new paid window only after its recurring transaction completes.
+    // Provider subscription dates can advance while payment is outstanding.
+    // Commit a new paid window only after checking the matching payment.
     const previousEnd = Date.parse(current.current_period_end_at || current.current_period_end || "")
     const providerStart = Date.parse(subscription.currentBillingPeriod?.startsAt || "")
     const providerEnd = Date.parse(subscription.currentBillingPeriod?.endsAt || "")
     const sameSubscription = current.provider_subscription_id === subscriptionId
     const isCollecting = subscription.status === "active" || subscription.status === "past_due"
-    if (adapter.hasPaidRenewal && (isCollecting || subscription.status === "trialing") &&
-        (!Number.isFinite(providerStart) || !Number.isFinite(providerEnd) || providerEnd <= providerStart ||
-          (sameSubscription && previousEnd > Date.now() && providerEnd < previousEnd))) {
-      throw new BillingProjectionError("INVALID_PAID_PERIOD", "Paddle returned an invalid or shorter paid period.")
+    const verifiesPeriod = subscription.status === "active" || subscription.status === "trialing" ||
+      (adapter.hasPaidRenewal && subscription.status === "past_due")
+    if (verifiesPeriod && (!Number.isFinite(providerStart) || !Number.isFinite(providerEnd) || providerEnd <= providerStart)) {
+      throw new BillingProjectionError("INVALID_PAID_PERIOD", "Billing provider returned an invalid paid period.")
+    }
+    if (provider === "paddle" && sameSubscription && verifiesPeriod && previousEnd > Date.now() && providerEnd < previousEnd) {
+      throw new BillingProjectionError("INVALID_PAID_PERIOD", "Paddle returned a shorter paid period.")
     }
     const deferred = subscription.deferredIntervalChange
     const resumesDeferredInterval = deferred?.phase === "resumed" && (
@@ -233,7 +250,8 @@ export async function applyProviderSubscriptionProjection(
         mutationId,
         planKey: mapping.plan_key,
         priceId,
-      })
+        interval: mapping.billing_interval,
+      }, subscription, adapter.retrieveCheckoutSession, verifiedCheckout)
     }
 
     let scheduledPlan: { mapping: ProviderPriceMapping; effectiveAt: string } | null = null
@@ -328,7 +346,7 @@ export async function applyProviderSubscriptionProjection(
     }
     await settleProviderMutation(
       db,
-      workspaceId,
+      { workspaceId, provider, environment },
       subscription.customData.billing_schedule_mutation_id || subscription.customData.billing_mutation_id,
       subscription.status,
       mapping.plan_key,
@@ -469,7 +487,7 @@ async function syncSettledBillingMutation(
 
 export async function settleProviderMutation(
   db: any,
-  workspaceId: string,
+  { workspaceId, provider, environment }: Pick<BillingProviderAdapter, "provider" | "environment"> & { workspaceId: string },
   mutationId: string | undefined,
   providerStatus: ProviderSubscriptionSnapshot["status"],
   providerPlanKey: string,
@@ -492,11 +510,13 @@ export async function settleProviderMutation(
     cancelAtPeriodEnd: false,
   },
 ) {
-  if (!mutationId) return
+  if (!mutationId || !uuidValue(mutationId)) return
   const { data: transition, error } = await db.from("billing_mutation_transitions")
     .select("id, kind, state, to_plan_key, outcome, last_error_code")
     .eq("mutation_id", mutationId)
     .eq("workspace_id", workspaceId)
+    .eq("provider", provider)
+    .eq("environment", environment)
     .maybeSingle()
   if (error) throw new Error(error.message)
   if (!transition) return

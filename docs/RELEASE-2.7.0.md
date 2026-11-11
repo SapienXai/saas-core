@@ -6,7 +6,10 @@ is 2.6.2.
 
 - Stripe remains the default. Paddle adds explicit environment and provider
   selection, hosted checkout, signed receipts, portal identity verification,
-  and subscription reconciliation through the shared projection.
+  and subscription reconciliation through the shared projection. Paddle Live
+  checkout is disabled by default; Sandbox-only interval cutover is not
+  certified for Live. Stripe renewal projection requires matching paid invoice
+  evidence before extending the paid period.
 - The entitlement gate requires a current paid period for provider-backed
   access. Legacy UTC date-only periods remain accepted.
 - Public Workspace resolution uses the ingress Host by default. A trusted
@@ -16,11 +19,13 @@ is 2.6.2.
 
 ## Upgrade and deployment
 
-Review the managed-file diff and update dry run. Apply the source update,
-then apply `20261111100704_require_provider_entitlement_period.sql` through
-the consumer's controlled Supabase workflow. Confirm provider rows with
-incomplete periods can be reconciled before the production cutover. The CLI
-delivers the SQL source. See [Upgrading](./UPGRADING.md) and
+Review the managed-file diff and update dry run. Run the
+[read-only period audit](../scripts/audit-provider-periods.sql) and reconcile
+legitimate incomplete rows with their original provider before cutover. Stage
+the managed sources, apply
+`20261111100704_require_provider_entitlement_period.sql` through the
+consumer's controlled Supabase workflow, then deploy the matching app. The
+CLI delivers SQL source without executing it. See [Upgrading](./UPGRADING.md) and
 [Billing architecture](./BILLING-ARCHITECTURE.md).
 
 All five packages share the same version. `pnpm core:pack` builds the

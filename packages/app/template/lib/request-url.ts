@@ -10,7 +10,10 @@ export function getRequestUrl(request: Request) {
 
   if (process.env.NODE_ENV === "production") return url
 
-  const protocol = firstHeaderValue(request, "x-forwarded-proto") || url.protocol.replace(":", "")
+  const forwardedProtocol = process.env.SAAS_CORE_TRUST_FORWARDED_HOST === "true"
+    ? firstHeaderValue(request, "x-forwarded-proto") : null
+  const protocol = forwardedProtocol === "http" || forwardedProtocol === "https"
+    ? forwardedProtocol : url.protocol.replace(":", "")
   const trustedHost = getTrustedRequestHost(request)
   const origin = originFromHost(trustedHost?.host || null, protocol)
   if (origin) return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)

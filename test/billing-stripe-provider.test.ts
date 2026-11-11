@@ -10,8 +10,9 @@ import {
   getStripeIntegrationIdentifier,
   getStripeMutationIdempotencyKey,
   normalizeStripeSubscription,
+  matchesPaidStripePeriod,
 } from "../lib/billing/providers/stripe"
-import type { ProviderCheckoutRequest } from "../lib/billing/provider"
+import type { ProviderCheckoutRequest, ProviderSubscriptionSnapshot } from "../lib/billing/provider"
 import type Stripe from "stripe"
 
 afterEach(() => vi.unstubAllEnvs())
@@ -37,6 +38,26 @@ const checkoutRequest: ProviderCheckoutRequest = {
 }
 
 describe("Stripe billing provider boundary", () => {
+  it("requires the matching paid Stripe invoice line for the new billing period", () => {
+    const period = { start: 1_800_000_000, end: 1_802_592_000 }
+    const subscription = {
+      id: "sub_fixture", customerId: "cus_fixture", livemode: false,
+      currentBillingPeriod: { startsAt: new Date(period.start * 1000).toISOString(), endsAt: new Date(period.end * 1000).toISOString() },
+      items: [{ id: "si_fixture", priceId: "price_fixture", productId: "prod_fixture", quantity: 1 }],
+    } as ProviderSubscriptionSnapshot
+    const details = { subscription_item: "si_fixture", proration: false }
+    const line = { period, parent: { subscription_item_details: details }, pricing: { price_details: { price: "price_fixture" } } } as Stripe.InvoiceLineItem
+    const invoice = { status: "paid", livemode: false, customer: "cus_fixture", parent: { subscription_details: { subscription: "sub_fixture" } } } as Stripe.Invoice
+    expect(matchesPaidStripePeriod(invoice, [line], subscription)).toBe(true)
+    expect(matchesPaidStripePeriod({ ...invoice, status: "open" }, [line], subscription)).toBe(false)
+    expect(matchesPaidStripePeriod({ ...invoice, livemode: true }, [line], subscription)).toBe(false)
+    expect(matchesPaidStripePeriod({ ...invoice, customer: "cus_other" }, [line], subscription)).toBe(false)
+    expect(matchesPaidStripePeriod(invoice, [{ ...line, period: { ...period, start: period.start - 1 } }], subscription)).toBe(false)
+    expect(matchesPaidStripePeriod(invoice, [{ ...line, parent: { ...line.parent!, subscription_item_details: { ...line.parent!.subscription_item_details!, proration: true } } }], subscription)).toBe(false)
+    expect(matchesPaidStripePeriod(invoice, [line], { ...subscription, id: "sub_other" })).toBe(false)
+    expect(matchesPaidStripePeriod(invoice, [line], { ...subscription, items: [{ ...subscription.items[0], priceId: "price_other" }] })).toBe(false)
+  })
+
   it("accepts matching Sandbox credentials and rejects mode mismatches", () => {
     configureStripeSandbox()
     expect(getStripeBillingConfig()).toMatchObject({ environment: "sandbox", expectedAccountId: "acct_1Tvn6tDKdVwvpd8n" })

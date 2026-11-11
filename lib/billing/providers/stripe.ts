@@ -222,6 +222,30 @@ export function buildStripeCheckoutSessionParams(request: ProviderCheckoutReques
   }
 }
 
+export function matchesPaidStripePeriod(
+  invoice: Pick<Stripe.Invoice, "livemode" | "status" | "customer" | "parent">,
+  lines: Stripe.InvoiceLineItem[],
+  subscription: ProviderSubscriptionSnapshot,
+) {
+  const invoiceSubscription = invoice.parent?.subscription_details?.subscription
+  const subscriptionId = typeof invoiceSubscription === "string" ? invoiceSubscription : invoiceSubscription?.id
+  const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id
+  if (invoice.status !== "paid" || invoice.livemode !== subscription.livemode ||
+      subscriptionId !== subscription.id || !customerId || customerId !== subscription.customerId) return false
+  const item = subscription.items[0]
+  const period = subscription.currentBillingPeriod
+  if (subscription.items.length !== 1 || !item?.priceId || !period) return false
+  const start = Date.parse(period.startsAt)
+  const end = Date.parse(period.endsAt)
+  return Number.isFinite(start) && end > start && lines.some((line) => {
+    const details = line.parent?.subscription_item_details
+    const price = line.pricing?.price_details?.price
+    const priceId = typeof price === "string" ? price : price?.id
+    return details?.subscription_item === item.id && !details.proration && priceId === item.priceId &&
+      line.period.start * 1000 === start && line.period.end * 1000 === end
+  })
+}
+
 export function createStripeBillingAdapter(): StripeBillingAdapter {
   const config = getStripeBillingConfig()
   const stripe = getStripeClient(config)
@@ -262,6 +286,18 @@ export function createStripeBillingAdapter(): StripeBillingAdapter {
       const normalized = normalizeStripeSubscription(subscription)
       assertStripeMode(config, normalized.livemode)
       return normalized
+    },
+    async hasPaidRenewal(subscription) {
+      await assertStripeAccountBinding(config)
+      const invoices = await stripe.invoices.list({ subscription: subscription.id, status: "paid", limit: 10 })
+      for (const invoice of invoices.data) {
+        if (matchesPaidStripePeriod(invoice, invoice.lines.data, subscription)) return true
+        if (invoice.lines.has_more && invoice.id) {
+          const lines = await stripe.invoices.listLineItems(invoice.id, { limit: 100 })
+          if (matchesPaidStripePeriod(invoice, lines.data, subscription)) return true
+        }
+      }
+      return false
     },
     async createPortalSession(request: ProviderPortalRequest): Promise<ProviderPortalSession> {
       assertBillingMutationsEnabled()

@@ -37,6 +37,10 @@ describe("Stripe webhook normalization", () => {
   it("settles asynchronous failure and expiration only from their authoritative state", () => {
     expect(getStripeCheckoutEventStatus({ status: "complete", paymentStatus: "unpaid" }, "checkout.session.async_payment_failed"))
       .toBe("failed")
+    expect(getStripeCheckoutEventStatus({ status: "complete", paymentStatus: "paid" }, "checkout.session.async_payment_failed"))
+      .toBe("completed")
+    expect(getStripeCheckoutEventStatus({ status: "open", paymentStatus: "unpaid" }, "checkout.session.expired"))
+      .toBe("created")
     expect(getStripeCheckoutEventStatus({ status: "expired", paymentStatus: "unpaid" }, "checkout.session.expired"))
       .toBe("expired")
   })

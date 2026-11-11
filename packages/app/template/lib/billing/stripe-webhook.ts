@@ -114,9 +114,9 @@ export function getStripeCheckoutEventStatus(
   session: Pick<ProviderCheckoutSession, "status" | "paymentStatus">,
   eventType?: string,
 ): "created" | "completed" | "expired" | "failed" {
-  if (eventType === "checkout.session.async_payment_failed") return "failed"
-  if (session.status === "expired" || eventType === "checkout.session.expired") return "expired"
   if (session.status === "complete" && (session.paymentStatus === "paid" || session.paymentStatus === "no_payment_required")) return "completed"
+  if (session.status === "expired") return "expired"
+  if (session.status === "complete" && eventType === "checkout.session.async_payment_failed") return "failed"
   return "created"
 }
 
@@ -190,8 +190,8 @@ export async function recordStripeWebhookEvent(event: NormalizedStripeEvent) {
   return { id: stored.id, duplicate: Boolean(existing.data), status: stored.status, environment }
 }
 
-function applyStripeSubscriptionProjection(event: NormalizedStripeEvent, subscriptionId: string) {
-  return applyProviderSubscriptionProjection(event, subscriptionId, createStripeBillingAdapter())
+function applyStripeSubscriptionProjection(event: NormalizedStripeEvent, subscriptionId: string, checkout?: ProviderCheckoutSession) {
+  return applyProviderSubscriptionProjection(event, subscriptionId, createStripeBillingAdapter(), checkout)
 }
 
 async function applyStripeCheckoutEvent(event: NormalizedStripeEvent, verifiedSession?: ProviderCheckoutSession) {
@@ -228,25 +228,30 @@ async function applyStripeCheckoutEvent(event: NormalizedStripeEvent, verifiedSe
 
   const status = getStripeCheckoutEventStatus(session, event.eventType)
 
-  const { error: updateError } = await db.from("billing_checkout_sessions")
+  let update = db.from("billing_checkout_sessions")
     .update({ status })
     .eq("provider", STRIPE_BILLING_PROVIDER)
     .eq("environment", environment)
     .eq("workspace_id", checkout.workspace_id)
     .eq("provider_transaction_id", sessionId)
+  if (status !== "completed") update = update.neq("status", "completed")
+  const { data: updated, error: updateError } = await update.select("status").maybeSingle()
   if (updateError) throw new Error(updateError.message)
 
-  if (status === "expired" || status === "failed") {
-    await settleProviderMutation(db, checkout.workspace_id, checkout.idempotency_key, "expired", checkout.target_plan_key, session.id)
+  if (updated && (status === "expired" || status === "failed")) {
+    await settleProviderMutation(db, { workspaceId: checkout.workspace_id, provider: STRIPE_BILLING_PROVIDER, environment }, checkout.idempotency_key, "expired", checkout.target_plan_key, session.id)
   }
 
   // A completed Checkout return never grants access. Re-read the subscription
   // from Stripe and let its payment-confirmed lifecycle state drive entitlements.
   if (status !== "completed" || !session.subscriptionId) return { status: "processed" as const, workspaceId: checkout.workspace_id }
-  return applyStripeSubscriptionProjection(event, session.subscriptionId)
+  return applyStripeSubscriptionProjection(event, session.subscriptionId, session)
 }
 
 export async function applyStripeEvent(event: NormalizedStripeEvent) {
+  if (event.livemode !== (getBillingEnvironment() === "live")) {
+    throw new StripeBillingSyncError("ENVIRONMENT_MISMATCH", "Stripe event belongs to another environment.")
+  }
   if (!isSupportedStripeEvent(event.eventType)) return { status: "ignored" as const, reason: "UNSUPPORTED_EVENT" as const }
   if (event.eventType.startsWith("checkout.session.")) return applyStripeCheckoutEvent(event)
   if (!event.subscriptionId) return { status: "ignored" as const, reason: "NO_SUBSCRIPTION_REFERENCE" as const }
@@ -264,6 +269,7 @@ export async function processStoredStripeWebhookEvent(eventId: string) {
     .select("id, status, attempts, next_attempt_at")
     .eq("id", eventId)
     .eq("provider", STRIPE_BILLING_PROVIDER)
+    .eq("environment", getBillingEnvironment())
     .single()
   if (loadError || !loaded) throw new Error(loadError?.message || "Stripe webhook event was not found.")
   if (loaded.status === "processed" || loaded.status === "ignored") return loaded.status

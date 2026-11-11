@@ -3,9 +3,11 @@
 Candidate runtime and packages **2.7.0**, Core schema compatibility **2.0**.
 Published baseline **2.6.2**, anchored by `saas-core-v2.6.2` at
 `3ceca1c8e33e6d93e78fd9ee56094a6436a29e64`. The development branch was cut
-from `8a879fb5554af1f2975ec533d777e8811adb8443` on main. The tested
-implementation is `8532ccb39c886cafb16f32bc4d08c9257d902841`. The
-candidate is unpublished.
+from `8a879fb5554af1f2975ec533d777e8811adb8443` on main. The implementation was
+`8532ccb39c886cafb16f32bc4d08c9257d902841`; the independent audit started at
+`5f5483ac55ae46b4975ab9926cf98ae486070b1e` (two commits ahead of main, 106
+changed files, no candidate PR or runs at the start). The candidate is unpublished.
+The draft PR is the record for the exact audited head and its hosted checks.
 
 ## Confirmed defects and repairs
 
@@ -19,7 +21,18 @@ candidate is unpublished.
 | The schema doctor test could select the wrong local Docker database when multiple fixtures were running. | The test checks the isolated Core API port, selects the exact project and container, and restores metadata in a finally block. |
 | Generated trial types and several browser assertions lagged existing schema and UI. | Types regenerated from local Supabase. Browser assertions now cover the current signup, actual Mailpit delivery, and the current Appearance control. |
 
-## Test matrix
+### Independent audit fixes
+
+| Finding | Repair and evidence |
+| --- | --- |
+| An initial Stripe subscription could project from a known journal row without reading the exact Checkout Session's payment. A late async failure could win over a paid Session. | Re-read the scoped Checkout Session (or reuse the server's verified read), match session, Workspace, mutation, plan/interval, mode, customer and subscription, and require paid or Stripe's no-payment-required status. A stale event cannot replace a completed Checkout with an earlier state. |
+| Stripe can advance subscription item dates while an invoice is still open. | For an existing subscription, extending the paid window requires a paid invoice with a matching subscription item, price, customer, environment, and service period. Paddle retains its completed-transaction proof and rejects shortening an existing paid period. |
+| Mutation settlement could look up an ID from a different billing provider or environment. | Settlement and Paddle checkout recovery use the scoped journal; the local database fixture rejects foreign Workspace, provider, and environment. |
+| SQL used the database timezone when interpreting old date-only periods. Cancellation, resume and system schedules could also differ between app and SQL. | Legacy dates now mean midnight UTC; matching stored states exercise both paths. Tests cover UTC and New York sessions, the spring DST boundary, and exact expiry and downgrade timestamps. |
+| A forwarded protocol could alter a development redirect origin without an opted-in proxy. | Host remains authoritative by default. Forwarded protocol is accepted only with the same explicit trusted ingress opt-in. |
+| The hosted full matrix ran only on main and schedules. | Label a same-repository PR `release-candidate` to run both jobs against its head SHA. Checks have read-only contents access and do not keep checkout credentials. Normal main, schedule and ordinary PR behavior stays in place. |
+
+## Stage-one test matrix (historical; see draft PR for the independent rerun)
 
 | Command or scenario | Result |
 | --- | --- |
@@ -56,3 +69,99 @@ The release and consumer commands use local Supabase and a disposable
 registry. The updater copies managed migration source and leaves database
 application to the consumer. Keep existing Stripe links in their configured
 environment. Treat any provider migration as a separate audited operation.
+
+## Subscription rollout
+
+1. Take a normal backup and confirm the consumer migration ledger. Run the
+   [read-only period audit](../scripts/audit-provider-periods.sql) from a
+   review checkout with a read-only database connection:
+   `psql -X -v ON_ERROR_STOP=1 -f scripts/audit-provider-periods.sql`.
+   Use the intended connection via the normal secret store. The report counts
+   active, trialing and past-due provider rows by provider and environment;
+   flags can overlap. Expired rows can be expected after failed payments.
+2. Rehearse on an isolated staging database. Triage incomplete, expired or
+   unmapped states against the original account and environment. Verify the
+   linked Workspace, customer, subscription, price and matching paid period.
+   Replay a verified provider delivery or use the same scoped application
+   reconciliation used by webhook processing. Re-run the diagnostic after
+   reconciliation. Route irreconcilable customers to support; never fill in
+   dates or transfer provider identity based only on a local plan or callback.
+3. Before an authorized cutover, pause new commercial changes if the report
+   identifies unresolved active customers. Preserve signed webhook receipt and
+   retry processing. Apply the new SQL migration first, then deploy the matching
+   app and monitor fallback counts, blocked transitions, and retries. Confirm
+   existing Workspace, billing and domain rows remain present. The SQL migration
+   replaces the service-only entitlement function and writes no subscription data.
+4. Keep the stricter database function during application recovery. If the old
+   app would present a different entitlement decision, pause affected product
+   writes and roll forward with a corrected runtime or scoped provider
+   reconciliation. Keep the journal and provider links intact; do not relax the
+   function or backfill entitlements from assumptions.
+
+`lock_workspace_entitlement` uses a fixed search path, an advisory transaction
+lock per Workspace/capability, and a row lock on the subscription. Public,
+anonymous and authenticated roles cannot execute it; approved server-side
+product RPCs perform their own authorization before using it.
+
+## Consumer compatibility
+
+**PlaceDJ:** The starting manifest at
+`ad2f90cf8630e097bea1317e178632791b8887a8` declares 2.6.2 / schema 2.0 and
+source `d3239435850915d0b7bddfa0bdf6e30fadeba2df` (283 managed and 52
+product-owned entries). Audit from a disposable `git archive HEAD` extraction:
+run the candidate CLI's `doctor`, `diff --source /path/to/core`, then
+`update --source /path/to/core --dry-run` before applying. The five managed
+Paddle/provider/checkout files reconcile through the manifest. The new flat
+Core migration is copied as source; 114 product migrations stay outside
+update ownership. PlaceDJ's plan actions/page, billing UI, proxy, Next
+configuration, localization, player, venue, and product catalog remain
+product-owned. Review those preserved billing and routing entry points in a
+separate PlaceDJ change before any rollout; an update cannot certify their
+product-specific behavior or its real migration history.
+
+**ReserveVia:** Read-only source inspected at
+`92ffa98dd22e785d90959b292c341de1e57e6873`. It has its own Paddle client,
+webhook, entitlement implementation and migrations, with no Core manifest or
+Core package coordinates. It is a legacy source reference. Adopting Core
+requires a separately designed migration and tenant/billing mapping; do not
+run the updater over it.
+
+## Provider acceptance
+
+Level A uses mocked providers and local Supabase. Level B requires an actual
+isolated Sandbox; no credentials were available to this audit. Level C was
+out of scope. Paddle Live checkout stays disabled by default and the
+annual-to-monthly pause/resume path stays Sandbox-only.
+
+1. Provision a disposable application/database with test Workspaces and
+   two test identities. Select one provider at a time with
+   `SAAS_CORE_BILLING_PROVIDER` and `SAAS_CORE_BILLING_MODE=enabled`. Set
+   `STRIPE_ENVIRONMENT=sandbox` or `PADDLE_ENVIRONMENT=sandbox`; use the
+   matching API key, account binding, webhook secret and public Paddle test
+   token from the Sandbox. Keep `PADDLE_LIVE_CHECKOUT_MODE` unset. Use a
+   Sandbox-only HTTPS callback origin.
+2. Sync the disposable product catalog. For Stripe, run
+   `pnpm billing:register-price <plan-key> sandbox <product-id> <price-id> <month|year> <currency>`
+   in the Sandbox project. For Paddle, verify monthly and annual IDs through
+   the Sandbox API and insert their scoped mapping in `billing_provider_prices`
+   through the disposable database's privileged tooling. Subscribe
+   the provider endpoint to the events documented in
+   [Billing architecture](./BILLING-ARCHITECTURE.md). Keep provider secrets
+   server-only and use the provider's test payment details.
+3. Complete an owner Checkout. Observe one provider Checkout/transaction,
+   one durable mutation, and one linked subscription. Check unpaid and
+   forged returns, webhook signature failure, duplicate delivery, and the
+   wrong Workspace, customer, or environment. Verify the other identity
+   cannot open the portal and the authorized buyer can.
+4. Use Stripe Sandbox test clocks or Paddle Sandbox test fixtures supported
+   by that account for a real successful and failed renewal. Confirm no
+   extension from an unpaid invoice/transaction. Test cancel, undo, expiry,
+   and replay. For Paddle, schedule annual-to-monthly, verify the original
+   paid end, interrupt at pause/resume, reconcile, and confirm exactly one
+   paid renewal at the new price. Unresolved provider operations stay blocked.
+5. Record redacted event IDs, mutation outcomes, paid timestamps, and provider
+   charge counts. A provider simulator alone cannot certify real checkout,
+   renewal, or portal access. Keep paid Paddle disabled for consumers until
+   Sandbox acceptance and separately authorized Live readiness. Require a
+   Stripe Sandbox rehearsal before publishing the changed default Stripe
+   renewal enforcement.

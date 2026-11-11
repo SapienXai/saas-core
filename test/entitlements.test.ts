@@ -117,7 +117,7 @@ describe("workspace entitlement policy", () => {
     expect(resolveEffectiveEntitlementPlan({ ...stripe, currentPeriodEndAt: "malformed" })).toBe("default")
     expect(resolveEffectiveEntitlementPlan({ ...stripe, providerPriceId: null })).toBe("default")
     expect(resolveEffectiveEntitlementPlan({ ...stripe, provider: "Invalid Provider" })).toBe("default")
-    expect(resolveEffectiveEntitlementPlan({ ...stripe, provider: "other-provider" })).toBe("paid")
+    expect(resolveEffectiveEntitlementPlan({ ...stripe, provider: "other-provider" })).toBe("default")
     expect(resolveEffectiveEntitlementPlan({ ...stripe, source: "legacy" })).toBe("default")
   })
 

@@ -3,8 +3,9 @@
 The Core 2.7.0 candidate uses schema compatibility coordinate **2.0**. The
 review started from main at
 `8a879fb5554af1f2975ec533d777e8811adb8443` and reviewed the seven-commit Paddle
-branch through `d3239435850915d0b7bddfa0bdf6e30fadeba2df`. The tested
-implementation is commit `8532ccb39c886cafb16f32bc4d08c9257d902841`.
+branch through `d3239435850915d0b7bddfa0bdf6e30fadeba2df`. The original
+implementation was commit `8532ccb39c886cafb16f32bc4d08c9257d902841`.
+See the release audit and draft PR for the independent candidate evidence.
 
 BookPlace can start with one Core Workspace per property. The product owns
 the property profile, room and room-type inventory, guest identities, stays,
@@ -19,7 +20,7 @@ belong to the BookPlace booking and folio workflows.
 | Hotel registration | Verified locally | Auth integration and browser signup, confirmation delivery, sign-in and atomic onboarding | Add property setup after Workspace bootstrap and configure confirmation delivery |
 | Hotel identity | Consumer implementation | Workspace bootstrap, authorized selection, tenant-owned schema and product home proof | Store property profile in a product table keyed by `workspace_id` |
 | Employees | Verified locally | Core RLS, invitation redemption and replay denial, finite membership limits and staff mutation denial | Map staff roles to PMS operations and apply RLS to each product table |
-| Free PMS plan | Verified locally | Default catalog bootstrap and browser Plan & Usage without billing credentials | Configure features and a finite employee limit in the product catalog |
+| Free PMS plan | Verified locally | Default catalog bootstrap and browser Plan & Usage without billing credentials | Configure direct booking and a ten-active-room cap in the product catalog; free usage needs no payment provider |
 | Ten active rooms | Consumer implementation | The disposable consumer's generic quota transaction serializes two writes competing for one slot | Count active rooms in the same database transaction that locks entitlement and consumes quota |
 | Hotel subdomain | Verified locally | Unique platform claim, reserved label rules, canonical hostname and inactive or unknown routing tests | Configure wildcard DNS, TLS, and the correct Vercel project |
 | Public booking website | Consumer implementation | Host-to-Site-to-Workspace resolution and a disposable consumer renderer that uses the resolved Workspace | Publish tenant-safe availability and booking endpoints with separate product authorization and abuse controls |
@@ -55,7 +56,7 @@ real assigned hostnames. Configure the app's Auth URLs and callback allowlist.
 Core stores an exact platform hostname mapping per published site. Public
 resolution uses the ingress Host and the persisted domain, site and Workspace.
 A direct proxy must forward the intended Host. Forwarded-host opt-in requires
-an ingress that replaces client-supplied values and blocks direct origin
+an ingress that replaces client-supplied host and protocol values and blocks direct origin
 access. See [Vercel wildcard domains](https://vercel.com/docs/domains/working-with-domains)
 and [Vercel request headers](https://vercel.com/docs/headers/request-headers).
 
