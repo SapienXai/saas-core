@@ -174,7 +174,8 @@ annual-to-monthly pause/resume path stays Sandbox-only.
    paid renewal at the new price. Unresolved provider operations stay blocked.
 5. Record redacted event IDs, mutation outcomes, paid timestamps, and provider
    charge counts. A provider simulator alone cannot certify real checkout,
-   renewal, or portal access. Keep paid Paddle disabled for consumers until
-   Sandbox acceptance and separately authorized Live readiness. Require a
-   Stripe Sandbox rehearsal before publishing the changed default Stripe
-   renewal enforcement.
+   renewal, or portal access. Paddle is the default for new checkout. Validate
+   Paddle Sandbox before enabling paid Paddle in a consumer, and verify Live
+   readiness before enabling Live checkout. Run the Stripe Sandbox rehearsal
+   for consumers rolling out the updated Stripe renewal path. The Stripe
+   rehearsal is independent of merging the Paddle-first source into `main`.

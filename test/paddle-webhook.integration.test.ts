@@ -27,9 +27,9 @@ const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 function configurePaddleCheckout() {
+  vi.stubEnv("SAAS_CORE_BILLING_PROVIDER", undefined)
   for (const [name, value] of Object.entries({
     NODE_ENV: "development",
-    SAAS_CORE_BILLING_PROVIDER: "paddle",
     SAAS_CORE_BILLING_MODE: "enabled",
     PADDLE_ENVIRONMENT: "sandbox",
     PADDLE_API_KEY: "pdl_sdbx_fixture",

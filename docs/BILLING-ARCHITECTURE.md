@@ -36,9 +36,10 @@ types.
 
 ## Provider selection
 
-Set `SAAS_CORE_BILLING_PROVIDER=paddle` on deployments that use Paddle for new
-checkouts. `stripe` remains available and is the default when the variable is
-absent.
+Paddle is the default provider for new checkouts. Set
+`SAAS_CORE_BILLING_PROVIDER=stripe` explicitly on deployments that use Stripe
+for new checkouts. Each provider requires its own configuration and price
+mappings.
 
 Management uses the provider and environment recorded on the Workspace
 subscription, including cancellation, plan changes, portal access, and
@@ -57,8 +58,7 @@ routing and need review before changing the checkout setting.
 
 ## Paddle
 
-For local Sandbox set `SAAS_CORE_BILLING_PROVIDER=paddle`,
-`SAAS_CORE_BILLING_MODE=enabled`, `PADDLE_ENVIRONMENT=sandbox`,
+For local Sandbox set `SAAS_CORE_BILLING_MODE=enabled`, `PADDLE_ENVIRONMENT=sandbox`,
 `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`, and
 `NEXT_PUBLIC_PADDLE_CLIENT_TOKEN`. Use a loopback `NEXT_PUBLIC_SITE_URL`
 and matching loopback server and public Supabase URLs. For an approved

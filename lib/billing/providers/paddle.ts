@@ -2,6 +2,7 @@ import "server-only"
 
 import { createHmac, timingSafeEqual } from "node:crypto"
 import { createServiceRoleClient } from "@/lib/supabase"
+import { getSelectedCheckoutProvider } from "../checkout-provider.mjs"
 import { BillingConfigurationError, BillingMutationRejectedError, BillingScheduleUnavailableError, assertBillingMutationsEnabled, isBillingDeferred } from "../config"
 import { getProviderPriceByProviderId } from "../price-mapping"
 import type { BillingProviderAdapter, BillingProviderEnvironment, ProviderCheckoutSession, ProviderInvoiceSummary, ProviderSubscriptionSnapshot } from "../provider"
@@ -65,7 +66,7 @@ export function isPaddleBillingConfigured() {
 }
 
 export function canStartPaddleCheckout(workspaceId: string) {
-  if (process.env.SAAS_CORE_BILLING_PROVIDER?.trim() !== provider || isBillingDeferred()) return false
+  if (getSelectedCheckoutProvider() !== provider || isBillingDeferred()) return false
   const { environment } = getPaddleConfig()
   if (environment === "sandbox") return true
   return process.env.PADDLE_LIVE_CHECKOUT_MODE === "enabled" ||

@@ -42,8 +42,12 @@ Core now resolves the ingress `Host` by default. Deployments behind a reverse
 proxy that deliberately rewrites `Host` may set
 `SAAS_CORE_TRUST_FORWARDED_HOST=true` when their ingress replaces client
 forwarding headers and prevents direct access to the application origin.
-Existing product-owned environment templates stay intact on update. Add
-[Paddle settings](./BILLING-ARCHITECTURE.md#paddle) manually if adopting Paddle.
+Existing product-owned environment templates stay intact on update. With
+2.7.0, an unset `SAAS_CORE_BILLING_PROVIDER` selects Paddle for new checkout.
+Set `SAAS_CORE_BILLING_PROVIDER=stripe` before upgrading a deployment that
+still uses Stripe for new checkout. Deployments adopting Paddle must add its
+[environment settings and price mappings](./BILLING-ARCHITECTURE.md#paddle).
+Keep the matching credentials and webhooks for existing Stripe subscriptions.
 
 The managed entitlement runtime imports the product-owned server extension
 `src/product/usage.ts`. Fresh consumers receive a neutral resolver registry;

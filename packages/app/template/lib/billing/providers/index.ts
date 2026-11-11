@@ -1,6 +1,7 @@
 import "server-only"
 
 import type { BillingProviderEnvironment, BillingProviderAdapter } from "../provider"
+import { getSelectedCheckoutProvider } from "../checkout-provider.mjs"
 import { BillingConfigurationError, assertBillingMutationsEnabled, getBillingEnvironment, isStripeBillingConfigured, isBillingDeferred } from "../config"
 import { canStartPaddleCheckout, createPaddleAdapter, getPaddleConfig, isPaddleBillingConfigured } from "./paddle"
 import { createStripeBillingAdapter } from "./stripe"
@@ -14,9 +15,9 @@ export type BillingProviderBinding = {
 
 /** Resolve the deployment's choice for new checkout. */
 export function getBillingProviderName(): SupportedBillingProvider {
-  const provider = process.env.SAAS_CORE_BILLING_PROVIDER?.trim() || "stripe"
-  if (provider === "stripe" || provider === "paddle") return provider
-  throw new BillingConfigurationError("Unknown billing provider.")
+  const provider = getSelectedCheckoutProvider()
+  if (!provider) throw new BillingConfigurationError("Unknown billing provider.")
+  return provider
 }
 
 export function getBillingProviderEnvironment(provider = getBillingProviderName()) {
