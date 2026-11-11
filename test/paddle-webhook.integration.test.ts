@@ -210,7 +210,7 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
       }
       const adapter = {
         provider: "stripe", environment: "sandbox" as const,
-        retrieveSubscription: vi.fn().mockResolvedValue(subscription), retrieveCheckoutSession: vi.fn(),
+        retrieveSubscription: vi.fn().mockResolvedValue(subscription), retrieveCheckoutSession: vi.fn(), hasPaidRenewal: vi.fn(),
       }
       const event = { eventId: "evt_" + fixture, occurredAt: now, workspaceId, eventType: "customer.subscription.created" }
       for (const change of [
@@ -225,6 +225,24 @@ describe.skipIf(url !== "http://127.0.0.1:55621" || !serviceKey)("Provider check
       expect(unchanged.data?.source).toBe("system")
       adapter.retrieveCheckoutSession.mockResolvedValue(session)
       await expect(applyProviderSubscriptionProjection(event, subscriptionId, adapter)).resolves.toMatchObject({ status: "processed", planKey })
+      expect(adapter.hasPaidRenewal).not.toHaveBeenCalled()
+
+      const renewedPeriod = { startsAt: now, endsAt: new Date(Date.now() + 2 * 86_400_000).toISOString() }
+      adapter.retrieveSubscription.mockResolvedValue({ ...subscription, currentBillingPeriod: renewedPeriod })
+      adapter.hasPaidRenewal.mockResolvedValue(false)
+      const renewalEvent = { ...event, eventType: "customer.subscription.updated" }
+      const projectedEnd = async () => {
+        const row = await db.from("workspace_subscriptions").select("current_period_end_at").eq("workspace_id", workspaceId).single()
+        if (row.error) throw row.error
+        return Date.parse(row.data.current_period_end_at)
+      }
+      await expect(applyProviderSubscriptionProjection(renewalEvent, subscriptionId, adapter)).rejects.toMatchObject({ code: "RENEWAL_PENDING_PAYMENT" })
+      expect(await projectedEnd()).toBe(Date.parse(subscription.currentBillingPeriod!.endsAt))
+
+      adapter.hasPaidRenewal.mockResolvedValue(true)
+      await expect(applyProviderSubscriptionProjection({ ...renewalEvent, eventType: "invoice.paid" }, subscriptionId, adapter))
+        .resolves.toMatchObject({ status: "processed", planKey })
+      expect(await projectedEnd()).toBe(Date.parse(renewedPeriod.endsAt))
     } finally {
       await db.from("workspaces").delete().eq("id", workspaceId)
       await db.from("billing_provider_prices").delete().eq("provider_price_id", priceId)

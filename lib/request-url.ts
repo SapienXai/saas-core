@@ -16,7 +16,7 @@ export function getRequestUrl(request: Request) {
     ? forwardedProtocol : url.protocol.replace(":", "")
   const trustedHost = getTrustedRequestHost(request)
   const origin = originFromHost(trustedHost?.host || null, protocol)
-  if (origin) return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)
+  if (origin) return withOrigin(url, origin)
 
   return url
 }
@@ -37,7 +37,16 @@ export function getAuthRedirectOrigin(origin: string) {
 export function getAuthRedirectUrl(request: Request) {
   const url = getRequestUrl(request)
   const origin = getAuthRedirectOrigin(url.origin)
-  return new URL(`${url.pathname}${url.search}${url.hash}`, `${origin}/`)
+  return withOrigin(url, origin)
+}
+
+function withOrigin(url: URL, origin: string) {
+  // A pathname beginning with two slashes is still a path, never an authority.
+  const result = new URL(origin)
+  result.pathname = url.pathname
+  result.search = url.search
+  result.hash = url.hash
+  return result
 }
 
 export function getBrowserAuthOrigin() {

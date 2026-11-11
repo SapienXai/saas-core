@@ -47,6 +47,23 @@ describe("trusted request hostname boundary", () => {
     expect(getRequestUrl(request).origin).toBe("http://alpha.example.com")
   })
 
+  it("keeps redirect authority when a path looks like a protocol-relative URL", () => {
+    const request = new Request("http://0.0.0.0:3000//attacker.example/path?keep=1#anchor", {
+      headers: { host: "alpha.example.com" },
+    })
+    expect(getRequestUrl(request).href).toBe("http://alpha.example.com//attacker.example/path?keep=1#anchor")
+    environment.NODE_ENV = "production"
+    expect(getAuthRedirectUrl(request).href).toBe("http://0.0.0.0:3000//attacker.example/path?keep=1#anchor")
+  })
+
+  it("keeps the request scheme when the trusted proxy protocol is invalid", () => {
+    vi.stubEnv("SAAS_CORE_TRUST_FORWARDED_HOST", "true")
+    const request = new Request("https://preview.example.test/login", {
+      headers: { host: "preview.example.test", "x-forwarded-proto": "javascript, http" },
+    })
+    expect(getAuthRedirectUrl(request).href).toBe("https://preview.example.test/login")
+  })
+
   it("preserves a private LAN host and the active development port", () => {
     const request = new Request("http://0.0.0.0:3000/auth/signup", {
       headers: { host: "192.168.1.108:3100" },
