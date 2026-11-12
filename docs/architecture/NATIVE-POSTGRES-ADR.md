@@ -37,7 +37,7 @@ Simple projections, comparisons, null checks, IN, ordering, limits, filtered wri
 | Auth login | Separate Better Auth connection. The only Core data grant is the PWA asset reference required by the storage adapter. |
 | Migration owner | Applies the existing SQL and explicit role setup. Its credentials do not belong in the app runtime. |
 
-Use `BEGIN`, local search path, an allowlisted `SET LOCAL ROLE`, and transaction-local `request.jwt.claims`. Commit only after query processing succeeds. Roll back on failure and discard a client whose rollback fails. No named prepared statements, persistent session settings or client-supplied role selection.
+Use `BEGIN`, local search path, an allowlisted transaction-local role via `set_config`, and transaction-local `request.jwt.claims`. Commit only after query processing succeeds. Roll back on failure and discard a client whose rollback fails. No named prepared statements, persistent session settings or client-supplied role selection.
 
 Preserve the migration checksums. Existing SECURITY DEFINER functions keep their qualified schema, search path, and EXECUTE grants. Core workspace and entitlement locks, provider event leases and idempotency receipts, and BookPlace inventory exclusions and transactional reservation, front desk, folio and studio functions stay in SQL. The transport does not split those transactions or retry an ambiguous write.
 

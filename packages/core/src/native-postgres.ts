@@ -5,11 +5,7 @@ export type DataIdentity =
   | { role: "anon" | "service_role"; id?: never; email?: never }
   | { role: "authenticated"; id: string; email?: string }
 
-const roles = {
-  anon: "SET LOCAL ROLE anon",
-  authenticated: "SET LOCAL ROLE authenticated",
-  service_role: "SET LOCAL ROLE service_role",
-} as const
+const roles = new Set(["anon", "authenticated", "service_role"])
 const operators = { eq: "=", neq: "<>", gt: ">", gte: ">=", lt: "<", lte: "<=", like: "LIKE", ilike: "ILIKE" } as const
 const maxRows = 1000
 let pool: Pool | undefined
@@ -89,22 +85,30 @@ async function transaction<T>(identity: DataIdentity, operation: (client: PoolCl
   let discard = false
   const started = performance.now()
   try {
-    if (!Object.prototype.hasOwnProperty.call(roles, identity.role)) throw new NativeDataError("42501", "Invalid database role.")
+    if (!roles.has(identity.role)) throw new NativeDataError("42501", "Invalid database role.")
     if (identity.role === "authenticated" && !/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(identity.id)) {
       throw new NativeDataError("42501", "A verified account is required.")
     }
     client = await postgresPool().connect()
-    await client.query("BEGIN")
-    await client.query("SET LOCAL statement_timeout = '8s'")
-    await client.query("SET LOCAL idle_in_transaction_session_timeout = '12s'")
-    await client.query("SET LOCAL search_path = pg_catalog, public")
-    const { rows } = await client.query<{ allowed: boolean }>(loginCheck)
-    if (!rows[0]?.allowed) throw new NativeDataError("42501", "The PostgreSQL data login has unsafe privileges or missing role grants.")
-    await client.query(roles[identity.role])
+    // These fixed setup statements use one round trip. No request data enters the batch.
+    const setup = await client.query<{ allowed: boolean }>(`
+      BEGIN;
+      SET LOCAL statement_timeout = '8s';
+      SET LOCAL idle_in_transaction_session_timeout = '12s';
+      SET LOCAL search_path = pg_catalog, public;
+      ${loginCheck}
+    `)
+    const policy = Array.isArray(setup) ? setup[setup.length - 1] : setup
+    if (!policy?.rows[0]?.allowed) throw new NativeDataError("42501", "The PostgreSQL data login has unsafe privileges or missing role grants.")
     const claims = identity.role === "authenticated"
       ? { role: identity.role, sub: identity.id, email: identity.email }
       : { role: identity.role }
-    await client.query("SELECT pg_catalog.set_config('request.jwt.claims', $1, true)", [JSON.stringify(claims)])
+    // PostgreSQL applies the same SET ROLE permission checks to the role GUC.
+    // Both values are bound and scoped to the open transaction.
+    await client.query(
+      "SELECT pg_catalog.set_config('role', $1, true), pg_catalog.set_config('request.jwt.claims', $2, true)",
+      [identity.role, JSON.stringify(claims)],
+    )
     const result = await operation(client)
     await client.query(result.error ? "ROLLBACK" : "COMMIT")
     return result
