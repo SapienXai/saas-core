@@ -1,13 +1,62 @@
 # Run SaaS Core on Neon
 
-SaaS Core 2.8.0 supports a fresh Neon Postgres installation. The Next.js
-application runs Better Auth against the same database and sends Core queries
-through a PostgREST endpoint. The browser talks to the application. The database
-connection and Data API signing key are server credentials.
+New 2.9.0 consumers set `NEXT_PUBLIC_SAAS_CORE_BACKEND=neon` and
+`SAAS_CORE_DATA_TRANSPORT=postgres` at build and runtime. Next.js uses
+Better Auth and two server-only PostgreSQL connections. Native data access
+requires PostgreSQL 16 or later, including Neon PostgreSQL 17 and 18.
 
-1. Create a clean Neon branch and database. Use its direct connection for
-   `DATABASE_URL_UNPOOLED`. Set `NEXT_PUBLIC_SAAS_CORE_BACKEND=neon` in both
-   the build and runtime environment.
+1. Create a clean test database or identify the existing Neon branch to
+   upgrade. Set `DATABASE_URL_UNPOOLED` to its direct setup connection.
+2. Run `pnpm db:setup:neon` to apply the shared migrations and record their
+   checksums. Existing Neon databases retain their account and Workspace IDs.
+3. Create distinct least-privilege logins. For the data connection, use a
+   role created in SQL, without membership in `neon_superuser`.
+
+   ```sql
+   CREATE ROLE core_data LOGIN NOINHERIT NOBYPASSRLS;
+   ```
+
+   Set the credential using your database administration tool. Set
+   `SAAS_CORE_DATA_DATABASE_URL` to the data login on the same database.
+   Use Neon's pooled endpoint and `sslmode=verify-full` for hosted traffic.
+   Run `pnpm db:setup:neon --grant-data-role` to explicitly grant only
+   `SET ROLE` membership for `anon`, `authenticated` and `service_role`.
+   The native runtime checks the login and refuses unsafe grants.
+4. Set `DATABASE_URL` to the Better Auth login on the same database. For an
+   auth login named `core_auth` on database `saas_core`, configure:
+
+   ```sql
+   ALTER ROLE core_auth IN DATABASE saas_core SET search_path TO auth, public;
+   GRANT USAGE ON SCHEMA auth TO core_auth;
+   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA auth TO core_auth;
+   GRANT SELECT (icon_url) ON public.workspace_pwa_settings TO core_auth;
+   CREATE POLICY core_neon_assets_read ON public.workspace_pwa_settings
+     FOR SELECT TO core_auth USING (true);
+   ```
+
+   Set `SAAS_CORE_AUTH_URL` to the application origin and use a random
+   `SAAS_CORE_AUTH_SECRET` of at least 32 bytes. Configure the Resend sender
+   and optional Google credentials. Google uses the callback
+   `/api/core-auth/callback/google` on that origin.
+5. Run `pnpm billing:sync-catalog` and check `saas-core doctor` with the
+   target runtime credentials. Exercise signup, verification, Workspace access,
+   invitations, billing reconciliation and password recovery on the test branch.
+
+The native connection pool defaults to four connections per process. Lower
+`SAAS_CORE_DATA_POOL_MAX` for highly concurrent serverless deployments and
+budget connections across processes. A connection waits up to five seconds
+for acquisition and each PostgreSQL statement has an eight-second deadline.
+`SAAS_CORE_DATA_TIMINGS=1` logs elapsed time without query arguments.
+
+## Existing Neon PostgREST deployments
+
+Leaving the transport unset keeps the 2.8 PostgREST behavior. An explicit
+`postgrest` setting does the same. Keep the existing endpoint, audience and
+signing key for rollback to that transport. The JWKS route serves keys only
+for the PostgREST transport. With `postgres` the app requires neither
+`NEON_DATA_API_URL`, `SAAS_CORE_DATA_SIGNING_KEY` nor `SAAS_CORE_DATA_AUDIENCE`.
+
+Use the existing managed Data API or PostgREST setup for legacy mode.
 2. Generate a deployment-specific RSA key with at least 2048 bits. Store the
    private PEM in `SAAS_CORE_DATA_SIGNING_KEY` as a server secret. Use
    `SAAS_CORE_DATA_AUDIENCE` for a unique audience. The application signs
@@ -36,46 +85,8 @@ connection and Data API signing key are server credentials.
 
    The setup script checks the target, records migration checksums and
    leaves the shared Core migration files intact.
-4. Set `DATABASE_URL` to the runtime Postgres connection on the same branch
-   and `SAAS_CORE_AUTH_URL` to the canonical application origin. Set a random
-   server-only `SAAS_CORE_AUTH_SECRET` of at least 32 bytes. Use a separate
-   login for the runtime connection. For a role named `core_auth` on the
-   `saas_core` database, configure its schema and privileges as follows:
+On a fresh native deployment, local PostgreSQL and Mailpit are sufficient.
+Supabase consumers keep their backend selection. Moving their existing
+identity or data to Neon is a separate database migration.
 
-   ```sql
-   ALTER ROLE core_auth IN DATABASE saas_core SET search_path TO auth, public;
-   GRANT USAGE ON SCHEMA auth TO core_auth;
-   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA auth TO core_auth;
-   GRANT SELECT (icon_url) ON public.workspace_pwa_settings TO core_auth;
-   CREATE POLICY core_neon_assets_read ON public.workspace_pwa_settings
-     FOR SELECT TO core_auth USING (true);
-   ```
-
-   Configure the application's Resend sender for verification and recovery
-   email. For
-   Google sign-in, set `SAAS_CORE_GOOGLE_CLIENT_ID` and
-   `SAAS_CORE_GOOGLE_CLIENT_SECRET`, with the callback
-   `/api/core-auth/callback/google` on the canonical origin.
-5. Sync the product catalog with `pnpm billing:sync-catalog`. Verify
-   signup and email confirmation, sign-in, workspace onboarding, cross-workspace
-   access, invitations, billing webhooks and password recovery on the target
-   branch before directing traffic to it.
-
-The Data API roles must retain the Core grants and row-level policies from the
-setup script. Never grant `service_role` to `anon` or `authenticated`. Keep
-the signing key, Postgres URLs and Better Auth secret out of browser variables.
-
-The same PostgREST contract can be exercised on a local PostgreSQL instance.
-Local email delivery can use Mailpit.
-
-This setup targets clean databases. Existing Supabase users, sessions,
-Workspace UUIDs and object storage require a separate migration plan and
-validation. Updating the npm packages copies source files only. An existing
-consumer can continue using Supabase while planning that transition.
-
-See [Neon Data API external authentication](https://neon.com/docs/data-api/custom-authentication-providers)
-and [Neon Data API access control](https://neon.com/docs/data-api/access-control).
-
-Before a production cutover, repeat the checks on the intended branch and
-endpoint. See the [2.8.0 release notes](./RELEASE-2.8.0.md) for the verification
-scope.
+[Architecture and inventory](./architecture/NATIVE-POSTGRES-ADR.md)

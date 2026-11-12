@@ -496,19 +496,23 @@ function productConfigValid(directory) {
 
 async function databaseSchemaCheck(directory) {
   if (process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon") {
-    if (!process.env.NEON_DATA_API_URL || !process.env.SAAS_CORE_DATA_SIGNING_KEY || !process.env.SAAS_CORE_DATA_AUDIENCE) {
+    const transport = process.env.SAAS_CORE_DATA_TRANSPORT || "postgrest"
+    if (!["postgres", "postgrest"].includes(transport)) return { status: "ERROR", detail: "Invalid Neon data transport." }
+    const ready = transport === "postgres" ? process.env.SAAS_CORE_DATA_DATABASE_URL
+      : process.env.NEON_DATA_API_URL && process.env.SAAS_CORE_DATA_SIGNING_KEY && process.env.SAAS_CORE_DATA_AUDIENCE
+    if (!ready) {
       return { status: "WARNING", detail: "Neon database schema could not be verified because server credentials are not configured." }
     }
     try {
       const runtime = path.join(directory, "node_modules", "@sapienx", "saas-core", "dist", "postgres.js")
       if (!existsSync(runtime)) return { status: "WARNING", detail: "Install the Core runtime before verifying the Neon database." }
-      const { createNeonDataClient } = await import(pathToFileURL(runtime).href)
-      const { data, error } = await createNeonDataClient({ role: "service_role" }).rpc("get_core_schema_metadata")
+      const { createNeonServerDataClient } = await import(pathToFileURL(runtime).href)
+      const { data, error } = await createNeonServerDataClient({ role: "service_role" }).rpc("get_core_schema_metadata")
       const metadata = Array.isArray(data) ? data[0] : data
       if (error || metadata?.schema_version !== SCHEMA_VERSION || metadata.runtime_major !== 2) {
         return { status: "ERROR", detail: `Neon did not return compatible Core schema ${SCHEMA_VERSION}.` }
       }
-      return { status: "INFO", detail: `Core schema ${SCHEMA_VERSION} verified on Neon.` }
+      return { status: "INFO", detail: `Core schema ${SCHEMA_VERSION} verified on Neon (${transport}).` }
     } catch {
       return { status: "ERROR", detail: "Neon database schema verification failed." }
     }

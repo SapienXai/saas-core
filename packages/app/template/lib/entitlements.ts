@@ -535,7 +535,7 @@ const getSubscription = cache(async function getSubscription(workspaceId: string
     .eq("workspace_id", workspaceId)
     .is("revoked_at", null)
     .lte("effective_from", now)
-    .or(`effective_until.is.null,effective_until.gt.${now}`)
+    .where({ any: [{ column: "effective_until", operator: "is", value: null }, { column: "effective_until", operator: "gt", value: now }] })
     .order("effective_from", { ascending: false })
     .limit(1)
     .maybeSingle()

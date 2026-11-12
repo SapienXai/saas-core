@@ -2,11 +2,11 @@ import "server-only"
 
 import { randomUUID } from "node:crypto"
 import type { BillingEnvironment, BillingTransitionKind, BillingTransitionState } from "@sapienx/saas-core"
-import type { SupabaseClient } from "@supabase/supabase-js"
+import type { CoreDataClient } from "@sapienx/saas-core/postgres"
 import { createServiceRoleClient } from "@/lib/supabase"
 import type { Database, Json } from "@/types/supabase"
 
-export type BillingDatabaseClient = SupabaseClient<Database>
+export type BillingDatabaseClient = Pick<CoreDataClient<Database["public"]>, "from" | "rpc">
 export type BillingProviderAccount = Database["public"]["Tables"]["billing_provider_accounts"]["Row"]
 export type BillingWebhookEvent = Database["public"]["Tables"]["billing_webhook_events"]["Row"]
 export type BillingMutationTransition = Database["public"]["Tables"]["billing_mutation_transitions"]["Row"]
@@ -166,7 +166,7 @@ export type BillingTransitionConsumptionResult = {
 }
 
 function database(client?: BillingDatabaseClient): BillingDatabaseClient {
-  return (client || createServiceRoleClient()) as BillingDatabaseClient
+  return client || createServiceRoleClient()
 }
 
 function textValue(value: string | undefined | null, field: string) {

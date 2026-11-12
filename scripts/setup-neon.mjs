@@ -5,6 +5,18 @@ import { Pool } from "@sapienx/saas-core/postgres"
 const connectionString = process.env.DATABASE_URL_UNPOOLED
 if (!connectionString) throw new Error("Set DATABASE_URL_UNPOOLED to the direct connection for the intended Core database.")
 if (process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND !== "neon") throw new Error("Select Neon mode before running the database setup.")
+const grantDataRole = process.argv.includes("--grant-data-role")
+const dataLogin = grantDataRole ? new URL(process.env.SAAS_CORE_DATA_DATABASE_URL || "") : null
+if (dataLogin) {
+  const owner = new URL(connectionString)
+  const baseHost = (url) => url.hostname.replace(/-pooler(?=\.)/, "")
+  const name = decodeURIComponent(dataLogin.username)
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(name) || ["anon", "authenticated", "service_role"].includes(name)
+      || name === decodeURIComponent(owner.username) || dataLogin.pathname !== owner.pathname
+      || baseHost(dataLogin) !== baseHost(owner) || dataLogin.port !== owner.port) {
+    throw new Error("The data login must be dedicated to the same database and branch.")
+  }
+}
 const root = new URL("../", import.meta.url)
 const pool = new Pool({ connectionString, max: 1, connectionTimeoutMillis: 10_000 })
 const client = await pool.connect()
@@ -68,6 +80,19 @@ try {
     END $$;
     NOTIFY pgrst, 'reload schema';
   `)
+  if (dataLogin) {
+    const name = decodeURIComponent(dataLogin.username)
+    const { rows: [login] } = await client.query(`
+      SELECT rolcanlogin AND NOT (rolsuper OR rolbypassrls OR rolinherit OR rolcreaterole OR rolcreatedb OR rolreplication)
+        AND NOT EXISTS (SELECT FROM pg_catalog.pg_auth_members m
+          JOIN pg_catalog.pg_roles t ON t.oid = m.roleid
+          WHERE m.member = r.oid AND t.rolname NOT IN ('anon','authenticated','service_role')) AS allowed
+      FROM pg_catalog.pg_roles r WHERE rolname = $1
+    `, [name])
+    if (!login?.allowed) throw new Error("Create a dedicated LOGIN NOINHERIT NOBYPASSRLS role before granting data access.")
+    await client.query(`GRANT anon, authenticated, service_role TO "${name}" WITH INHERIT FALSE, SET TRUE, ADMIN FALSE`)
+    console.log("Granted transaction-only access to the dedicated data login.")
+  }
   console.log("Neon schema is ready.")
 } finally {
   client.release(true)

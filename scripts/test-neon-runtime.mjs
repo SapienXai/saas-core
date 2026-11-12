@@ -2,11 +2,13 @@ import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
 import { chromium, expect } from "@playwright/test"
-import { createNeonDataClient } from "@sapienx/saas-core/postgres"
+import { createNeonServerDataClient } from "@sapienx/saas-core/postgres"
 
 const origin = process.env.SAAS_CORE_AUTH_URL
 const mail = process.env.SAAS_CORE_MAIL_URL
-const dataApi = process.env.NEON_DATA_API_URL
+const native = process.env.SAAS_CORE_DATA_TRANSPORT === "postgres"
+const dataApi = native ? process.env.SAAS_CORE_DATA_DATABASE_URL : process.env.NEON_DATA_API_URL
+if (native) assert.ok(!process.env.NEON_DATA_API_URL && !process.env.SAAS_CORE_DATA_SIGNING_KEY && !process.env.SAAS_CORE_DATA_AUDIENCE)
 for (const url of [origin, mail, dataApi, process.env.DATABASE_URL]) {
   assert.ok(url && ["127.0.0.1", "localhost"].includes(new URL(url).hostname), "This test only accepts loopback fixtures.")
 }
@@ -60,6 +62,7 @@ async function register(suffix) {
 }
 
 try {
+  if (native) assert.equal((await fetch(origin + "/api/core-data/jwks")).status, 404)
   const owner = await register("owner")
   const outsider = await register("outsider")
   const page = await owner.context.newPage()
@@ -67,11 +70,11 @@ try {
   await page.getByLabel("Workspace name").fill("Neon " + marker)
   await page.getByRole("button", { name: "Continue" }).click()
   await expect(page).toHaveURL(/\/app(?:[/?#]|$)/, { timeout: 30_000 })
-  const service = createNeonDataClient({ role: "service_role" })
+  const service = createNeonServerDataClient({ role: "service_role" })
   const owned = await service.from("workspaces").select("id").eq("created_by", owner.id).single()
   assert.equal(owned.error, null)
-  const ownerDb = createNeonDataClient({ role: "authenticated", id: owner.id, email: owner.email })
-  const outsiderDb = createNeonDataClient({ role: "authenticated", id: outsider.id, email: outsider.email })
+  const ownerDb = createNeonServerDataClient({ role: "authenticated", id: owner.id, email: owner.email })
+  const outsiderDb = createNeonServerDataClient({ role: "authenticated", id: outsider.id, email: outsider.email })
   assert.equal((await ownerDb.from("workspaces").select("id").eq("id", owned.data.id).single()).data?.id, owned.data.id)
   assert.deepEqual((await outsiderDb.from("workspaces").select("id").eq("id", owned.data.id)).data, [])
   assert.ok((await outsiderDb.from("billing_mutations").select("id")).error)

@@ -99,7 +99,7 @@ export async function processDuePaddleIntervalChanges(now = new Date()) {
     .eq("provider", "paddle").eq("provider_environment", environment)
     .eq("scheduled_change_action", "pause").lte("scheduled_change_at", now.toISOString())
     .order("updated_at", { ascending: true }).order("workspace_id").limit(3)
-  if (error) throw new Error(error.message)
+  if (error || !data) throw new Error(error?.message || "No billing results were returned.")
 
   let resumed = 0
   let failed = 0

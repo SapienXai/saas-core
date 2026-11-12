@@ -16,6 +16,15 @@ recorded in the versioned release notes, with the prior release retained in
 [`RELEASE-2.4.0.md`](./RELEASE-2.4.0.md), and
 [`BILLING-CERTIFICATION.md`](./BILLING-CERTIFICATION.md).
 
+## Upgrade to the 2.9.0 candidate
+
+Keep the current backend setting during the source update. Existing Neon
+consumers keep PostgREST unless they explicitly select `postgres`. Configure
+the separate data login on a test database using [Neon setup](./NEON.md),
+then verify the same application flows. Returning to `postgrest` requires
+the previously verified endpoint and signing configuration. Core migration
+checksums and schema compatibility `2.0` are unchanged.
+
 ## Upgrade to 2.8.0
 
 Neon mode uses Better Auth on Neon Postgres and a PostgREST endpoint. It needs

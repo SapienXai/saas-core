@@ -72,7 +72,7 @@ function createOutboxService() {
         in() {
           return query
         },
-        or() {
+        where() {
           return query
         },
         order() {

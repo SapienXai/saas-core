@@ -48,7 +48,7 @@ function platformSchemaUnavailable(error: { code?: string | null; message?: stri
 }
 
 async function getPlatformMember(userId: string) {
-  const { data, error } = await (createServiceRoleClient() as any).from("platform_members").select("user_id, role, status").eq("user_id", userId).maybeSingle()
+  const { data, error } = await createServiceRoleClient().from("platform_members").select("user_id, role, status").eq("user_id", userId).maybeSingle()
   if (error) {
     if (!platformSchemaUnavailable(error)) console.error("Error resolving platform membership:", error)
     return { available: !platformSchemaUnavailable(error), member: null as { role: PlatformRole; status: "active" | "suspended" } | null }
@@ -57,7 +57,7 @@ async function getPlatformMember(userId: string) {
 }
 
 async function getPlatformUserControl(userId: string) {
-  const { data, error } = await (createServiceRoleClient() as any).from("platform_user_controls").select("status").eq("user_id", userId).maybeSingle()
+  const { data, error } = await createServiceRoleClient().from("platform_user_controls").select("status").eq("user_id", userId).maybeSingle()
   if (error) {
     if (!platformSchemaUnavailable(error)) console.error("Error resolving platform user control:", error)
     return null
@@ -68,7 +68,7 @@ async function getPlatformUserControl(userId: string) {
 async function bootstrapPlatformOwner(userId: string, email: string | null | undefined, memberExists: boolean) {
   const configuredEmail = process.env.PLATFORM_OWNER_EMAIL?.trim().toLowerCase()
   if (memberExists || !configuredEmail || !email || email.trim().toLowerCase() !== configuredEmail) return false
-  const { error } = await (createServiceRoleClient() as any).from("platform_members").upsert({ user_id: userId, role: "platform_owner", status: "active", created_by: userId }, { onConflict: "user_id", ignoreDuplicates: true })
+  const { error } = await createServiceRoleClient().from("platform_members").upsert({ user_id: userId, role: "platform_owner", status: "active", created_by: userId }, { onConflict: "user_id", ignoreDuplicates: true })
   if (error) {
     if (!platformSchemaUnavailable(error)) console.error("Error bootstrapping platform owner:", error)
     return false
@@ -77,11 +77,11 @@ async function bootstrapPlatformOwner(userId: string, email: string | null | und
 }
 
 export const getWorkspaceMemberships = cache(async function getWorkspaceMemberships(userId: string) {
-  const { data, error } = await (createServiceRoleClient() as any)
+  const { data, error } = await createServiceRoleClient()
     .from("workspace_members")
-    .select("id, workspace_id, user_id, role, created_at, workspaces!inner(id, name, slug, status)")
+    .select("id, workspace_id, user_id, role, created_at")
+    .include({ table: "workspaces", alias: "workspaces", columns: "id,name,slug,status", foreignKey: "workspace_members_workspace_id_fkey", inner: true, equals: { status: "active" } })
     .eq("user_id", userId)
-    .eq("workspaces.status", "active")
     .order("created_at", { ascending: true })
   if (error) {
     if (schemaUnavailable(error)) return { available: false, memberships: [] as WorkspaceMembership[] }

@@ -1,6 +1,6 @@
 # @sapienx/saas-core
 
-Runtime coordinate: `2.8.0` candidate; Core schema compatibility coordinate `2.0`.
+Runtime coordinate: `2.9.0` candidate; Core schema compatibility coordinate `2.0`.
 The release delivers the additive, Core-managed billing, entitlement-lock, and
 plan-catalog migration sources through the canonical application template and
 CLI. This package exports the generic contracts; it does not execute SQL.

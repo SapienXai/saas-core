@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { createSupabaseAuthServerClient } from "@/lib/supabase/server"
 import { usesNeonBackend } from "@/lib/backend"
 import { copyAuthCookies, neonAuthPost } from "@/lib/neon/auth"
 import { getRequestUrl } from "@/lib/request-url"
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     return copyAuthCookies(result, response)
   }
   try {
-    const supabase = await createSupabaseServerClient()
+    const supabase = await createSupabaseAuthServerClient()
     await supabase.auth.signOut({ scope: "local" })
   } catch (error) {
     console.warn("Supabase server sign out failed:", error)

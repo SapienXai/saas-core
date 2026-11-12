@@ -84,7 +84,7 @@ async function processDueBillingWebhookEvents(provider: "stripe" | "paddle", lim
   const [waiting, expiredLeases] = await Promise.all([
     receipts()
       .in("status", ["received", "failed"])
-      .or("status.eq.received,next_attempt_at.lte." + nowIso)
+      .where({ any: [{ column: "status", operator: "eq", value: "received" }, { column: "next_attempt_at", operator: "lte", value: nowIso }] })
       .order("received_at", { ascending: true })
       .limit(batchLimit),
     receipts()

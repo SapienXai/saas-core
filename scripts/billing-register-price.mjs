@@ -56,10 +56,10 @@ if (!product || ("deleted" in product && product.deleted) || !product.active) {
 
 async function getLocalBillingData() {
   if (process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon") {
-    if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+\/?$/.test(process.env.NEON_DATA_API_URL || "")) {
+    if (!(await import("@sapienx/saas-core/postgres")).matchesNeonDataEnvironment("local")) {
       throw new Error("Refusing to modify a non-local database.")
     }
-    return (await import("@sapienx/saas-core/postgres")).createNeonDataClient({ role: "service_role" })
+    return (await import("@sapienx/saas-core/postgres")).createNeonServerDataClient({ role: "service_role" })
   }
   let status
   try {

@@ -1,4 +1,5 @@
 import "server-only"
+import { matchesNeonDataEnvironment } from "@sapienx/saas-core/postgres"
 import { usesNeonBackend } from "@/lib/backend"
 
 import { createHmac, timingSafeEqual } from "node:crypto"
@@ -24,14 +25,7 @@ function configuredOrigin(value: string | undefined, environment: BillingProvide
 }
 
 function billingDataOriginMatches(environment: "sandbox" | "live") {
-  if (usesNeonBackend()) {
-    try {
-      const url = new URL(process.env.NEON_DATA_API_URL || "")
-      const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
-      return !url.username && !url.password && !url.search && !url.hash &&
-        (environment === "live" ? url.protocol === "https:" && !loopback : loopback && url.protocol === "http:")
-    } catch { return false }
-  }
+  if (usesNeonBackend()) return matchesNeonDataEnvironment(environment === "live" ? "hosted" : "local")
   const origin = configuredOrigin(process.env.SUPABASE_URL, environment)
   return Boolean(origin && origin === configuredOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL, environment))
 }

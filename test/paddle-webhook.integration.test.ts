@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { createServiceRoleClient } from "@/lib/supabase"
+import { CoreDataClient, restTransport } from "@sapienx/saas-core/postgres"
+import type { Database } from "@/types/supabase"
 import { createClient } from "@supabase/supabase-js"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { cancelSubscription, getPlanUsage, startCheckout } from "@/app/manage/plan/actions"
@@ -26,14 +28,16 @@ function signInAsOwner(workspaceId: string) {
 
 const url = process.env.SUPABASE_URL
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const localNeon = process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon" &&
-  /^http:\/\/(127\.0\.0\.1|localhost):\d+\/?$/.test(process.env.NEON_DATA_API_URL || "")
+const nativeUrl = process.env.SAAS_CORE_DATA_DATABASE_URL
+const localNative = process.env.SAAS_CORE_DATA_TRANSPORT === "postgres" && Boolean(nativeUrl && new URL(nativeUrl).hostname === "127.0.0.1")
+const localNeon = process.env.NEXT_PUBLIC_SAAS_CORE_BACKEND === "neon" && (localNative ||
+  /^http:\/\/(127\.0\.0\.1|localhost):\d+\/?$/.test(process.env.NEON_DATA_API_URL || ""))
 const localSupabase = url === "http://127.0.0.1:55621" && Boolean(serviceKey)
 
 function fixtureDatabase() {
   return localNeon
     ? createServiceRoleClient()
-    : createClient(url!, serviceKey!, { auth: { persistSession: false, autoRefreshToken: false } })
+    : new CoreDataClient<Database["public"]>(restTransport(createClient(url!, serviceKey!, { auth: { persistSession: false, autoRefreshToken: false } })))
 }
 
 function configurePaddleCheckout() {
@@ -177,11 +181,11 @@ describe.skipIf(!localNeon && !localSupabase)("Provider checkout and webhook rec
       const retry = await db.from("billing_webhook_events").select("attempts,next_attempt_at,last_error_code").eq("id", pending.id).single()
       expect(retry.data).toMatchObject({ attempts: 1, last_error_code: "RENEWAL_PENDING_PAYMENT" })
       expect(retry.data?.next_attempt_at).toBeTruthy()
-      expect(Date.parse((await projected()).current_period_end_at)).toBe(Date.parse(initialPeriod.ends_at))
+      expect(Date.parse((await projected()).current_period_end_at ?? "")).toBe(Date.parse(initialPeriod.ends_at))
 
       renewals = [{ origin: "subscription_recurring", status: "completed", customer_id: customerId, subscription_id: subscriptionId, billing_period: renewalPeriod, items }]
       expect((await processEvent("transaction.completed", paddleId("txn"), renewalPeriod.starts_at, "subscription_recurring")).status).toBe("processed")
-      expect(Date.parse((await projected()).current_period_end_at)).toBe(Date.parse(renewalPeriod.ends_at))
+      expect(Date.parse((await projected()).current_period_end_at ?? "")).toBe(Date.parse(renewalPeriod.ends_at))
 
       remote = { ...remote, custom_data: { ...metadata, workspace_id: randomUUID() } }
       expect((await processEvent("subscription.updated", subscriptionId, new Date().toISOString())).status).toBe("failed")
@@ -191,7 +195,7 @@ describe.skipIf(!localNeon && !localSupabase)("Provider checkout and webhook rec
       expect((await processEvent("subscription.canceled", subscriptionId, canceledAt)).status).toBe("processed")
       expect((await processEvent("subscription.activated", subscriptionId, initialPeriod.starts_at)).status).toBe("processed")
       expect(await projected()).toMatchObject({ status: "canceled" })
-      expect(Date.parse((await projected()).last_provider_event_at)).toBe(Date.parse(canceledAt))
+      expect(Date.parse((await projected()).last_provider_event_at ?? "")).toBe(Date.parse(canceledAt))
       await expect(reconcilePaddleCheckoutSession(transactionId, workspaceId)).resolves.toMatchObject({ status: "failed" })
     } finally {
       if (received.length) await db.from("billing_webhook_events").delete().in("id", received)
@@ -297,7 +301,7 @@ describe.skipIf(!localNeon && !localSupabase)("Provider checkout and webhook rec
       const projectedEnd = async () => {
         const row = await db.from("workspace_subscriptions").select("current_period_end_at").eq("workspace_id", workspaceId).single()
         if (row.error) throw row.error
-        return Date.parse(row.data.current_period_end_at)
+        return Date.parse(row.data.current_period_end_at ?? "")
       }
       await expect(reconcileBillingSubscription(subscriptionId, randomUUID())).rejects.toThrow("not linked")
       vi.stubEnv("STRIPE_ENVIRONMENT", "live")
