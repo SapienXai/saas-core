@@ -162,10 +162,22 @@ async function foreignKey(client: PoolClient, source: string, relation: Relation
     JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = keys.source
     JOIN pg_catalog.pg_attribute b ON b.attrelid = c.confrelid AND b.attnum = keys.target
     WHERE c.contype = 'f' AND c.conrelid = to_regclass($1) AND c.confrelid = to_regclass($2) AND c.conname = $3
+      AND (NOT $4::boolean OR EXISTS (
+        SELECT FROM pg_catalog.pg_constraint u
+        WHERE u.conrelid = c.conrelid AND u.contype IN ('p', 'u')
+          AND u.conkey @> c.conkey AND u.conkey <@ c.conkey
+      ))
     ORDER BY keys.ord
-  `, ["public." + identifier(source), "public." + identifier(relation.table), relation.foreignKey])
-  if (!rows.length) throw new NativeDataError("42704", "The requested foreign key relation does not exist.")
-  return rows
+  `, [
+    "public." + identifier(relation.reverse ? relation.table : source),
+    "public." + identifier(relation.reverse ? source : relation.table),
+    relation.foreignKey,
+    relation.reverse === true,
+  ])
+  if (!rows.length) throw new NativeDataError("42704", "The requested to-one foreign key relation does not exist.")
+  return relation.reverse ? rows.map(({ source_column, target_column }) => ({
+    source_column: target_column, target_column: source_column,
+  })) : rows
 }
 
 function boundedInteger(value: number) {

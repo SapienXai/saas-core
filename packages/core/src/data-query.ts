@@ -17,6 +17,7 @@ export type Relation = {
   columns: string
   foreignKey: string
   inner?: boolean
+  reverse?: boolean
   equals?: Readonly<Record<string, unknown>>
 }
 type Order = { column: string; ascending?: boolean; nullsFirst?: boolean }

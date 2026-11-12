@@ -20,11 +20,11 @@ Core was inspected at `c5afc38` and BookPlace at `952ee30`. The following counts
 | `maybeSingle` / `single` | 94 / 29 | 8 / 1 | Core `lib/auth-utils.ts:51`, BookPlace `src/product/server.ts:51` |
 | `insert` / `update` / `delete` / `upsert` | 17 / 55 / 19 / 13 | 0 / 2 / 0 / 0 | Core `app/manage/pwa/actions.ts:95`, BookPlace `src/product/server.ts` |
 | `eq` / `in` / `or` / `not` | 337 / 11 / 4 / 2 | 19 / 0 / 1 / 0 | Core `lib/billing/lifecycle.ts:87`, BookPlace `src/product/server.ts:124` |
-| Foreign key embedding | 2 | 1 | `lib/auth-utils.ts:82`, `app/invite/accept/page.tsx:24`, BookPlace `src/product/server.ts:123` |
+| Foreign key embedding | 2 | 2 | `lib/auth-utils.ts:82`, `app/invite/accept/page.tsx:24`, BookPlace `src/product/server.ts:123` |
 | Count with head, ordering, bounds | used | used | Core `lib/platform-admin.ts:258`, BookPlace `src/product/usage.ts:6` |
 | Auth / object storage | separate adapter | Core auth and product media | `lib/neon/auth.ts`, `lib/neon/storage.ts` |
 
-Simple projections, comparisons, null checks, IN, ordering, limits, filtered writes, conflict keys and bulk inserts are shared shapes. BookPlace's PMS filter has two nested AND groups inside an OR. Its guest join uses the composite `(workspace_id, guest_id)` foreign key. The inventory did not find a product need for REST schema switching, a full select expression language or dynamic schema search.
+Simple projections, comparisons, null checks, IN, ordering, limits, filtered writes, conflict keys and bulk inserts are shared shapes. BookPlace's PMS filter has two nested AND groups inside an OR. Its guest join uses the composite `(workspace_id, guest_id)` foreign key. The published Studio snapshot uses the reverse one-to-one property key. The inventory did not find a product need for REST schema switching, a full select expression language or dynamic schema search.
 
 ## Permissions and atomicity
 
