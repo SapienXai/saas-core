@@ -46,7 +46,7 @@ function createService() {
         is: vi.fn(() => builder),
         gt: vi.fn(() => builder),
         lte: vi.fn(() => builder),
-        or: vi.fn(() => builder),
+        where: vi.fn(() => builder),
         order: vi.fn(() => builder),
         limit: vi.fn(() => builder),
         maybeSingle: vi.fn(async () => result()),

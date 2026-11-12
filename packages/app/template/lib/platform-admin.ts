@@ -259,7 +259,7 @@ export async function getPlatformOverview() {
   ])
   return { role, counts: { workspaces: workspaces.count || 0, users: users.count || 0, subscriptions: subscriptions.count || 0, domains: domains.count || 0, events24h: events.count || 0 } }
 }
-export async function listPlatformWorkspaces(query = "") { await requirePlatformRole(); const db = service(); let request = db.from("workspaces").select("id, name, slug, status, created_at").order("created_at", { ascending: false }).limit(100); if (query) request = request.or(`name.ilike.%${query}%,slug.ilike.%${query}%`); const { data, error } = await request; if (error) throw new Error(error.message); return data || [] }
+export async function listPlatformWorkspaces(query = "") { await requirePlatformRole(); const db = service(); let request = db.from("workspaces").select("id, name, slug, status, created_at").order("created_at", { ascending: false }).limit(100); if (query) request = request.where({ any: [{ column: "name", operator: "ilike", value: "%" + query + "%" }, { column: "slug", operator: "ilike", value: "%" + query + "%" }] }); const { data, error } = await request; if (error) throw new Error(error.message); return data || [] }
 export async function listPlatformUsers(query = "") {
   return listPlatformUserRecords({ query })
 }

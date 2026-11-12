@@ -33,7 +33,7 @@ async function runEmailOutbox(request: Request) {
     return NextResponse.json({ run_id: run.id, processed: run.processed_count, sent: run.sent_count, retrying: run.retrying_count, failed: run.failed_count, replayed: true }, { headers: { "cache-control": "no-store" } })
   }
 
-  const { data: events, error } = await service.from("email_delivery_events").select("id").in("status", ["pending", "retrying"]).or(`next_attempt_at.is.null,next_attempt_at.lte.${new Date().toISOString()}`).order("created_at", { ascending: true }).limit(25)
+  const { data: events, error } = await service.from("email_delivery_events").select("id").in("status", ["pending", "retrying"]).where({ any: [{ column: "next_attempt_at", operator: "is", value: null }, { column: "next_attempt_at", operator: "lte", value: new Date().toISOString() }] }).order("created_at", { ascending: true }).limit(25)
   if (error) {
     await service.from("email_outbox_runs").update({ status: "failed", finished_at: new Date().toISOString(), error_code: "outbox_query_failed" }).eq("id", run.id)
     return NextResponse.json({ error: "Outbox query failed.", run_id: run.id }, { status: 500 })

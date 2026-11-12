@@ -24,7 +24,7 @@ if (!token || !projectId || (!neon && (!supabaseUrl || !serviceRoleKey))) {
 }
 
 const supabase = neon
-  ? (await import("@sapienx/saas-core/postgres")).createNeonDataClient({ role: "service_role" })
+  ? (await import("@sapienx/saas-core/postgres")).createNeonServerDataClient({ role: "service_role" })
   : createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
 const { data: workspace, error: workspaceError } = await supabase
   .from("workspaces")

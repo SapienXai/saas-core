@@ -5,7 +5,46 @@ export { betterAuth } from "better-auth"
 export { admin } from "better-auth/plugins"
 export { Pool } from "pg"
 
-type DataIdentity = { role: "anon" | "authenticated" | "service_role"; id?: string; email?: string }
+import { CoreDataClient, type DataTransport } from "./data-query.js"
+import { postgresTransport, type DataIdentity } from "./native-postgres.js"
+import { restTransport } from "./legacy-data.js"
+
+export { CoreDataClient, type DataResult, type Predicate, type Relation } from "./data-query.js"
+export { createNativeDataClient, postgresPool } from "./native-postgres.js"
+export { restTransport } from "./legacy-data.js"
+
+export function getDataTransport() {
+  const transport = process.env.SAAS_CORE_DATA_TRANSPORT || "postgrest"
+  if (transport !== "postgres" && transport !== "postgrest") {
+    throw new Error("SAAS_CORE_DATA_TRANSPORT must be postgres or postgrest.")
+  }
+  return transport
+}
+
+export function matchesNeonDataEnvironment(environment: "local" | "hosted") {
+  try {
+    const native = getDataTransport() === "postgres"
+    const url = new URL((native ? process.env.SAAS_CORE_DATA_DATABASE_URL : process.env.NEON_DATA_API_URL) || "")
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+    if (native) {
+      return ["postgres:", "postgresql:"].includes(url.protocol) && Boolean(url.username) && !url.hash &&
+        (environment === "local" ? loopback : !loopback && url.searchParams.get("sslmode") === "verify-full")
+    }
+    return !url.username && !url.password && !url.search && !url.hash &&
+      (environment === "local" ? loopback && url.protocol === "http:" : !loopback && url.protocol === "https:")
+  } catch {
+    return false
+  }
+}
+
+export function createNeonTransport(identity: DataIdentity): DataTransport {
+  return getDataTransport() === "postgres" ? postgresTransport(identity) : restTransport(createNeonDataClient(identity))
+}
+
+/** Data-only client for server scripts and database readiness checks. */
+export function createNeonServerDataClient(identity: DataIdentity) {
+  return new CoreDataClient(createNeonTransport(identity))
+}
 
 function dataSigningKey() {
   const pem = process.env.SAAS_CORE_DATA_SIGNING_KEY

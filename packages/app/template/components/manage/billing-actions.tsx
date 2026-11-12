@@ -236,8 +236,8 @@ export function BillingActions({ currentPlan, billing, plans, configuredPaidPlan
   )
   const presentationCopy = presentation?.copy || {}
   const copyText = (key: string, fallback: string) => presentationCopy[key]?.trim() || fallback
-  const planPresentation = useCallback((plan: Plan) => presentation?.plans?.[plan.key] || {}, [presentation])
-  const planCopy = useCallback((plan: Plan) => {
+  const planPresentation = useCallback((plan: Pick<Plan, "key">) => presentation?.plans?.[plan.key] || {}, [presentation])
+  const planCopy = useCallback((plan: Pick<Plan, "key" | "name">) => {
     const configured = planPresentation(plan)
     const configuredHighlights = configured.highlights?.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim()) || []
     return {

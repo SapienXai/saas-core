@@ -376,7 +376,7 @@ async function persistUnknownProviderOutcome(mutation: BillingMutation, transiti
   try {
     const db = createServiceRoleClient()
     const { data: current, error: readError } = await db.from("billing_mutations").select("result,status").eq("id", mutation.id).single()
-    if (readError) throw readError
+    if (readError || !current) throw readError ?? new Error("The billing mutation is missing.")
     const { error } = await db.from("billing_mutations").update({
       status: "unknown",
       result: asJson({ ...resultRecord(current.result), status: "unknown", operation, reason: reason.slice(0, 500) }),

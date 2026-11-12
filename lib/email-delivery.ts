@@ -56,12 +56,16 @@ export async function deliverTrackedEmail(eventId: string) {
   if (claimError) throw new Error(claimError.message)
   const claim = Array.isArray(claimResult) ? claimResult[0] : claimResult
   if (!claim?.claimed) {
-    if (["sent", "delivered"].includes(claim?.current_status)) return { success: true as const, data: { id: null }, providerMessageId: null }
+    if (["sent", "delivered"].includes(claim?.current_status || "")) return { success: true as const, data: { id: null }, providerMessageId: null }
     const retryable = ["pending", "retrying", "sending"].includes(claim?.current_status || "")
     return { success: false as const, error: { message: `Email event is ${claim?.current_status || "not available"}.`, code: claim?.current_status || "not_available" }, retryable }
   }
-  const payload = claim.payload as SendEmailParams
-  const result = await sendEmail({ ...payload, idempotencyKey: `saas-core-email-${eventId}` })
+  const payload = claim.payload
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)
+      || typeof payload.to !== "string" || typeof payload.subject !== "string" || typeof payload.html !== "string") {
+    throw new Error("Invalid stored email payload.")
+  }
+  const result = await sendEmail({ ...payload, to: payload.to, subject: payload.subject, html: payload.html, idempotencyKey: `saas-core-email-${eventId}` })
   const providerMessageId = result.success && result.data && typeof result.data === "object" && "id" in result.data ? String(result.data.id || "") || null : null
   const providerResult = result.success && providerMessageId
   const errorMessage = !providerResult ? (result.success ? "Email provider returned no message identifier." : result.error && typeof result.error === "object" && "message" in result.error ? String(result.error.message) : "Email provider rejected the message.") : ""

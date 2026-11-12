@@ -216,7 +216,7 @@ describe("workspace entitlement policy", () => {
       builder.lte = () => builder
       builder.in = () => builder
       builder.is = () => builder
-      builder.or = () => builder
+      builder.where = () => builder
       builder.order = () => builder
       builder.limit = () => builder
       builder.maybeSingle = async () => {

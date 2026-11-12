@@ -21,7 +21,8 @@ export default async function InvitationAcceptPage() {
 
   const { data: invitation } = await createServiceRoleClient()
     .from("workspace_invitations")
-    .select("email, role, expires_at, workspaces(name)")
+    .select("email, role, expires_at")
+    .include({ table: "workspaces", alias: "workspaces", columns: "name", foreignKey: "workspace_invitations_workspace_id_fkey" })
     .eq("token_hash", tokenHash)
     .maybeSingle()
   if (!invitation) redirect("/login?error=invalid_invitation")

@@ -144,3 +144,5 @@ overwritten by `update`.
 Read the generated [AGENTS.md](./AGENTS.md) before changing the repository.
 The authoritative ownership list is maintained in the upstream
 [OWNERSHIP.md](https://github.com/SapienXai/saas-core/blob/main/docs/OWNERSHIP.md).
+
+For a clean Neon setup, follow the [Core Neon guide](https://github.com/SapienXai/saas-core/blob/main/docs/NEON.md) and configure separate auth and native data logins.

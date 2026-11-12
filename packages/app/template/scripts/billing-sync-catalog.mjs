@@ -80,7 +80,7 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 if (!neon && (!url || !serviceKey)) fail("Catalog sync requires server-only SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.")
 if (!neon && /publishable|anon/i.test(serviceKey)) fail("Catalog sync requires a service role key, never a publishable/anon key.")
 const supabase = neon
-  ? (await import("@sapienx/saas-core/postgres")).createNeonDataClient({ role: "service_role" })
+  ? (await import("@sapienx/saas-core/postgres")).createNeonServerDataClient({ role: "service_role" })
   : createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
 const existingResult = await supabase.from("plans").select("key, metadata, active")
 if (existingResult.error) fail(`Could not read the Core plan catalog: ${existingResult.error.message}`)

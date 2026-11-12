@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import type { EmailOtpType } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { createSupabaseAuthServerClient } from "@/lib/supabase/server"
 import { getAccountState, safeInternalRedirect } from "@/lib/account-state"
 import { getCurrentUserAccess } from "@/lib/auth-utils"
 import { INVITATION_INTENT_COOKIE } from "@/lib/invitations"
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(invalidConfirmationUrl)
   }
 
-  const supabase = await createSupabaseServerClient()
+  const supabase = await createSupabaseAuthServerClient()
   const { error } = tokenHash && tokenType
     ? await supabase.auth.verifyOtp({ token_hash: tokenHash, type: tokenType })
     : await supabase.auth.exchangeCodeForSession(code!)

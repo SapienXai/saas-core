@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { usesNeonBackend } from "@/lib/backend"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { createSupabaseAuthServerClient } from "@/lib/supabase/server"
 import { getAccountState, safeInternalRedirect } from "@/lib/account-state"
 import { getRequestUrl } from "@/lib/request-url"
 
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const exchangeOptions = flowId ? { flowId } : undefined
 
   if (usesNeonBackend()) return NextResponse.redirect(new URL("/login", url))
-  const supabase = await createSupabaseServerClient()
+  const supabase = await createSupabaseAuthServerClient()
   const { error } = await supabase.auth.exchangeCodeForSession(code, exchangeOptions)
   if (error) {
     console.error("[auth/callback] OAuth code exchange failed", {

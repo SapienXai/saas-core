@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createSupabaseServerClient } from "@/lib/supabase/server"
+import { createSupabaseAuthServerClient } from "@/lib/supabase/server"
 import { usesNeonBackend } from "@/lib/backend"
 import { neonAuthOrigin, neonAuthPost } from "@/lib/neon/auth"
 import { safeInternalRedirect } from "@/lib/account-state"
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     if (!result.ok) return NextResponse.json({ error: result.status === 429 ? "email_rate_limited" : "resend_failed" }, { status: result.status === 429 ? 429 : 400 })
     return NextResponse.json({ ok: true })
   }
-  const supabase = await createSupabaseServerClient()
+  const supabase = await createSupabaseAuthServerClient()
   const { error } = await supabase.auth.resend({
     type: "signup",
     email,

@@ -95,6 +95,12 @@ upserts.
 Environment diagnostics expose presence/length metadata only to an authorized
 development operator and never return secret values.
 
+In native mode, the data login has no inherited privileges and cannot
+bypass RLS. The server chooses one of three roles and supplies the verified
+session claims in the same transaction. Public RPC dispatch requires an
+explicit execute grant for that role. Keep the Better Auth, data and
+migration credentials separate.
+
 ## Billing and providers
 
 Stripe and Paddle webhook requests require signature validation against the
