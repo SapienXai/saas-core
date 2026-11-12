@@ -1,4 +1,5 @@
 import productCatalog from "@/product.catalog.json"
+import type { AccountEmailConfig } from "@/lib/transactional-email"
 import type { ProductBillingConfig } from "@sapienx/saas-core"
 import type { PlatformRole } from "./platform-types"
 
@@ -39,6 +40,8 @@ export type ProductOnboardingConfig = {
 export type ProductAuthConfig = {
   /** Optional HTTPS media surface rendered behind Core auth forms. */
   backgroundUrl?: string | null
+  /** Optional branded verification and recovery emails for Core's native auth. */
+  accountEmail?: AccountEmailConfig
 }
 
 export type ProductShellNavigationItem = {

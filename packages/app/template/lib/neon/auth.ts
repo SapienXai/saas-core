@@ -4,6 +4,11 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { betterAuth, admin, Pool } from "@sapienx/saas-core/postgres"
 import { sendEmail } from "@/lib/email-service"
 import { getTrustedPlatformOrigin } from "@/lib/domains/hostname"
+import { getPlatformUrl } from "@/lib/platform-urls"
+import { PRODUCT_CONFIG } from "@/lib/product-config"
+import { getServerLanguage } from "@/lib/server-i18n"
+import { DEFAULT_LANGUAGE } from "@/i18n/config"
+import { renderTransactionalEmail, type AccountEmailConfig, type AccountEmailKind } from "@/lib/transactional-email"
 
 let pool: Pool | undefined
 let instance: ReturnType<typeof makeAuth> | undefined
@@ -19,8 +24,28 @@ export function neonAuthOrigin() {
   return new URL(process.env.SAAS_CORE_AUTH_URL || getTrustedPlatformOrigin("app")).origin
 }
 
-async function deliverAuthEmail(to: string, subject: string, url: string) {
-  const result = await sendEmail({ to, subject, text: url, html: "" })
+async function deliverAuthEmail(to: string, kind: AccountEmailKind, url: string) {
+  const config = (PRODUCT_CONFIG as typeof PRODUCT_CONFIG & { auth?: { accountEmail?: AccountEmailConfig } }).auth?.accountEmail
+  let message = { subject: kind === "verify" ? "Verify your email address" : "Reset your password", text: url, html: "" }
+  if (config) {
+    // Core can also invoke auth outside a Next request. Use the default language in that case.
+    const preferred = await getServerLanguage().catch(() => DEFAULT_LANGUAGE)
+    const language = config.messages[preferred]?.[kind] ? preferred : DEFAULT_LANGUAGE
+    const content = config.messages[language]?.[kind]
+    if (content) {
+      const { action, ...copy } = content
+      message = renderTransactionalEmail({
+        ...copy,
+        language,
+        action: { label: action, href: url },
+      }, {
+        name: PRODUCT_CONFIG.name,
+        logoUrl: getPlatformUrl(PRODUCT_CONFIG.iconPath192 || PRODUCT_CONFIG.iconPath),
+        palette: config.palette,
+      })
+    }
+  }
+  const result = await sendEmail({ to, ...message })
   if (!result.success) throw new Error("Could not deliver the authentication email.")
 }
 
@@ -53,13 +78,13 @@ function makeAuth() {
       sendResetPassword: async ({ user, url }) => {
         const capture = captureRecovery.getStore()
         if (capture) capture(url)
-        else await deliverAuthEmail(user.email, "Reset your password", url)
+        else await deliverAuthEmail(user.email, "reset", url)
       },
     },
     emailVerification: {
       sendOnSignUp: true,
       autoSignInAfterVerification: true,
-      sendVerificationEmail: ({ user, url }) => deliverAuthEmail(user.email, "Verify your email address", url),
+      sendVerificationEmail: ({ user, url }) => deliverAuthEmail(user.email, "verify", url),
     },
   })
 }

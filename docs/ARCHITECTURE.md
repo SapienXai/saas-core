@@ -237,3 +237,18 @@ available, forwards the WebMCP `AbortSignal`, and aborts registrations on
 unmount. There is no universal Core agent endpoint, automatic registry,
 database table, or remote MCP implementation. See
 [Agent Surface](AGENT-SURFACE.md) for the contract and security boundary.
+
+### Native account email presentation
+
+Products can set `PRODUCT_CONFIG.auth.accountEmail` in the product-owned
+`lib/product-config.ts` to customize email verification and password reset
+messages. Supply `messages.en.verify` and `messages.en.reset` entries with
+`subject`, `title`, `intro`, `action` (button label) and optional `note`;
+add `tr` and `es` entries as needed. A partial `palette` can override
+the card colors with six-digit hex values. The card uses the configured product
+name and icon. Core chooses the language, validates and renders its own action
+URL, and sends HTML with a plain-text alternative. Missing localized messages
+fall back to English; missing English messages retain the existing plain link.
+Products do not receive the token or provide the recipient or action URL. This
+setting applies to Core's native Better Auth flow. Supabase-managed auth
+messages are configured with that provider.

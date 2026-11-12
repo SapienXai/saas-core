@@ -300,6 +300,7 @@ async function copyTree(source, destination) {
 
 async function writeProductConfig(directory, name, slug) {
   await writeFile(path.join(directory, "lib/product-config.ts"), `import productCatalog from "@/product.catalog.json"
+import type { AccountEmailConfig } from "@/lib/transactional-email"
 
 export type ProductConfig = {
   name: string
@@ -320,6 +321,8 @@ export type ProductConfig = {
 export type ProductAuthConfig = {
   /** Optional HTTPS media surface rendered behind Core auth forms. */
   backgroundUrl?: string | null
+  /** Optional branded verification and recovery emails for Core's native auth. */
+  accountEmail?: AccountEmailConfig
 }
 
 export type ProductShellNavigationItem = {
